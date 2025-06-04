@@ -1,0 +1,8 @@
+#!/bin/bash
+# Nuclear Plant Simulator - Convenience Script
+
+# Get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Run the Python CLI with all arguments passed through
+python3 "$SCRIPT_DIR/nuclear_sim.py" "$@"
