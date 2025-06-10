@@ -1,574 +1,428 @@
 import warnings
-from dataclasses import dataclass
-from enum import Enum
+import sys
+import os
 from typing import Dict, List, Optional, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
 
+# Add the project root to the path for imports
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+# Import from the new primary physics system
+from systems.primary import PrimaryReactorPhysics, ReactorState, ControlAction
+# Import from the secondary physics system
+from systems.secondary import SecondaryReactorPhysics
+from systems.primary.reactor.reactivity_model import create_equilibrium_state
+
 warnings.filterwarnings("ignore")
 
 
-class ControlAction(Enum):
-    """Available control actions for the RL agent"""
-
-    CONTROL_ROD_INSERT = 0
-    CONTROL_ROD_WITHDRAW = 1
-    INCREASE_COOLANT_FLOW = 2
-    DECREASE_COOLANT_FLOW = 3
-    OPEN_STEAM_VALVE = 4
-    CLOSE_STEAM_VALVE = 5
-    INCREASE_FEEDWATER = 6
-    DECREASE_FEEDWATER = 7
-    NO_ACTION = 8
-    DILUTE_BORON = 9  # Reduce boron concentration (add reactivity)
-    BORATE_COOLANT = 10  # Add boron concentration (reduce reactivity)
-
-
-@dataclass
-class ReactorState:
-    """Current state of the reactor system"""
-
-    # Neutronics
-    neutron_flux: float = 1e13  # neutrons/cm²/s (100% power)
-    reactivity: float = 0.0  # delta-k/k (critical)
-    delayed_neutron_precursors: Optional[np.ndarray] = None
-
-    # Thermal hydraulics
-    fuel_temperature: float = 575.0  # °C (realistic steady-state average)
-    coolant_temperature: float = 280.0  # °C
-    coolant_pressure: float = 15.5  # MPa
-    coolant_flow_rate: float = 20000.0  # kg/s
-    coolant_void_fraction: float = 0.0  # Steam void fraction (0-1)
-
-    # Steam cycle
-    steam_temperature: float = 285.0  # °C
-    steam_pressure: float = 7.0  # MPa
-    steam_flow_rate: float = 1000.0  # kg/s
-    feedwater_flow_rate: float = 1000.0  # kg/s
-
-    # Control systems
-    control_rod_position: float = (
-        95.0  # % withdrawn (PWR normal operation - rods mostly out)
-    )
-    steam_valve_position: float = 50.0  # % open
-    boron_concentration: float = 1200.0  # ppm
-
-    # Fission product poisons
-    xenon_concentration: float = 2.8e15  # atoms/cm³
-    iodine_concentration: float = 1.5e16  # atoms/cm³
-    samarium_concentration: float = 1.0e15  # atoms/cm³
-
-    # Burnable poisons and fuel depletion
-    burnable_poison_worth: float = -800.0  # pcm
-    fuel_burnup: float = 15000.0  # MWd/MTU
-
-    # Safety parameters
-    power_level: float = 100.0  # % rated power
-    scram_status: bool = False
-
-    def __post_init__(self):
-        if self.delayed_neutron_precursors is None:
-            # 6 delayed neutron precursor groups
-            self.delayed_neutron_precursors = np.array(
-                [0.0002, 0.0011, 0.0010, 0.0030, 0.0096, 0.0003]
-            )
-
-
 class NuclearPlantSimulator:
-    """Physics-based nuclear power plant simulator"""
+    """Physics-based nuclear power plant simulator with integrated primary and secondary systems"""
 
-    def __init__(self, dt: float = 1.0, heat_source=None):
+    def __init__(self, dt: float = 1.0, heat_source=None, enable_secondary: bool = True):
         self.dt = dt  # Time step in seconds
         self.time = 0.0
-        self.state = ReactorState()
-        self.history = []
+        self.history = {
+            'time': [],
+            'primary': {
+                'neutron_flux': [],
+                'fuel_temperature': [],
+                'coolant_temperature': [],
+                'coolant_pressure': [],
+                'coolant_flow_rate': [],
+                'steam_temperature': [],
+                'steam_pressure': [],
+                'steam_flow_rate': [],
+                'control_rod_position': [],
+                'steam_valve_position': [],
+                'power_level': [],
+                'scram_status': [],
+                'reactivity': [],
+                'boron_concentration': [],
+                'thermal_power': []
+            },
+            'secondary': {
+                'electrical_power': [],
+                'thermal_efficiency': [],
+                'total_steam_flow': [],
+                'sg_avg_pressure': [],
+                'sg_avg_temperature': [],
+                'condenser_pressure': [],
+                'condenser_temperature': [],
+                'turbine_power': [],
+                'generator_power': [],
+                'feedwater_flow': [],
+                'feedwater_temperature': [],
+                'cooling_water_temperature': [],
+                'cooling_water_flow': [],
+                'load_demand': [],
+                'vacuum_pump_operation': []
+            },
+            'integration': {
+                'primary_hot_leg_temp': [],
+                'primary_cold_leg_temp': [],
+                'heat_removal_rate': [],
+                'overall_plant_efficiency': [],
+                'coupling_factor': []
+            }
+        }
+        self.enable_secondary = enable_secondary
         
-        # Heat source abstraction
-        if heat_source is not None:
-            self.heat_source = heat_source
+        # Initialize primary reactor physics system
+        self.primary_physics = PrimaryReactorPhysics(
+            rated_power_mw=3000.0,
+            heat_source=heat_source
+        )
+        
+        # Initialize secondary reactor physics system (3 steam generators for typical PWR)
+        if self.enable_secondary:
+            self.secondary_physics = SecondaryReactorPhysics(num_steam_generators=3)
         else:
-            # Default to reactor physics heat source
-            from systems.primary.reactor.heat_sources import ReactorHeatSource
-            self.heat_source = ReactorHeatSource(rated_power_mw=3000.0)
-
-        # Physical constants
-        self.BETA = 0.0065  # Total delayed neutron fraction
-        self.LAMBDA = np.array(
-            [0.077, 0.311, 1.40, 3.87, 1.40, 0.195]
-        )  # Decay constants
-        self.LAMBDA_PROMPT = 1e-5  # Prompt neutron generation time
-        self.FUEL_HEAT_CAPACITY = 300.0  # J/kg/K
-        self.COOLANT_HEAT_CAPACITY = 5200.0  # J/kg/K
-        self.FUEL_MASS = 100000.0  # kg
-        self.COOLANT_MASS = 300000.0  # kg
-
-        # Control parameters
-        self.max_control_rod_speed = 5.0  # %/s
-        self.max_valve_speed = 10.0  # %/s
-        self.max_flow_change_rate = 1000.0  # kg/s/s
-
-        # Safety limits
-        self.max_fuel_temp = 1500.0  # °C (more realistic PWR fuel temperature limit)
-        self.max_coolant_pressure = 17.0  # MPa
-        self.min_coolant_flow = 1000.0  # kg/s (much lower to prevent early SCRAM)
-
-    def point_kinetics(self, reactivity: float) -> Tuple[float, np.ndarray]:
-        """Solve point kinetics equations for neutron flux"""
-        # Reactivity feedback effects are already included in the comprehensive model
-        # Don't add additional temperature feedback here to avoid double counting
-
-        # Limit reactivity to prevent numerical instability
-        reactivity = np.clip(reactivity, -0.9, 0.1)
-
-        # For steady state operation (near critical), use much more conservative integration
-        if (
-            abs(reactivity) < 0.01
-        ):  # Near critical (< 1000 pcm) - wider range for stability
-            # For essentially critical conditions, maintain steady flux to prevent power drift
-            flux_dot = 0.0
-            precursor_dot = np.zeros_like(self.state.delayed_neutron_precursors)
-            return flux_dot, precursor_dot
-
-        # For very small reactivity changes, use extremely conservative approach
-        if abs(reactivity) < 0.01:  # < 1000 pcm
-            # Use a much smaller effective reactivity to prevent oscillations
-            effective_reactivity = reactivity * 0.01  # Reduce sensitivity by 99%
-        else:
-            effective_reactivity = reactivity
-
-        # Point kinetics with delayed neutrons
-        flux_dot = (
-            (effective_reactivity - self.BETA)
-            / self.LAMBDA_PROMPT
-            * self.state.neutron_flux
-        )
-        for i in range(6):
-            flux_dot += self.LAMBDA[i] * self.state.delayed_neutron_precursors[i]
-
-        # For near-critical conditions, use extremely conservative flux changes
-        if abs(reactivity) < 0.0001:  # Very near critical (< 10 pcm)
-            max_flux_change = (
-                self.state.neutron_flux * 0.0001
-            )  # Max 0.01% change per timestep
-        elif abs(reactivity) < 0.001:  # Near critical (< 100 pcm)
-            max_flux_change = (
-                self.state.neutron_flux * 0.001
-            )  # Max 0.1% change per timestep
-        elif abs(reactivity) < 0.01:  # Moderately near critical (< 1000 pcm)
-            max_flux_change = (
-                self.state.neutron_flux * 0.01
-            )  # Max 1% change per timestep
-        else:
-            max_flux_change = (
-                self.state.neutron_flux * 0.1
-            )  # Max 10% change per timestep
-
-        flux_dot = np.clip(flux_dot, -max_flux_change, max_flux_change)
-
-        # Delayed neutron precursor equations
-        precursor_dot = np.zeros_like(self.state.delayed_neutron_precursors)
-        for i in range(6):
-            beta_i = self.BETA / 6  # Assume equal fractions for simplicity
-            precursor_dot[i] = (
-                beta_i / self.LAMBDA_PROMPT * self.state.neutron_flux
-                - self.LAMBDA[i] * self.state.delayed_neutron_precursors[i]
-            )
-
-        return flux_dot, precursor_dot
-
-    def thermal_hydraulics(self) -> Dict[str, float]:
-        """Calculate thermal hydraulic parameters"""
-        # Power from neutron flux (simplified conversion)
-        # Limit thermal power to reasonable range
-        thermal_power = np.clip(
-            self.state.neutron_flux / 1e12 * 3000e6, 0, 4000e6
-        )  # Watts (max 4000 MW)
-
-        # For steady state operation, use much more conservative thermal dynamics
-        # to prevent temperature spikes that cause SCRAM
-
-        # Fuel temperature dynamics - much more conservative
-        heat_removal = self.heat_transfer_coefficient() * (
-            self.state.fuel_temperature - self.state.coolant_temperature
-        )
-        fuel_temp_dot = (thermal_power - heat_removal) / (
-            self.FUEL_MASS * self.FUEL_HEAT_CAPACITY
-        )
-
-        # For steady state, limit temperature changes very strictly
-        if abs(self.state.power_level - 100.0) < 5.0:  # Near 100% power
-            fuel_temp_dot = np.clip(
-                fuel_temp_dot, -1.0, 1.0
-            )  # Max 1°C/s change for steady state
-        else:
-            fuel_temp_dot = np.clip(
-                fuel_temp_dot, -10, 10
-            )  # Max 10°C/s change for transients
-
-        # Coolant temperature dynamics - more conservative
-        coolant_heat_gain = heat_removal
-        coolant_heat_loss = (
-            self.state.coolant_flow_rate
-            * self.COOLANT_HEAT_CAPACITY
-            * (self.state.coolant_temperature - 260)
-        )
-        coolant_temp_dot = (coolant_heat_gain - coolant_heat_loss) / (
-            self.COOLANT_MASS * self.COOLANT_HEAT_CAPACITY
-        )
-
-        # For steady state, limit coolant temperature changes
-        if abs(self.state.power_level - 100.0) < 5.0:  # Near 100% power
-            coolant_temp_dot = np.clip(
-                coolant_temp_dot, -0.5, 0.5
-            )  # Max 0.5°C/s change for steady state
-        else:
-            coolant_temp_dot = np.clip(
-                coolant_temp_dot, -5, 5
-            )  # Max 5°C/s change for transients
-
-        # Pressure dynamics (simplified) - more stable
-        pressure_dot = 0.01 * (self.state.coolant_temperature - 280) - 0.001 * (
-            self.state.coolant_pressure - 15.5
-        )
-        pressure_dot = np.clip(pressure_dot, -0.1, 0.1)  # Max 0.1 MPa/s change
-
-        return {
-            "fuel_temp_dot": fuel_temp_dot,
-            "coolant_temp_dot": coolant_temp_dot,
-            "pressure_dot": pressure_dot,
-            "thermal_power": thermal_power,
-        }
-
-    def thermal_hydraulics_from_power(self, thermal_power: float) -> Dict[str, float]:
-        """Calculate thermal hydraulic parameters from given thermal power"""
-        # Fuel temperature dynamics
-        heat_removal = self.heat_transfer_coefficient() * (
-            self.state.fuel_temperature - self.state.coolant_temperature
-        )
-        fuel_temp_dot = (thermal_power - heat_removal) / (
-            self.FUEL_MASS * self.FUEL_HEAT_CAPACITY
-        )
-
-        # For steady state, limit temperature changes very strictly
-        if abs(self.state.power_level - 100.0) < 5.0:  # Near 100% power
-            fuel_temp_dot = np.clip(
-                fuel_temp_dot, -1.0, 1.0
-            )  # Max 1°C/s change for steady state
-        else:
-            fuel_temp_dot = np.clip(
-                fuel_temp_dot, -10, 10
-            )  # Max 10°C/s change for transients
-
-        # Coolant temperature dynamics
-        coolant_heat_gain = heat_removal
-        coolant_heat_loss = (
-            self.state.coolant_flow_rate
-            * self.COOLANT_HEAT_CAPACITY
-            * (self.state.coolant_temperature - 260)
-        )
-        coolant_temp_dot = (coolant_heat_gain - coolant_heat_loss) / (
-            self.COOLANT_MASS * self.COOLANT_HEAT_CAPACITY
-        )
-
-        # For steady state, limit coolant temperature changes
-        if abs(self.state.power_level - 100.0) < 5.0:  # Near 100% power
-            coolant_temp_dot = np.clip(
-                coolant_temp_dot, -0.5, 0.5
-            )  # Max 0.5°C/s change for steady state
-        else:
-            coolant_temp_dot = np.clip(
-                coolant_temp_dot, -5, 5
-            )  # Max 5°C/s change for transients
-
-        # Pressure dynamics (simplified)
-        pressure_dot = 0.01 * (self.state.coolant_temperature - 280) - 0.001 * (
-            self.state.coolant_pressure - 15.5
-        )
-        pressure_dot = np.clip(pressure_dot, -0.1, 0.1)  # Max 0.1 MPa/s change
-
-        return {
-            "fuel_temp_dot": fuel_temp_dot,
-            "coolant_temp_dot": coolant_temp_dot,
-            "pressure_dot": pressure_dot,
-            "thermal_power": thermal_power,
-        }
-
-    def heat_transfer_coefficient(self) -> float:
-        """Calculate heat transfer coefficient based on flow rate"""
-        # Simplified correlation
-        return 50000 + 2.0 * self.state.coolant_flow_rate
-
-    def steam_cycle(self) -> Dict[str, float]:
-        """Calculate steam cycle parameters"""
-        # Steam generation rate based on heat transfer
-        steam_generation = min(
-            self.state.coolant_flow_rate * 0.05,
-            self.state.steam_valve_position / 100 * 2000,
-        )
-
-        # Steam temperature and pressure dynamics
-        steam_temp_dot = 0.1 * (
-            self.state.coolant_temperature - self.state.steam_temperature
-        )
-        steam_pressure_dot = 0.05 * (steam_generation - self.state.steam_flow_rate)
-
-        # Mass balance
-        steam_flow_dot = self.state.steam_valve_position / 100 * 20 - 10
-        feedwater_flow_dot = steam_generation - self.state.feedwater_flow_rate
-
-        return {
-            "steam_temp_dot": steam_temp_dot,
-            "steam_pressure_dot": steam_pressure_dot,
-            "steam_flow_dot": steam_flow_dot,
-            "feedwater_flow_dot": feedwater_flow_dot,
-        }
-
-    def control_rod_reactivity(self, position: float) -> float:
-        """Calculate reactivity based on control rod position"""
-        # More realistic control rod worth curve
-        # At 50% position (normal operating), reactivity should be near zero
-        # Full insertion (0%) gives large negative reactivity
-        # Full withdrawal (100%) gives moderate positive reactivity
-
-        # Normalize position to 0-1 range
-        pos_norm = position / 100.0
-
-        # S-curve reactivity relationship
-        # At 50% (0.5 normalized): reactivity ≈ 0
-        # At 0% (0.0 normalized): reactivity ≈ -0.05 (shutdown)
-        # At 100% (1.0 normalized): reactivity ≈ +0.02 (slight positive)
-        reactivity = -0.05 + 0.07 * pos_norm - 0.02 * (pos_norm - 0.5) ** 2
-
-        return reactivity
-
-    def apply_action(self, action: ControlAction, magnitude: float = 1.0):
-        """Apply control action to the system"""
-        if action == ControlAction.CONTROL_ROD_INSERT:
-            self.state.control_rod_position = max(
-                0,
-                self.state.control_rod_position
-                - self.max_control_rod_speed * self.dt * magnitude,
-            )
-
-        elif action == ControlAction.CONTROL_ROD_WITHDRAW:
-            self.state.control_rod_position = min(
-                100,
-                self.state.control_rod_position
-                + self.max_control_rod_speed * self.dt * magnitude,
-            )
-
-        elif action == ControlAction.INCREASE_COOLANT_FLOW:
-            self.state.coolant_flow_rate = min(
-                50000,
-                self.state.coolant_flow_rate
-                + self.max_flow_change_rate * self.dt * magnitude,
-            )
-
-        elif action == ControlAction.DECREASE_COOLANT_FLOW:
-            self.state.coolant_flow_rate = max(
-                5000,
-                self.state.coolant_flow_rate
-                - self.max_flow_change_rate * self.dt * magnitude,
-            )
-
-        elif action == ControlAction.OPEN_STEAM_VALVE:
-            self.state.steam_valve_position = min(
-                100,
-                self.state.steam_valve_position
-                + self.max_valve_speed * self.dt * magnitude,
-            )
-
-        elif action == ControlAction.CLOSE_STEAM_VALVE:
-            self.state.steam_valve_position = max(
-                0,
-                self.state.steam_valve_position
-                - self.max_valve_speed * self.dt * magnitude,
-            )
-
-        elif action == ControlAction.INCREASE_FEEDWATER:
-            self.state.feedwater_flow_rate = min(
-                3000,
-                self.state.feedwater_flow_rate
-                + self.max_flow_change_rate * self.dt * magnitude,
-            )
-
-        elif action == ControlAction.DECREASE_FEEDWATER:
-            self.state.feedwater_flow_rate = max(
-                200,
-                self.state.feedwater_flow_rate
-                - self.max_flow_change_rate * self.dt * magnitude,
-            )
-
-        elif action == ControlAction.DILUTE_BORON:
-            # Reduce boron concentration (add reactivity)
-            max_dilution_rate = 50.0  # ppm/s
-            self.state.boron_concentration = max(
-                0,
-                self.state.boron_concentration
-                - max_dilution_rate * self.dt * magnitude,
-            )
-
-        elif action == ControlAction.BORATE_COOLANT:
-            # Increase boron concentration (reduce reactivity)
-            max_boration_rate = 50.0  # ppm/s
-            self.state.boron_concentration = min(
-                3000,
-                self.state.boron_concentration
-                + max_boration_rate * self.dt * magnitude,
-            )
-
-    def check_safety_systems(self) -> bool:
-        """Check if safety systems should activate"""
-        scram_conditions = [
-            self.state.fuel_temperature > self.max_fuel_temp,
-            self.state.coolant_pressure > self.max_coolant_pressure,
-            self.state.coolant_flow_rate < self.min_coolant_flow,
-            self.state.power_level > 120,
-        ]
-
-        if any(scram_conditions) and not self.state.scram_status:
-            # Debug: Print which condition triggered the SCRAM
-            if self.state.fuel_temperature > self.max_fuel_temp:
-                print(
-                    f"SCRAM: Fuel temperature {self.state.fuel_temperature:.1f}°C > {self.max_fuel_temp}°C"
-                )
-            if self.state.coolant_pressure > self.max_coolant_pressure:
-                print(
-                    f"SCRAM: Coolant pressure {self.state.coolant_pressure:.1f} MPa > {self.max_coolant_pressure} MPa"
-                )
-            if self.state.coolant_flow_rate < self.min_coolant_flow:
-                print(
-                    f"SCRAM: Coolant flow {self.state.coolant_flow_rate:.1f} kg/s < {self.min_coolant_flow} kg/s"
-                )
-            if self.state.power_level > 120:
-                print(f"SCRAM: Power level {self.state.power_level:.1f}% > 120%")
-
-            self.state.scram_status = True
-            self.state.control_rod_position = 0  # All rods in
-            return True
-        return False
+            self.secondary_physics = None
+        
+        # Integration parameters for primary-secondary coupling
+        self.primary_loops = 3  # Number of primary loops
+        self.thermal_power_split = [1/3, 1/3, 1/3]  # Equal split between loops
+        
+        # Control parameters for secondary system
+        self.load_demand = 100.0  # % rated electrical load
+        self.cooling_water_temp = 25.0  # °C
+        
+        # Expose state for backward compatibility
+        self.state = self.primary_physics.state
 
     def step(
-        self, action: Optional[ControlAction] = None, magnitude: float = 1.0
+        self, action: Optional[ControlAction] = None, magnitude: float = 1.0,
+        load_demand: float = None, cooling_water_temp: float = None
     ) -> Dict:
-        """Advance simulation by one time step"""
-        # Apply control action
-        if action is not None:
-            self.apply_action(action, magnitude)
-
-        # Update heat source (this handles all heat generation logic)
-        heat_result = self.heat_source.update(
-            dt=self.dt, 
-            reactor_state=self.state, 
-            control_action=action
+        """Advance simulation by one time step with integrated primary-secondary physics"""
+        # Update control parameters if provided
+        if load_demand is not None:
+            self.load_demand = load_demand
+        if cooling_water_temp is not None:
+            self.cooling_water_temp = cooling_water_temp
+        
+        # Convert single action to control inputs format for primary physics
+        control_inputs = self._convert_action_to_control_inputs(action, magnitude)
+        
+        # Update primary physics system
+        primary_result = self.primary_physics.update_system(
+            control_inputs=control_inputs,
+            dt=self.dt
         )
         
-        # Extract heat source results
-        thermal_power_mw = heat_result['thermal_power_mw']
-        self.state.power_level = heat_result['power_percent']
+        # Initialize secondary result for backward compatibility
+        secondary_result = None
         
-        # Update neutron flux if provided
-        if 'neutron_flux' in heat_result:
-            self.state.neutron_flux = heat_result['neutron_flux']
+        # Update secondary physics system if enabled
+        if self.enable_secondary and self.secondary_physics is not None:
+            # Calculate primary-to-secondary coupling
+            primary_conditions = self._calculate_primary_to_secondary_coupling()
+            
+            # Prepare secondary control inputs
+            secondary_control_inputs = {
+                'load_demand': self.load_demand,
+                'feedwater_temp': 227.0,  # Typical feedwater temperature
+                'cooling_water_temp': self.cooling_water_temp,
+                'cooling_water_flow': 45000.0,  # Design cooling water flow
+                'vacuum_pump_operation': 1.0
+            }
+            
+            # Update secondary system
+            secondary_result = self.secondary_physics.update_system(
+                primary_conditions=primary_conditions,
+                control_inputs=secondary_control_inputs,
+                dt=self.dt
+            )
+            
+            # Apply secondary-to-primary feedback (simplified)
+            self._apply_secondary_to_primary_feedback(secondary_result)
         
-        # Update reactivity if provided
-        if 'reactivity_pcm' in heat_result:
-            total_reactivity = heat_result['reactivity_pcm']
-            self.state.reactivity = total_reactivity / 100000.0  # Convert to delta-k/k
-        else:
-            total_reactivity = 0.0
-        
-        # Get reactivity components if available
-        reactivity_components = heat_result.get('reactivity_components', {})
-
-        # Calculate thermal hydraulics based on heat source output
-        thermal_power = thermal_power_mw * 1e6  # Convert to watts
-        thermal_params = self.thermal_hydraulics_from_power(thermal_power)
-        steam_params = self.steam_cycle()
-
-        # Update thermal hydraulic state variables
-        self.state.fuel_temperature += thermal_params["fuel_temp_dot"] * self.dt
-        self.state.fuel_temperature = np.clip(self.state.fuel_temperature, 200, 2000)
-
-        self.state.coolant_temperature += thermal_params["coolant_temp_dot"] * self.dt
-        self.state.coolant_temperature = np.clip(self.state.coolant_temperature, 200, 400)
-
-        self.state.coolant_pressure += thermal_params["pressure_dot"] * self.dt
-        self.state.coolant_pressure = np.clip(self.state.coolant_pressure, 10, 20)
-
-        # Update steam cycle parameters
-        self.state.steam_temperature += steam_params["steam_temp_dot"] * self.dt
-        self.state.steam_temperature = np.clip(self.state.steam_temperature, 200, 400)
-
-        self.state.steam_pressure += steam_params["steam_pressure_dot"] * self.dt
-        self.state.steam_pressure = np.clip(self.state.steam_pressure, 1, 10)
-
-        self.state.steam_flow_rate += steam_params["steam_flow_dot"] * self.dt
-        self.state.steam_flow_rate = np.clip(self.state.steam_flow_rate, 0, 3000)
-
-        self.state.feedwater_flow_rate += steam_params["feedwater_flow_dot"] * self.dt
-        self.state.feedwater_flow_rate = np.clip(self.state.feedwater_flow_rate, 0, 3000)
-
-        # Check for NaN values and reset if necessary
-        if (
-            np.isnan(self.state.fuel_temperature)
-            or np.isnan(self.state.neutron_flux)
-            or np.isnan(self.state.coolant_temperature)
-            or np.isnan(self.state.coolant_pressure)
-        ):
-            print("Warning: NaN detected, resetting to safe values")
-            self.state.neutron_flux = 1e12
-            self.state.fuel_temperature = 600.0
-            self.state.coolant_temperature = 280.0
-            self.state.coolant_pressure = 15.5
-            self.state.power_level = 100.0
-
-        # Check safety systems
-        scram_activated = self.check_safety_systems()
-
-        # Advance time
+        # Update time
         self.time += self.dt
-
+        
         # Store history
         observation = self.get_observation()
-        self.history.append(observation.copy())
+        self.history['time'].append(self.time)
+        
+        # Primary system measurements
+        self.history['primary']['neutron_flux'].append(self.state.neutron_flux)
+        self.history['primary']['fuel_temperature'].append(self.state.fuel_temperature)
+        self.history['primary']['coolant_temperature'].append(self.state.coolant_temperature)
+        self.history['primary']['coolant_pressure'].append(self.state.coolant_pressure)
+        self.history['primary']['coolant_flow_rate'].append(self.state.coolant_flow_rate)
+        self.history['primary']['steam_temperature'].append(self.state.steam_temperature)
+        self.history['primary']['steam_pressure'].append(self.state.steam_pressure)
+        self.history['primary']['steam_flow_rate'].append(self.state.steam_flow_rate)
+        self.history['primary']['control_rod_position'].append(self.state.control_rod_position)
+        self.history['primary']['steam_valve_position'].append(self.state.steam_valve_position)
+        self.history['primary']['power_level'].append(self.state.power_level)
+        self.history['primary']['scram_status'].append(float(self.state.scram_status))
+        self.history['primary']['reactivity'].append(primary_result['total_reactivity_pcm'])
+        self.history['primary']['boron_concentration'].append(getattr(self.state, 'boron_concentration', 0.0))
+        self.history['primary']['thermal_power'].append(primary_result['thermal_power_mw'])
+        
+        # Secondary system measurements
+        if secondary_result is not None:
+            self.history['secondary']['electrical_power'].append(secondary_result['electrical_power_mw'])
+            self.history['secondary']['thermal_efficiency'].append(secondary_result['thermal_efficiency'])
+            self.history['secondary']['total_steam_flow'].append(secondary_result['total_steam_flow'])
+            self.history['secondary']['sg_avg_pressure'].append(secondary_result['sg_avg_pressure'])
+            self.history['secondary']['sg_avg_temperature'].append(secondary_result.get('sg_avg_temperature', 0.0))
+            self.history['secondary']['condenser_pressure'].append(secondary_result['condenser_pressure'])
+            self.history['secondary']['condenser_temperature'].append(secondary_result.get('condenser_temperature', 0.0))
+            self.history['secondary']['turbine_power'].append(secondary_result.get('turbine_power_mw', 0.0))
+            self.history['secondary']['generator_power'].append(secondary_result['electrical_power_mw'])
+            self.history['secondary']['feedwater_flow'].append(secondary_result.get('feedwater_flow', 0.0))
+            self.history['secondary']['feedwater_temperature'].append(227.0)  # From control inputs
+            self.history['secondary']['cooling_water_temperature'].append(self.cooling_water_temp)
+            self.history['secondary']['cooling_water_flow'].append(45000.0)  # From control inputs
+            self.history['secondary']['load_demand'].append(self.load_demand)
+            self.history['secondary']['vacuum_pump_operation'].append(1.0)  # From control inputs
+            
+            # Integration measurements
+            primary_conditions = self._calculate_primary_to_secondary_coupling()
+            self.history['integration']['primary_hot_leg_temp'].append(primary_conditions['sg_1_inlet_temp'])
+            self.history['integration']['primary_cold_leg_temp'].append(primary_conditions['sg_1_outlet_temp'])
+            self.history['integration']['heat_removal_rate'].append(primary_result['thermal_power_mw'])
+            self.history['integration']['overall_plant_efficiency'].append(secondary_result['thermal_efficiency'])
+            self.history['integration']['coupling_factor'].append(getattr(self, '_last_heat_removal_factor', 1.0))
+        else:
+            # Add default values when secondary system is not enabled
+            self.history['secondary']['electrical_power'].append(0.0)
+            self.history['secondary']['thermal_efficiency'].append(0.0)
+            self.history['secondary']['total_steam_flow'].append(0.0)
+            self.history['secondary']['sg_avg_pressure'].append(0.0)
+            self.history['secondary']['sg_avg_temperature'].append(0.0)
+            self.history['secondary']['condenser_pressure'].append(0.0)
+            self.history['secondary']['condenser_temperature'].append(0.0)
+            self.history['secondary']['turbine_power'].append(0.0)
+            self.history['secondary']['generator_power'].append(0.0)
+            self.history['secondary']['feedwater_flow'].append(0.0)
+            self.history['secondary']['feedwater_temperature'].append(0.0)
+            self.history['secondary']['cooling_water_temperature'].append(self.cooling_water_temp)
+            self.history['secondary']['cooling_water_flow'].append(0.0)
+            self.history['secondary']['load_demand'].append(self.load_demand)
+            self.history['secondary']['vacuum_pump_operation'].append(0.0)
+            self.history['integration']['primary_hot_leg_temp'].append(self.state.coolant_temperature)
+            self.history['integration']['primary_cold_leg_temp'].append(self.state.coolant_temperature)
+            self.history['integration']['heat_removal_rate'].append(primary_result['thermal_power_mw'])
+            self.history['integration']['overall_plant_efficiency'].append(0.0)
+            self.history['integration']['coupling_factor'].append(1.0)
+
+        # Prepare return information
+        info = {
+            "time": self.time,
+            "thermal_power": primary_result['thermal_power_mw'],
+            "scram_activated": primary_result['scram_activated'],
+            "reactivity": primary_result['total_reactivity_pcm'],
+            "reactivity_components": primary_result['reactivity_components'],
+        }
+        
+        # Add secondary system information if available
+        if secondary_result is not None:
+            # Calculate realistic thermal efficiency with robust error handling
+            thermal_power_mw = primary_result['thermal_power_mw']
+            electrical_power_mw = secondary_result['electrical_power_mw']
+            
+            # Robust efficiency calculation with NaN/Inf checking
+            if (thermal_power_mw > 10.0 and 
+                np.isfinite(thermal_power_mw) and 
+                np.isfinite(electrical_power_mw) and 
+                electrical_power_mw >= 0):
+                realistic_efficiency = electrical_power_mw / thermal_power_mw
+                # Cap efficiency at reasonable values (max 40% for nuclear plants)
+                realistic_efficiency = min(max(realistic_efficiency, 0.0), 0.40)
+            else:
+                realistic_efficiency = 0.0  # No efficiency when reactor is shut down or invalid values
+            
+            # Validate all secondary system values before using them
+            electrical_power = secondary_result['electrical_power_mw'] if np.isfinite(secondary_result['electrical_power_mw']) else 0.0
+            steam_flow = secondary_result['total_steam_flow'] if np.isfinite(secondary_result['total_steam_flow']) else 1665.0
+            steam_pressure = secondary_result['sg_avg_pressure'] if np.isfinite(secondary_result['sg_avg_pressure']) else 6.895
+            condenser_pressure = secondary_result['condenser_pressure'] if np.isfinite(secondary_result['condenser_pressure']) else 0.007
+            
+            info.update({
+                "electrical_power": electrical_power,
+                "thermal_efficiency": realistic_efficiency,
+                "steam_flow": steam_flow,
+                "steam_pressure": steam_pressure,
+                "condenser_pressure": condenser_pressure,
+                "secondary_system": secondary_result
+            })
 
         # Return step information
         return {
             "observation": observation,
-            "reward": self.calculate_reward(),
-            "done": scram_activated,
-            "info": {
-                "time": self.time,
-                "thermal_power": thermal_power_mw,
-                "scram_activated": scram_activated,
-                "reactivity": total_reactivity,  # Return in pcm
-                "reactivity_components": reactivity_components,
-            },
+            "reward": self.calculate_reward(secondary_result),
+            "done": primary_result['scram_activated'],
+            "info": info,
         }
+    
+    def _convert_action_to_control_inputs(self, action: Optional[ControlAction], magnitude: float) -> dict:
+        """Convert single action to control inputs format for primary physics"""
+        control_inputs = {
+            'control_rod_action': ControlAction.NO_ACTION,
+            'control_rod_magnitude': 0.0,
+            'coolant_flow_action': ControlAction.NO_ACTION,
+            'coolant_flow_magnitude': 0.0,
+            'boron_action': ControlAction.NO_ACTION,
+            'boron_magnitude': 0.0,
+            'steam_valve_action': ControlAction.NO_ACTION,
+            'steam_valve_magnitude': 0.0,
+            'primary_action': action if action is not None else ControlAction.NO_ACTION
+        }
+        
+        if action is not None:
+            if action in [ControlAction.CONTROL_ROD_INSERT, ControlAction.CONTROL_ROD_WITHDRAW]:
+                control_inputs['control_rod_action'] = action
+                control_inputs['control_rod_magnitude'] = magnitude
+            elif action in [ControlAction.INCREASE_COOLANT_FLOW, ControlAction.DECREASE_COOLANT_FLOW]:
+                control_inputs['coolant_flow_action'] = action
+                control_inputs['coolant_flow_magnitude'] = magnitude
+            elif action in [ControlAction.DILUTE_BORON, ControlAction.BORATE_COOLANT]:
+                control_inputs['boron_action'] = action
+                control_inputs['boron_magnitude'] = magnitude
+            elif action in [ControlAction.OPEN_STEAM_VALVE, ControlAction.CLOSE_STEAM_VALVE]:
+                control_inputs['steam_valve_action'] = action
+                control_inputs['steam_valve_magnitude'] = magnitude
+        
+        return control_inputs
 
     def get_observation(self) -> np.ndarray:
         """Get current state as observation vector for RL"""
-        return np.array(
-            [
-                self.state.neutron_flux / 1e12,  # Normalized flux
-                self.state.fuel_temperature / 1000,  # Normalized temperature
-                self.state.coolant_temperature / 300,
-                self.state.coolant_pressure / 20,
-                self.state.coolant_flow_rate / 50000,
-                self.state.steam_temperature / 300,
-                self.state.steam_pressure / 10,
-                self.state.steam_flow_rate / 3000,
-                self.state.control_rod_position / 100,
-                self.state.steam_valve_position / 100,
-                self.state.power_level / 100,
-                float(self.state.scram_status),
+        # Base primary system observations
+        primary_obs = [
+            self.state.neutron_flux / 1e12,  # Normalized flux
+            self.state.fuel_temperature / 1000,  # Normalized temperature
+            self.state.coolant_temperature / 300,
+            self.state.coolant_pressure / 20,
+            self.state.coolant_flow_rate / 50000,
+            self.state.steam_temperature / 300,
+            self.state.steam_pressure / 10,
+            self.state.steam_flow_rate / 3000,
+            self.state.control_rod_position / 100,
+            self.state.steam_valve_position / 100,
+            self.state.power_level / 100,
+            float(self.state.scram_status),
+        ]
+        
+        # Add secondary system observations if available
+        if self.enable_secondary and self.secondary_physics is not None:
+            # Get secondary system state
+            secondary_state = self.secondary_physics.get_system_state()
+            
+            secondary_obs = [
+                secondary_state['electrical_power_output'] / 1100,  # Normalized electrical power
+                secondary_state['thermal_efficiency'] / 0.35,  # Normalized efficiency
+                secondary_state['total_steam_flow'] / 1665,  # Normalized steam flow
+                secondary_state['load_demand'] / 100,  # Normalized load demand
+                secondary_state['feedwater_temperature'] / 250,  # Normalized feedwater temp
+                secondary_state['cooling_water_temperature'] / 35,  # Normalized cooling water temp
             ]
-        )
+            
+            return np.array(primary_obs + secondary_obs)
+        
+        return np.array(primary_obs)
 
-    def calculate_reward(self) -> float:
-        """Calculate reward for RL training"""
+    def _calculate_primary_to_secondary_coupling(self) -> dict:
+        """
+        Calculate the coupling between primary and secondary systems
+        
+        This is the key integration point where:
+        1. Primary thermal power is transferred to secondary via steam generators
+        2. Primary coolant temperatures are calculated based on heat removal
+        3. Secondary steam conditions are determined by primary heat input
+        
+        Returns:
+            Dictionary with coupling parameters for each steam generator
+        """
+        # Get primary thermal power from reactor physics
+        primary_thermal_power = self.state.power_level / 100.0 * 3000.0  # MW
+        
+        # Calculate primary coolant conditions based on reactor physics
+        # Hot leg temperature should be based on fuel temperature and power level
+        # Typical PWR: fuel temp ~600°C, coolant outlet (hot leg) ~327°C
+        fuel_to_coolant_delta = 280.0  # Typical temperature difference between fuel and coolant
+        primary_hot_leg_temp = max(self.state.fuel_temperature - fuel_to_coolant_delta, 280.0)
+        
+        # Ensure hot leg temperature is within realistic PWR operating range
+        primary_hot_leg_temp = np.clip(primary_hot_leg_temp, 280.0, 340.0)
+        
+        # Heat removal in steam generators determines cold leg temperature
+        # Q = m_dot * cp * (T_hot - T_cold)
+        # Assuming total primary flow of 17,100 kg/s (typical PWR)
+        total_primary_flow = 17100.0  # kg/s
+        cp_primary = 5.2  # kJ/kg/K at PWR conditions
+        
+        # Calculate cold leg temperature based on heat removal
+        heat_removed_mw = primary_thermal_power  # Assume all heat goes to steam generators
+        if total_primary_flow > 0 and cp_primary > 0:
+            delta_t_primary = heat_removed_mw * 1000.0 / (total_primary_flow * cp_primary)
+        else:
+            delta_t_primary = 34.0  # Default PWR temperature drop
+        
+        # Ensure reasonable temperature drop (typical PWR: 30-40°C)
+        delta_t_primary = np.clip(delta_t_primary, 25.0, 50.0)
+        
+        primary_cold_leg_temp = primary_hot_leg_temp - delta_t_primary
+        
+        # Ensure cold leg temperature is within realistic PWR operating range
+        primary_cold_leg_temp = np.clip(primary_cold_leg_temp, 260.0, 310.0)
+        
+        # Don't override the thermal hydraulics calculation - let it handle coolant temperature
+        # The thermal hydraulics model already accounts for heat removal and thermal dynamics
+        # Only use the calculated temperatures for secondary system interface
+        pass
+        
+        # Calculate conditions for each steam generator loop
+        primary_conditions = {}
+        flow_per_loop = total_primary_flow / self.primary_loops
+        
+        for i in range(self.primary_loops):
+            sg_key = f'sg_{i+1}'
+            
+            # Each steam generator sees the same inlet conditions
+            primary_conditions[f'{sg_key}_inlet_temp'] = primary_hot_leg_temp
+            primary_conditions[f'{sg_key}_outlet_temp'] = primary_cold_leg_temp
+            primary_conditions[f'{sg_key}_flow'] = flow_per_loop
+            
+        return primary_conditions
+    
+    def _apply_secondary_to_primary_feedback(self, secondary_result: dict) -> None:
+        """
+        Apply feedback from secondary to primary systems
+        
+        This includes:
+        1. Steam demand affecting primary heat removal
+        2. Feedwater temperature affecting steam generator performance
+        3. Load demand affecting overall plant operation
+        
+        Args:
+            secondary_result: Results from secondary system update
+        """
+        # Steam demand affects primary heat removal rate
+        steam_demand = secondary_result['total_steam_flow']  # kg/s
+        
+        # Higher steam demand -> more heat removal -> lower primary temperature
+        # This is a simplified feedback model
+        heat_removal_factor = steam_demand / 1665.0  # Normalize to design flow
+        
+        # Electrical load affects steam demand
+        electrical_load = secondary_result['electrical_power_mw']
+        load_factor = electrical_load / 1100.0  # Normalize to design power
+        
+        # Apply simplified feedback (in a real plant this would be more complex)
+        # For now, we just store the feedback factors for potential future use
+        self._last_heat_removal_factor = heat_removal_factor
+        self._last_load_factor = load_factor
+
+    def calculate_reward(self, secondary_result: dict = None) -> float:
+        """Calculate reward for RL training with optional secondary system performance"""
         # Target power level around 100%
         power_error = abs(self.state.power_level - 100)
         power_reward = -power_error / 100
@@ -586,71 +440,121 @@ class NuclearPlantSimulator:
         # Scram penalty
         scram_penalty = -100 if self.state.scram_status else 0
 
-        return power_reward + temp_penalty + pressure_penalty + scram_penalty
+        base_reward = power_reward + temp_penalty + pressure_penalty + scram_penalty
+        
+        # Add secondary system performance if available
+        if secondary_result is not None:
+            # Efficiency reward - higher efficiency is better
+            efficiency_reward = (secondary_result['thermal_efficiency'] - 0.30) * 10  # Normalize around 30% efficiency
+            
+            # Electrical power stability reward
+            target_electrical_power = self.load_demand / 100.0 * 1100.0  # MW
+            electrical_error = abs(secondary_result['electrical_power_mw'] - target_electrical_power)
+            electrical_reward = -electrical_error / 100
+            
+            # Steam system stability
+            steam_pressure_penalty = 0
+            if secondary_result['sg_avg_pressure'] < 5.0 or secondary_result['sg_avg_pressure'] > 8.0:
+                steam_pressure_penalty = -abs(secondary_result['sg_avg_pressure'] - 6.895) * 5
+            
+            # Condenser performance
+            condenser_penalty = 0
+            if secondary_result['condenser_pressure'] > 0.01:  # Poor vacuum
+                condenser_penalty = -(secondary_result['condenser_pressure'] - 0.007) * 100
+            
+            secondary_reward = efficiency_reward + electrical_reward + steam_pressure_penalty + condenser_penalty
+            return base_reward + secondary_reward * 0.5  # Weight secondary performance at 50%
+        
+        return base_reward
 
     def reset(self):
         """Reset simulation to initial conditions"""
-        self.state = ReactorState()
+        self.primary_physics.reset_system()
+        if self.enable_secondary and self.secondary_physics is not None:
+            self.secondary_physics.reset_system()
+        
+        self.state = self.primary_physics.state
         self.time = 0.0
-        self.history = []
+        # Reset history by clearing all lists in the hierarchical structure
+        self.history['time'] = []
+        for category in ['primary', 'secondary', 'integration']:
+            for key in self.history[category]:
+                self.history[category][key] = []
+        
+        # Reset control parameters
+        self.load_demand = 100.0
+        self.cooling_water_temp = 25.0
+        
         return self.get_observation()
 
     def plot_parameters(self, parameters: List[str] = None, time_window: int = None):
-        """Plot selected parameters over time"""
-        if not self.history:
+        """Plot selected parameters over time using hierarchical history structure"""
+        if not self.history['time']:
             print("No simulation data to plot")
             return
 
         if parameters is None:
             parameters = [
-                "power_level",
-                "fuel_temperature",
-                "coolant_temperature",
-                "coolant_pressure",
-                "control_rod_position",
+                "primary.power_level",
+                "primary.fuel_temperature", 
+                "primary.coolant_temperature",
+                "primary.coolant_pressure",
+                "primary.control_rod_position",
             ]
 
-        history_array = np.array(self.history)
+        # Get time data
+        time_data = np.array(self.history['time'])
         if time_window:
-            history_array = history_array[-time_window:]
-
-        time_axis = np.arange(len(history_array)) * self.dt
+            time_data = time_data[-time_window:]
 
         fig, axes = plt.subplots(len(parameters), 1, figsize=(12, 3 * len(parameters)))
         if len(parameters) == 1:
             axes = [axes]
 
-        param_map = {
-            "power_level": (10, "Power Level (%)"),
-            "fuel_temperature": (1, "Fuel Temperature (°C)"),
-            "coolant_temperature": (2, "Coolant Temperature (°C)"),
-            "coolant_pressure": (3, "Coolant Pressure (MPa)"),
-            "control_rod_position": (8, "Control Rod Position (%)"),
-            "steam_flow_rate": (7, "Steam Flow Rate (kg/s)"),
-        }
-
         for i, param in enumerate(parameters):
-            if param in param_map:
-                idx, ylabel = param_map[param]
-                # Denormalize the data
-                if param == "power_level":
-                    data = history_array[:, idx] * 100
-                elif param == "fuel_temperature":
-                    data = history_array[:, idx] * 1000
-                elif param == "coolant_temperature":
-                    data = history_array[:, idx] * 300
-                elif param == "coolant_pressure":
-                    data = history_array[:, idx] * 20
-                elif param == "control_rod_position":
-                    data = history_array[:, idx] * 100
-                elif param == "steam_flow_rate":
-                    data = history_array[:, idx] * 3000
+            # Parse hierarchical parameter name (e.g., "primary.power_level")
+            if '.' in param:
+                category, param_name = param.split('.', 1)
+                if category in self.history and param_name in self.history[category]:
+                    data = np.array(self.history[category][param_name])
+                    if time_window:
+                        data = data[-time_window:]
+                    
+                    # Create readable labels
+                    ylabel = param_name.replace('_', ' ').title()
+                    if 'temperature' in param_name.lower():
+                        ylabel += " (°C)"
+                    elif 'pressure' in param_name.lower():
+                        ylabel += " (MPa)"
+                    elif 'power' in param_name.lower() or 'level' in param_name.lower():
+                        ylabel += " (%)" if 'level' in param_name.lower() else " (MW)"
+                    elif 'position' in param_name.lower():
+                        ylabel += " (%)"
+                    elif 'flow' in param_name.lower():
+                        ylabel += " (kg/s)"
+                    elif 'efficiency' in param_name.lower():
+                        ylabel += " (%)"
+                        data = data * 100  # Convert to percentage
+                    
+                    axes[i].plot(time_data, data, linewidth=2)
+                    axes[i].set_ylabel(ylabel)
+                    axes[i].grid(True, alpha=0.3)
+                    axes[i].set_title(f"{category.title()} - {ylabel}")
                 else:
-                    data = history_array[:, idx]
-
-                axes[i].plot(time_axis, data)
-                axes[i].set_ylabel(ylabel)
-                axes[i].grid(True)
+                    print(f"Parameter {param} not found in history")
+            else:
+                # Handle legacy parameter names for backward compatibility
+                if param in self.history['primary']:
+                    data = np.array(self.history['primary'][param])
+                    if time_window:
+                        data = data[-time_window:]
+                    
+                    ylabel = param.replace('_', ' ').title()
+                    axes[i].plot(time_data, data, linewidth=2)
+                    axes[i].set_ylabel(ylabel)
+                    axes[i].grid(True, alpha=0.3)
+                else:
+                    print(f"Parameter {param} not found in primary history")
 
         axes[-1].set_xlabel("Time (s)")
         plt.tight_layout()
@@ -659,39 +563,79 @@ class NuclearPlantSimulator:
 
 # Example usage and testing
 def run_simulation_example():
-    """Example of running the nuclear plant simulation"""
-    print("Nuclear Power Plant Digital Twin Simulation")
-    print("=" * 50)
+    """Example of running the integrated nuclear plant simulation"""
+    print("Integrated Nuclear Power Plant Digital Twin Simulation")
+    print("=" * 60)
 
-    # Create simulator
-    sim = NuclearPlantSimulator(dt=1.0)
+    # Create simulator with integrated primary-secondary physics
+    sim = NuclearPlantSimulator(dt=1.0, enable_secondary=True)
+    sim.primary_physics.state = create_equilibrium_state()
 
-    # Run simulation with some control actions
-    print("Running simulation with control actions...")
+    print("System Configuration:")
+    print(f"  Primary Reactor: 3000 MW thermal")
+    print(f"  Steam Generators: 3 units")
+    print(f"  Secondary System: Enabled")
+    print(f"  Observation Space: {len(sim.get_observation())} parameters")
+    print()
+
+    # Run simulation with some control actions and load changes
+    print("Running integrated simulation with control actions and load changes...")
+    print(f"{'Time':<6} {'Primary %':<10} {'Electrical MW':<12} {'Efficiency %':<12} {'Load %':<8} {'Action':<20}")
+    print("-" * 78)
 
     for t in range(300):  # 5 minutes
+        # Define control actions
         if t == 60:  # At 1 minute, withdraw control rods
             action = ControlAction.CONTROL_ROD_WITHDRAW
-        elif t == 120:  # At 2 minutes, increase steam valve opening
-            action = ControlAction.OPEN_STEAM_VALVE
+            action_name = "Rod Withdraw"
+        elif t == 120:  # At 2 minutes, reduce load
+            action = ControlAction.CONTROL_ROD_WITHDRAW
+            action_name = "Rod Withdraw"
         elif t == 180:  # At 3 minutes, insert control rods
-            action = ControlAction.CONTROL_ROD_INSERT
+            action = ControlAction.NO_ACTION
+            action_name = "Load Reduction"
         elif t == 240:  # At 4 minutes, increase coolant flow
             action = ControlAction.INCREASE_COOLANT_FLOW
+            action_name = "Coolant Flow Up"
         else:
             action = ControlAction.NO_ACTION
+            action_name = "No Action"
 
-        result = sim.step(action)
+        # Define load demand profile
+        if t < 60:
+            load_demand = 100.0
+        elif t < 120:
+            load_demand = 100.0
+        elif t < 180:
+            load_demand = 100.  # Load reduction
+        elif t < 240:
+            load_demand = 100.0
+        else:
+            load_demand = 100.0  # Load increase
+
+        # Step simulation with integrated physics
+        result = sim.step(action, load_demand=load_demand, cooling_water_temp=25.0)
 
         # Print status every 30 seconds
         if t % 30 == 0:
-            print(
-                f"Time: {sim.time:6.1f}s | Power: {sim.state.power_level:6.1f}% | "
-                f"Fuel Temp: {sim.state.fuel_temperature:6.1f}°C | "
-                f"Rod Pos: {sim.state.control_rod_position:5.1f}%"
-            )
+            electrical_power = result['info'].get('electrical_power', 0.0)
+            thermal_efficiency = result['info'].get('thermal_efficiency', 0.0) * 100
+            
+            print(f"{t:<6} {sim.state.power_level:<10.1f} "
+                  f"{electrical_power:<12.1f} "
+                  f"{thermal_efficiency:<12.2f} "
+                  f"{load_demand:<8.0f} "
+                  f"{action_name:<20}")
 
-    print(f"\nSimulation completed. Final power level: {sim.state.power_level:.1f}%")
+    print(f"\nSimulation completed. Final state:")
+    print(f"  Primary Power Level: {sim.state.power_level:.1f}%")
+    
+    if 'electrical_power' in result['info']:
+        print(f"  Electrical Power Output: {result['info']['electrical_power']:.1f} MW")
+        print(f"  Thermal: Efficiency: {result['info']['thermal_efficiency']*100:.2f}%")
+        print(f"  Steam Flow Rate: {result['info']['steam_flow']:.0f} kg/s")
+        print(f"  Steam Pressure: {result['info']['steam_pressure']:.2f} MPa")
+        print(f"  Condenser Pressure: {result['info']['condenser_pressure']:.4f} MPa")
 
     # Plot results
     sim.plot_parameters(
@@ -710,24 +654,29 @@ def run_simulation_example():
 class NuclearPlantEnv:
     """Gym-style environment wrapper for RL training"""
 
-    def __init__(self):
-        self.sim = NuclearPlantSimulator()
+    def __init__(self, enable_secondary: bool = True):
+        self.sim = NuclearPlantSimulator(enable_secondary=enable_secondary)
         self.action_space_size = len(ControlAction)
-        self.observation_space_size = 12
+        # Dynamic observation space size based on secondary system
+        self.observation_space_size = 18 if enable_secondary else 12
 
-    def step(self, action_idx: int):
+    def step(self, action_idx: int, load_demand: float = None, cooling_water_temp: float = None):
         action = ControlAction(action_idx)
-        result = self.sim.step(action)
+        result = self.sim.step(action, load_demand=load_demand, cooling_water_temp=cooling_water_temp)
         return (result["observation"], result["reward"], result["done"], result["info"])
 
     def reset(self):
         return self.sim.reset()
 
     def render(self):
-        print(
-            f"Time: {self.sim.time:6.1f}s | Power: {self.sim.state.power_level:6.1f}% | "
-            f"Fuel Temp: {self.sim.state.fuel_temperature:6.1f}°C"
-        )
+        info_str = (f"Time: {self.sim.time:6.1f}s | Power: {self.sim.state.power_level:6.1f}% | "
+                   f"Fuel Temp: {self.sim.state.fuel_temperature:6.1f}°C")
+        
+        # Add secondary system info if available
+        if self.sim.enable_secondary and hasattr(self.sim, '_last_load_factor'):
+            info_str += f" | Load: {self.sim.load_demand:5.1f}%"
+        
+        print(info_str)
 
 
 if __name__ == "__main__":

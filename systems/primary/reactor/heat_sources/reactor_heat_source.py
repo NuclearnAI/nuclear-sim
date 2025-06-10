@@ -24,17 +24,18 @@ class ReactorHeatSource(HeatSource):
         """
         super().__init__(rated_power_mw)
 
-        # Import reactivity model
+        # Import physics models
         from ..reactivity_model import ReactivityModel
+        from ..physics.point_kinetics import PointKineticsModel
+        from ..physics.thermal_hydraulics import ThermalHydraulicsModel
+        from ..physics.neutronics import NeutronicsModel
+        from ..safety.scram_logic import ScramSystem
 
         self.reactivity_model = ReactivityModel()
-
-        # Physics constants
-        self.BETA = 0.0065  # Total delayed neutron fraction
-        self.LAMBDA = np.array(
-            [0.077, 0.311, 1.40, 3.87, 1.40, 0.195]
-        )  # Decay constants
-        self.LAMBDA_PROMPT = 1e-5  # Prompt neutron generation time
+        self.point_kinetics = PointKineticsModel()
+        self.thermal_hydraulics = ThermalHydraulicsModel()
+        self.neutronics = NeutronicsModel()
+        self.scram_system = ScramSystem()
 
     def update(self, dt: float, **kwargs) -> Dict[str, Any]:
         """
@@ -79,24 +80,19 @@ class ReactorHeatSource(HeatSource):
         if reactor_state.scram_status:
             reactivity = -0.5  # Large negative reactivity during scram
 
-        # Solve point kinetics equations
-        flux_dot, precursor_dot = self._point_kinetics(reactivity, reactor_state)
+        # Solve point kinetics equations using the physics model
+        flux_dot, precursor_dot = self.point_kinetics.solve_point_kinetics(reactivity, reactor_state)
 
-        # Update neutron flux
-        reactor_state.neutron_flux += flux_dot * dt
-        reactor_state.neutron_flux = np.clip(reactor_state.neutron_flux, 1e8, 1e14)
+        # Update neutron flux using the physics model
+        self.point_kinetics.update_neutron_flux(reactor_state, flux_dot, dt)
 
-        # Update delayed neutron precursors
-        if reactor_state.delayed_neutron_precursors is not None:
-            reactor_state.delayed_neutron_precursors += precursor_dot * dt
-            reactor_state.delayed_neutron_precursors = np.clip(
-                reactor_state.delayed_neutron_precursors, 0, 1
-            )
+        # Update delayed neutron precursors using the physics model
+        self.point_kinetics.update_precursors(reactor_state, precursor_dot, dt)
 
-        # Calculate thermal power from neutron flux
-        thermal_power_mw = np.clip(reactor_state.neutron_flux / 1e12 * 3000, 0, 4000)
-        power_percent = (reactor_state.neutron_flux / 1e13) * 100
-        power_percent = np.clip(power_percent, 0, 150)
+        # Calculate thermal power from neutron flux using the physics model
+        thermal_power_mw, power_percent = self.point_kinetics.calculate_power_from_flux(
+            reactor_state.neutron_flux, self.rated_power_mw
+        )
 
         # Update reactor state power level
         reactor_state.power_level = power_percent
@@ -111,54 +107,6 @@ class ReactorHeatSource(HeatSource):
             "reactivity_components": reactivity_components,
         }
 
-    def _point_kinetics(self, reactivity: float, reactor_state) -> tuple:
-        """Solve point kinetics equations for neutron flux"""
-        # Limit reactivity to prevent numerical instability
-        reactivity = np.clip(reactivity, -0.9, 0.1)
-
-        # For steady state operation, use conservative integration
-        if abs(reactivity) < 0.01:  # Near critical
-            flux_dot = 0.0
-            precursor_dot = np.zeros_like(reactor_state.delayed_neutron_precursors)
-            return flux_dot, precursor_dot
-
-        # For very small reactivity changes, use conservative approach
-        if abs(reactivity) < 0.01:  # < 1000 pcm
-            effective_reactivity = reactivity * 0.01  # Reduce sensitivity
-        else:
-            effective_reactivity = reactivity
-
-        # Point kinetics with delayed neutrons
-        flux_dot = (
-            (effective_reactivity - self.BETA)
-            / self.LAMBDA_PROMPT
-            * reactor_state.neutron_flux
-        )
-        for i in range(6):
-            flux_dot += self.LAMBDA[i] * reactor_state.delayed_neutron_precursors[i]
-
-        # Conservative flux changes for stability
-        if abs(reactivity) < 0.0001:  # Very near critical
-            max_flux_change = reactor_state.neutron_flux * 0.0001
-        elif abs(reactivity) < 0.001:  # Near critical
-            max_flux_change = reactor_state.neutron_flux * 0.001
-        elif abs(reactivity) < 0.01:  # Moderately near critical
-            max_flux_change = reactor_state.neutron_flux * 0.01
-        else:
-            max_flux_change = reactor_state.neutron_flux * 0.1
-
-        flux_dot = np.clip(flux_dot, -max_flux_change, max_flux_change)
-
-        # Delayed neutron precursor equations
-        precursor_dot = np.zeros_like(reactor_state.delayed_neutron_precursors)
-        for i in range(6):
-            beta_i = self.BETA / 6  # Assume equal fractions
-            precursor_dot[i] = (
-                beta_i / self.LAMBDA_PROMPT * reactor_state.neutron_flux
-                - self.LAMBDA[i] * reactor_state.delayed_neutron_precursors[i]
-            )
-
-        return flux_dot, precursor_dot
 
     def get_thermal_power_mw(self) -> float:
         """Get current thermal power output"""
