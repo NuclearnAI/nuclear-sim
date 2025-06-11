@@ -51,6 +51,7 @@ class NuclearPlantSimulator:
                 'total_steam_flow': [],
                 'sg_avg_pressure': [],
                 'sg_avg_temperature': [],
+                'sg_avg_steam_quality': [],
                 'condenser_pressure': [],
                 'condenser_temperature': [],
                 'turbine_power': [],
@@ -115,6 +116,9 @@ class NuclearPlantSimulator:
             dt=self.dt
         )
         
+        # TODO: This is awful code
+        self.state = self.primary_physics.state
+        
         # Initialize secondary result for backward compatibility
         secondary_result = None
         
@@ -172,6 +176,7 @@ class NuclearPlantSimulator:
             self.history['secondary']['thermal_efficiency'].append(secondary_result['thermal_efficiency'])
             self.history['secondary']['total_steam_flow'].append(secondary_result['total_steam_flow'])
             self.history['secondary']['sg_avg_pressure'].append(secondary_result['sg_avg_pressure'])
+            self.history['secondary']['sg_avg_steam_quality'].append(secondary_result['sg_avg_steam_quality'])
             self.history['secondary']['sg_avg_temperature'].append(secondary_result.get('sg_avg_temperature', 0.0))
             self.history['secondary']['condenser_pressure'].append(secondary_result['condenser_pressure'])
             self.history['secondary']['condenser_temperature'].append(secondary_result.get('condenser_temperature', 0.0))
@@ -229,19 +234,25 @@ class NuclearPlantSimulator:
             thermal_power_mw = primary_result['thermal_power_mw']
             electrical_power_mw = secondary_result['electrical_power_mw']
             
-            # Robust efficiency calculation with NaN/Inf checking
-            if (thermal_power_mw > 10.0 and 
-                np.isfinite(thermal_power_mw) and 
-                np.isfinite(electrical_power_mw) and 
-                electrical_power_mw >= 0):
-                realistic_efficiency = electrical_power_mw / thermal_power_mw
-                # Cap efficiency at reasonable values (max 40% for nuclear plants)
-                realistic_efficiency = min(max(realistic_efficiency, 0.0), 0.40)
+            # Hard cutoff: if thermal power is effectively zero, force electrical power to zero
+            if thermal_power_mw < 50.0:  # Less than 50 MW thermal (minimum for meaningful generation)
+                electrical_power_mw = 0.0
+                realistic_efficiency = 0.0
+                print(f"DEBUG: Forcing electrical power to zero - thermal power too low: {thermal_power_mw:.3f} MW")
             else:
-                realistic_efficiency = 0.0  # No efficiency when reactor is shut down or invalid values
+                # Robust efficiency calculation with NaN/Inf checking
+                if (thermal_power_mw > 10.0 and 
+                    np.isfinite(thermal_power_mw) and 
+                    np.isfinite(electrical_power_mw) and 
+                    electrical_power_mw >= 0):
+                    realistic_efficiency = electrical_power_mw / thermal_power_mw
+                    # Cap efficiency at reasonable values (max 40% for nuclear plants)
+                    realistic_efficiency = min(max(realistic_efficiency, 0.0), 0.40)
+                else:
+                    realistic_efficiency = 0.0  # No efficiency when reactor is shut down or invalid values
             
             # Validate all secondary system values before using them
-            electrical_power = secondary_result['electrical_power_mw'] if np.isfinite(secondary_result['electrical_power_mw']) else 0.0
+            electrical_power = electrical_power_mw if np.isfinite(electrical_power_mw) else 0.0
             steam_flow = secondary_result['total_steam_flow'] if np.isfinite(secondary_result['total_steam_flow']) else 1665.0
             steam_pressure = secondary_result['sg_avg_pressure'] if np.isfinite(secondary_result['sg_avg_pressure']) else 6.895
             condenser_pressure = secondary_result['condenser_pressure'] if np.isfinite(secondary_result['condenser_pressure']) else 0.007
@@ -344,41 +355,47 @@ class NuclearPlantSimulator:
         # Get primary thermal power from reactor physics
         primary_thermal_power = self.state.power_level / 100.0 * 3000.0  # MW
         
-        # Calculate primary coolant conditions based on reactor physics
-        # Hot leg temperature should be based on fuel temperature and power level
-        # Typical PWR: fuel temp ~600°C, coolant outlet (hot leg) ~327°C
-        fuel_to_coolant_delta = 280.0  # Typical temperature difference between fuel and coolant
-        primary_hot_leg_temp = max(self.state.fuel_temperature - fuel_to_coolant_delta, 280.0)
+        # FIXED: Calculate realistic PWR hot leg and cold leg temperatures
+        # Based on power level and realistic PWR operating conditions
+        power_fraction = self.state.power_level / 100.0
         
-        # Ensure hot leg temperature is within realistic PWR operating range
-        primary_hot_leg_temp = np.clip(primary_hot_leg_temp, 280.0, 340.0)
+        # Realistic PWR temperatures based on power level
+        # At 100% power: Hot leg = 327°C, Cold leg = 293°C
+        # At 0% power: Both approach cold leg temperature
+        primary_hot_leg_temp = 293.0 + (34.0 * power_fraction)  # 293°C to 327°C
+        primary_cold_leg_temp = 293.0  # Cold leg stays relatively constant
         
-        # Heat removal in steam generators determines cold leg temperature
-        # Q = m_dot * cp * (T_hot - T_cold)
-        # Assuming total primary flow of 17,100 kg/s (typical PWR)
-        total_primary_flow = 17100.0  # kg/s
+        # Ensure temperatures are within realistic PWR operating range
+        primary_hot_leg_temp = np.clip(primary_hot_leg_temp, 293.0, 340.0)
+        primary_cold_leg_temp = np.clip(primary_cold_leg_temp, 280.0, 300.0)
+        
+        # Ensure hot leg is always hotter than cold leg
+        if primary_hot_leg_temp <= primary_cold_leg_temp:
+            primary_hot_leg_temp = primary_cold_leg_temp + 5.0  # Minimum 5°C difference
+        
+        # Calculate realistic primary flow based on power level
+        # Typical PWR: 17,100 kg/s total flow at 100% power
+        design_flow = 17100.0  # kg/s
+        # Flow varies with power level (reactor coolant pumps may be load-following)
+        flow_fraction = max(0.3, power_fraction)  # Minimum 30% flow even at low power
+        total_primary_flow = design_flow * flow_fraction
+        
+        # Validate heat balance: Q = m_dot * cp * delta_T
         cp_primary = 5.2  # kJ/kg/K at PWR conditions
+        calculated_thermal_power = (total_primary_flow * cp_primary * 
+                                   (primary_hot_leg_temp - primary_cold_leg_temp)) / 1000.0  # MW
         
-        # Calculate cold leg temperature based on heat removal
-        heat_removed_mw = primary_thermal_power  # Assume all heat goes to steam generators
-        if total_primary_flow > 0 and cp_primary > 0:
-            delta_t_primary = heat_removed_mw * 1000.0 / (total_primary_flow * cp_primary)
-        else:
-            delta_t_primary = 34.0  # Default PWR temperature drop
-        
-        # Ensure reasonable temperature drop (typical PWR: 30-40°C)
-        delta_t_primary = np.clip(delta_t_primary, 25.0, 50.0)
-        
-        primary_cold_leg_temp = primary_hot_leg_temp - delta_t_primary
-        
-        # Ensure cold leg temperature is within realistic PWR operating range
-        primary_cold_leg_temp = np.clip(primary_cold_leg_temp, 260.0, 310.0)
-        
-        # Don't override the thermal hydraulics calculation - let it handle coolant temperature
-        # The thermal hydraulics model already accounts for heat removal and thermal dynamics
-        # Only use the calculated temperatures for secondary system interface
-        pass
-        
+        # Debug output for troubleshooting
+        '''
+        print(f"DEBUG: Primary-Secondary Coupling:")
+        print(f"  Power Level: {self.state.power_level:.1f}%")
+        print(f"  Hot Leg Temp: {primary_hot_leg_temp:.1f}°C")
+        print(f"  Cold Leg Temp: {primary_cold_leg_temp:.1f}°C")
+        print(f"  Temperature Delta: {primary_hot_leg_temp - primary_cold_leg_temp:.1f}°C")
+        print(f"  Primary Flow: {total_primary_flow:.0f} kg/s")
+        print(f"  Calculated Thermal Power: {calculated_thermal_power:.1f} MW")
+        print(f"  Target Thermal Power: {primary_thermal_power:.1f} MW")
+        '''
         # Calculate conditions for each steam generator loop
         primary_conditions = {}
         flow_per_loop = total_primary_flow / self.primary_loops
@@ -607,9 +624,9 @@ def run_simulation_example():
         elif t < 120:
             load_demand = 100.0
         elif t < 180:
-            load_demand = 100.  # Load reduction
+            load_demand = 70.  # Load reduction
         elif t < 240:
-            load_demand = 100.0
+            load_demand = 70.0
         else:
             load_demand = 100.0  # Load increase
 
