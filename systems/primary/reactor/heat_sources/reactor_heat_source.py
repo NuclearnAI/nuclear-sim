@@ -93,7 +93,6 @@ class ReactorHeatSource(HeatSource):
         thermal_power_mw, power_percent = self.point_kinetics.calculate_power_from_flux(
             reactor_state.neutron_flux, self.rated_power_mw
         )
-
         # Update reactor state power level
         reactor_state.power_level = power_percent
         reactor_state.reactivity = reactivity

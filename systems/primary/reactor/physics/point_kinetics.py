@@ -108,20 +108,24 @@ class PointKineticsModel:
                 reactor_state.delayed_neutron_precursors, 0, 1
             )
 
-    def calculate_power_from_flux(self, neutron_flux: float, rated_power_mw: float = 3000.0) -> Tuple[float, float]:
+    def calculate_power_from_flux(self, neutron_flux: float, initial_power: float=3000.) -> Tuple[float, float]:
         """
         Calculate thermal power and power percentage from neutron flux
         
         Args:
             neutron_flux: Neutron flux in n/cm²/s
-            rated_power_mw: Rated thermal power in MW
+            initial_power: Rated thermal power in MW
             
         Returns:
             Tuple of (thermal_power_mw, power_percent)
         """
+
+        # TODO: Refactor to use reactor state object
+        initial_neutron_flux = 1e13
+        initial_power_mw = initial_power
+
         # Power from neutron flux (simplified conversion)
-        thermal_power_mw = np.clip(neutron_flux / 1e12 * rated_power_mw, 0, 4000)
-        power_percent = (neutron_flux / 1e13) * 100
-        power_percent = np.clip(power_percent, 0, 150)
+        power_percent = (neutron_flux / initial_neutron_flux)
+        thermal_power_mw = power_percent * initial_power_mw
         
-        return thermal_power_mw, power_percent
+        return thermal_power_mw, power_percent * 100.0

@@ -114,8 +114,8 @@ class TurbinePhysics:
         self.condenser_temperature = 39.0   # °C (saturation at 0.007 MPa)
         
         # Power generation
-        self.mechanical_power = 1100.0      # MW mechanical
-        self.electrical_power = 1085.0      # MW electrical
+        self.mechanical_power = 0.0         # MW mechanical
+        self.electrical_power = 0.0         # MW electrical
         self.power_setpoint = 1100.0        # MW setpoint
         
         # Control state
@@ -401,6 +401,68 @@ class TurbinePhysics:
         Returns:
             Dictionary with updated turbine state and performance
         """
+        # ENHANCED VALIDATION FOR TURBINE OPERATION
+        # Check if steam conditions are sufficient for power generation
+        
+        # Minimum thresholds for turbine operation
+        MIN_STEAM_PRESSURE = 1.0    # MPa - minimum pressure for meaningful expansion
+        MIN_STEAM_FLOW = 50.0       # kg/s - minimum flow for turbine operation
+        MIN_STEAM_QUALITY = 0.85    # minimum quality to prevent blade damage
+        MIN_STEAM_TEMPERATURE = 150.0  # °C - minimum temperature for operation
+        
+        # Validation checks
+        turbine_operation_blocked = False
+        blocking_reasons = []
+        
+        if steam_pressure < MIN_STEAM_PRESSURE:
+            turbine_operation_blocked = True
+            blocking_reasons.append(f"Steam pressure too low: {steam_pressure:.2f} MPa < {MIN_STEAM_PRESSURE} MPa")
+        
+        if steam_flow < MIN_STEAM_FLOW:
+            turbine_operation_blocked = True
+            blocking_reasons.append(f"Steam flow too low: {steam_flow:.1f} kg/s < {MIN_STEAM_FLOW} kg/s")
+        
+        if steam_quality < MIN_STEAM_QUALITY:
+            turbine_operation_blocked = True
+            blocking_reasons.append(f"Steam quality too low: {steam_quality:.2f} < {MIN_STEAM_QUALITY}")
+        
+        if steam_temperature < MIN_STEAM_TEMPERATURE:
+            turbine_operation_blocked = True
+            blocking_reasons.append(f"Steam temperature too low: {steam_temperature:.1f}°C < {MIN_STEAM_TEMPERATURE}°C")
+        
+        # If turbine operation is blocked, return zero power generation
+        if turbine_operation_blocked:
+            print(f"DEBUG: TURBINE OPERATION BLOCKED:")
+            for reason in blocking_reasons:
+                print(f"  - {reason}")
+            
+            # Return zero power state
+            return {
+                'mechanical_power': 0.0,
+                'electrical_power_gross': 0.0,
+                'electrical_power_net': 0.0,
+                'auxiliary_power': 0.0,
+                'hp_power': 0.0,
+                'lp_power': 0.0,
+                'overall_efficiency': 0.0,
+                'steam_rate': 0.0,
+                'heat_rate': 0.0,
+                'hp_exhaust_pressure': self.config.hp_exhaust_pressure,
+                'hp_exhaust_temperature': self._saturation_temperature(self.config.hp_exhaust_pressure),
+                'hp_exhaust_quality': 0.0,
+                'lp_inlet_pressure': self.config.lp_inlet_pressure,
+                'lp_inlet_temperature': self._saturation_temperature(self.config.lp_inlet_pressure),
+                'condenser_pressure': self.config.condenser_pressure,
+                'condenser_temperature': self._saturation_temperature(self.config.condenser_pressure),
+                'load_demand': 0.0,
+                'governor_valve_position': 0.0,
+                'effective_steam_flow': 0.0,
+                'hp_efficiency': 0.0,
+                'lp_efficiency': 0.0,
+                'moisture_separated': 0.0,
+                'reheat_heat_addition': 0.0
+            }
+        
         # Update inlet conditions
         self.steam_inlet_pressure = steam_pressure
         self.steam_inlet_temperature = steam_temperature
@@ -641,8 +703,8 @@ class TurbinePhysics:
         self.lp_inlet_quality = 0.99
         self.condenser_pressure = 0.007
         self.condenser_temperature = 39.0
-        self.mechanical_power = 1100.0
-        self.electrical_power = 1085.0
+        self.mechanical_power = 0.0
+        self.electrical_power = 0.0
         self.power_setpoint = 1100.0
         self.governor_valve_position = 100.0
         self.load_demand = 100.0

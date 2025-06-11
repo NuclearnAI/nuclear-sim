@@ -108,7 +108,7 @@ class SteamGeneratorPhysics:
         self.secondary_temperature = 285.8  # °C (saturation temp at 6.895 MPa)
         
         # Steam generator internal state
-        self.steam_quality = 0.25  # Average steam quality (typical 20-30%)
+        self.steam_quality = 0.99  # Steam outlet quality (PWR steam generators produce dry steam)
         self.water_level = 12.5  # m above tube sheet (normal operating level)
         self.steam_void_fraction = 0.45  # Volume fraction of steam in two-phase region
         
@@ -188,11 +188,30 @@ class SteamGeneratorPhysics:
         # Heat transfer rate
         heat_transfer_rate = overall_htc * self.config.heat_transfer_area * lmtd
         
-        # Physical constraint: cannot exceed energy available from primary coolant
+        # ENHANCED PHYSICAL CONSTRAINTS: cannot exceed energy available from primary coolant
         # Q_max = m_dot * cp * (T_in - T_out)
         cp_primary = 5200.0  # J/kg/K (specific heat of water at PWR conditions)
         max_heat_from_primary = primary_flow * cp_primary * (primary_temp_in - primary_temp_out)
-        heat_transfer_rate = min(heat_transfer_rate, max_heat_from_primary)
+        
+        # STRICT ENERGY CONSERVATION: Additional checks for zero/low thermal power scenarios
+        # If primary temperature difference is very small, severely limit heat transfer
+        temp_difference = primary_temp_in - primary_temp_out
+        if temp_difference < 1.0:  # Less than 1°C difference
+            heat_transfer_rate = 0.0  # No meaningful heat transfer possible
+        elif temp_difference < 5.0:  # Less than 5°C difference  
+            # Severely reduced heat transfer for low temperature differences
+            heat_transfer_rate = min(heat_transfer_rate, max_heat_from_primary * 0.1)
+        else:
+            # Normal operation - limit to available primary energy
+            heat_transfer_rate = min(heat_transfer_rate, max_heat_from_primary)
+        
+        # Additional check: if primary flow is very low, limit heat transfer
+        if primary_flow < 100.0:  # Less than 100 kg/s (very low flow)
+            heat_transfer_rate = 0.0
+        
+        # Final validation: ensure heat transfer is physically reasonable
+        if heat_transfer_rate < 0:
+            heat_transfer_rate = 0.0
         
         # Calculate tube wall temperature (thermal circuit analysis)
         heat_flux = heat_transfer_rate / self.config.heat_transfer_area
@@ -326,7 +345,7 @@ class SteamGeneratorPhysics:
             # Quality change based on steam generation vs steam flow
             quality_change_rate = (steam_generation_rate - steam_flow_out) / self.config.secondary_water_mass
             new_steam_quality = self.steam_quality + quality_change_rate * dt
-            new_steam_quality = np.clip(new_steam_quality, 0.05, 0.95)
+            new_steam_quality = np.clip(new_steam_quality, 0.05, 1.0)
         else:
             new_steam_quality = self.steam_quality
         
@@ -464,25 +483,39 @@ class SteamGeneratorPhysics:
         """
         Calculate saturation temperature for given pressure
         
-        Based on Antoine equation for water, valid 1-10 MPa
-        Reference: NIST Webbook, simplified correlation
+        Using improved correlation for water, valid 0.1-10 MPa
+        Reference: NIST steam tables, simplified correlation
         """
         if pressure_mpa <= 0.001:
             return 10.0  # Very low pressure
         
-        # Antoine equation rearranged: T = B/(A - log10(P)) - C
-        # Coefficients for water (pressure in bar, temperature in °C)
-        A = 8.07131
-        B = 1730.63
-        C = 233.426
+        # FIXED: Use correct correlation for steam saturation temperature
+        # For PWR pressures (6-7 MPa), saturation temperature should be ~280-290°C
+        # Using simplified Clausius-Clapeyron relation
         
-        pressure_bar = pressure_mpa * 10.0
+        # Reference point: 1 atm (0.101325 MPa) -> 100°C
+        p_ref = 0.101325  # MPa
+        t_ref = 100.0     # °C
         
-        # Ensure pressure is within valid range for Antoine equation
-        pressure_bar = np.clip(pressure_bar, 0.01, 100.0)
+        # Latent heat of vaporization (approximate)
+        h_fg = 2257.0  # kJ/kg at 100°C
         
-        temp_c = B / (A - np.log10(pressure_bar)) - C
+        # Gas constant for water vapor
+        r_v = 0.4615  # kJ/kg/K
         
+        # Clausius-Clapeyron equation: ln(P2/P1) = (h_fg/R_v) * (1/T1 - 1/T2)
+        # Rearranged: T2 = 1 / (1/T1 - (R_v/h_fg) * ln(P2/P1))
+        
+        t_ref_k = t_ref + 273.15  # Convert to Kelvin
+        pressure_ratio = pressure_mpa / p_ref
+        
+        if pressure_ratio > 0:
+            temp_k = 1.0 / (1.0/t_ref_k - (r_v/h_fg) * np.log(pressure_ratio))
+            temp_c = temp_k - 273.15
+        else:
+            temp_c = t_ref
+        
+        # For typical PWR steam pressure (6.9 MPa), this should give ~285°C
         return np.clip(temp_c, 10.0, 374.0)  # Physical limits for water
     
     def _saturation_enthalpy_liquid(self, pressure_mpa: float) -> float:
@@ -563,7 +596,7 @@ class SteamGeneratorPhysics:
         self.primary_outlet_temp = 293.0
         self.secondary_pressure = 6.895
         self.secondary_temperature = 285.8
-        self.steam_quality = 0.25
+        self.steam_quality = 0.99  # PWR steam generators produce dry steam
         self.water_level = 12.5
         self.steam_void_fraction = 0.45
         self.steam_flow_rate = 555.0

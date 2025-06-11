@@ -5,6 +5,8 @@ This module provides the integrated secondary reactor physics system for PWR pla
 combining steam generators, turbines, and condensers into a complete steam cycle model.
 """
 
+import numpy as np
+
 from .steam_generator import SteamGeneratorPhysics, SteamGeneratorConfig
 from .turbine import TurbinePhysics, TurbineConfig
 from .condenser import CondenserPhysics, CondenserConfig
@@ -137,6 +139,19 @@ class SecondaryReactorPhysics:
             avg_steam_pressure = sum(sg.secondary_pressure for sg in self.steam_generators) / len(self.steam_generators)
             avg_steam_temperature = sum(sg.secondary_temperature for sg in self.steam_generators) / len(self.steam_generators)
             avg_steam_quality = sum(sg.steam_quality for sg in self.steam_generators) / len(self.steam_generators)
+            
+            # FIXED: Ensure steam temperature is realistic for turbine operation
+            # Steam temperature should be saturation temperature at steam pressure
+            # For superheated steam in PWR, add small superheat margin
+            sat_temp_at_pressure = self._saturation_temperature(avg_steam_pressure)
+            avg_steam_temperature = max(avg_steam_temperature, sat_temp_at_pressure)
+            ''' 
+            print(f"DEBUG: Steam Generator Output:")
+            print(f"  Steam Pressure: {avg_steam_pressure:.2f} MPa")
+            print(f"  Steam Temperature: {avg_steam_temperature:.1f}°C")
+            print(f"  Saturation Temperature: {sat_temp_at_pressure:.1f}°C")
+            print(f"  Steam Quality: {avg_steam_quality:.3f}")
+            '''
         else:
             avg_steam_pressure = 6.895
             avg_steam_temperature = 285.8
@@ -173,14 +188,90 @@ class SecondaryReactorPhysics:
         # Calculate system performance metrics
         self.total_steam_flow = total_steam_flow
         self.total_heat_transfer = total_heat_transfer
-        self.electrical_power_output = turbine_result['electrical_power_net']
         
-        # Overall thermal efficiency (electrical output / heat input)
-        if total_heat_transfer > 0:
-            self.thermal_efficiency = (self.electrical_power_output * 1e6) / total_heat_transfer
-        else:
+        # ENHANCED THERMAL POWER VALIDATION FOR ELECTRICAL GENERATION
+        # Calculate actual thermal power from steam generators
+        thermal_power_mw = total_heat_transfer / 1e6  # Convert to MW
+        
+        # Calculate primary thermal power from primary conditions
+        primary_thermal_power = 0.0
+        for i in range(self.num_steam_generators):
+            sg_key = f'sg_{i+1}'
+            primary_inlet_temp = primary_conditions.get(f'{sg_key}_inlet_temp', 0.0)
+            primary_outlet_temp = primary_conditions.get(f'{sg_key}_outlet_temp', 0.0)
+            primary_flow = primary_conditions.get(f'{sg_key}_flow', 0.0)
+            
+            # Calculate thermal power for this loop: Q = m_dot * cp * delta_T
+            if primary_flow > 0 and primary_inlet_temp > primary_outlet_temp:
+                cp_primary = 5.2  # kJ/kg/K at PWR conditions
+                delta_t = primary_inlet_temp - primary_outlet_temp
+                loop_thermal_power = primary_flow * cp_primary * delta_t / 1000.0  # MW
+                primary_thermal_power += loop_thermal_power
+        
+        # STRICT MINIMUM THRESHOLDS FOR ELECTRICAL GENERATION
+        MIN_PRIMARY_THERMAL_MW = 10.0      # Minimum primary thermal power (MW)
+        MIN_SECONDARY_THERMAL_MW = 10.0    # Minimum secondary heat transfer (MW)
+        MIN_STEAM_FLOW_KGS = 50.0          # Minimum steam flow (kg/s)
+        MIN_STEAM_PRESSURE_MPA = 1.0       # Minimum steam pressure (MPa)
+        MIN_TEMPERATURE_DELTA = 5.0        # Minimum primary-secondary temp difference (°C)
+        
+        # Calculate average primary-secondary temperature difference
+        avg_primary_temp = 0.0
+        for i in range(self.num_steam_generators):
+            sg_key = f'sg_{i+1}'
+            primary_inlet_temp = primary_conditions.get(f'{sg_key}_inlet_temp', 0.0)
+            avg_primary_temp += primary_inlet_temp
+        avg_primary_temp /= self.num_steam_generators if self.num_steam_generators > 0 else 1
+        
+        # Get average secondary temperature (saturation temperature at steam pressure)
+        avg_secondary_temp = self._saturation_temperature(avg_steam_pressure)
+        temp_delta = avg_primary_temp - avg_secondary_temp
+        
+        # COMPREHENSIVE VALIDATION CONDITIONS
+        validation_failures = []
+        
+        if primary_thermal_power < MIN_PRIMARY_THERMAL_MW:
+            validation_failures.append(f"Primary thermal power too low: {primary_thermal_power:.2f} MW < {MIN_PRIMARY_THERMAL_MW} MW")
+        
+        if thermal_power_mw < MIN_SECONDARY_THERMAL_MW:
+            validation_failures.append(f"Secondary heat transfer too low: {thermal_power_mw:.2f} MW < {MIN_SECONDARY_THERMAL_MW} MW")
+        
+        if total_steam_flow < MIN_STEAM_FLOW_KGS:
+            validation_failures.append(f"Steam flow too low: {total_steam_flow:.1f} kg/s < {MIN_STEAM_FLOW_KGS} kg/s")
+        
+        if avg_steam_pressure < MIN_STEAM_PRESSURE_MPA:
+            validation_failures.append(f"Steam pressure too low: {avg_steam_pressure:.2f} MPa < {MIN_STEAM_PRESSURE_MPA} MPa")
+        
+        if temp_delta < MIN_TEMPERATURE_DELTA:
+            validation_failures.append(f"Temperature difference too low: {temp_delta:.1f}°C < {MIN_TEMPERATURE_DELTA}°C")
+        
+        # ENERGY CONSERVATION CHECK
+        # Ensure secondary heat transfer doesn't exceed primary thermal power
+        if thermal_power_mw > primary_thermal_power * 1.05:  # Allow 5% margin for calculation differences
+            validation_failures.append(f"Energy conservation violation: Secondary heat transfer ({thermal_power_mw:.2f} MW) > Primary thermal power ({primary_thermal_power:.2f} MW)")
+        
+        # FORCE ZERO ELECTRICAL GENERATION IF ANY VALIDATION FAILS
+        if validation_failures:
+            self.electrical_power_output = 0.0
             self.thermal_efficiency = 0.0
-        
+            '''
+            print(f"DEBUG: ELECTRICAL GENERATION BLOCKED - Validation failures:")
+            for failure in validation_failures:
+                print(f"  - {failure}")
+            print(f"  Primary temp: {avg_primary_temp:.1f}°C, Secondary temp: {avg_secondary_temp:.1f}°C")
+            '''
+        else:
+            # NORMAL ELECTRICAL GENERATION - All validations passed
+            self.electrical_power_output = turbine_result['electrical_power_net']
+            # Overall thermal efficiency (electrical output / heat input)
+            if total_heat_transfer > 0:
+                self.thermal_efficiency = (self.electrical_power_output * 1e6) / total_heat_transfer
+            else:
+                self.thermal_efficiency = 0.0
+            '''
+            print(f"DEBUG: Electrical generation OK - Primary: {primary_thermal_power:.1f} MW, "
+                  f"Secondary: {thermal_power_mw:.1f} MW, Electrical: {self.electrical_power_output:.1f} MW")
+            '''
         # Heat rate (kJ/kWh)
         if self.electrical_power_output > 0:
             heat_rate = (total_heat_transfer / 1000.0) / (self.electrical_power_output * 1000.0) * 3600.0
@@ -230,7 +321,6 @@ class SecondaryReactorPhysics:
             'turbine_state': self.turbine.get_state_dict(),
             'condenser_state': self.condenser.get_state_dict()
         }
-        
         return system_result
     
     def get_system_state(self) -> dict:
@@ -263,6 +353,45 @@ class SecondaryReactorPhysics:
         self.load_demand = 100.0
         self.feedwater_temperature = 227.0
         self.cooling_water_temperature = 25.0
+    
+    def _saturation_temperature(self, pressure_mpa: float) -> float:
+        """
+        Calculate saturation temperature for given pressure
+        
+        Using improved correlation for water, valid 0.1-10 MPa
+        Reference: NIST steam tables, simplified correlation
+        """
+        if pressure_mpa <= 0.001:
+            return 10.0  # Very low pressure
+        
+        # FIXED: Use correct correlation for steam saturation temperature
+        # For PWR pressures (6-7 MPa), saturation temperature should be ~280-290°C
+        # Using simplified Clausius-Clapeyron relation
+        
+        # Reference point: 1 atm (0.101325 MPa) -> 100°C
+        p_ref = 0.101325  # MPa
+        t_ref = 100.0     # °C
+        
+        # Latent heat of vaporization (approximate)
+        h_fg = 2257.0  # kJ/kg at 100°C
+        
+        # Gas constant for water vapor
+        r_v = 0.4615  # kJ/kg/K
+        
+        # Clausius-Clapeyron equation: ln(P2/P1) = (h_fg/R_v) * (1/T1 - 1/T2)
+        # Rearranged: T2 = 1 / (1/T1 - (R_v/h_fg) * ln(P2/P1))
+        
+        t_ref_k = t_ref + 273.15  # Convert to Kelvin
+        pressure_ratio = pressure_mpa / p_ref
+        
+        if pressure_ratio > 0:
+            temp_k = 1.0 / (1.0/t_ref_k - (r_v/h_fg) * np.log(pressure_ratio))
+            temp_c = temp_k - 273.15
+        else:
+            temp_c = t_ref
+        
+        # For typical PWR steam pressure (6.9 MPa), this should give ~285°C
+        return np.clip(temp_c, 10.0, 374.0)  # Physical limits for water
     
 
 

@@ -46,9 +46,9 @@ class ReactorState:
     reactivity: float = 0.0  # delta-k/k (critical)
     delayed_neutron_precursors: Optional[np.ndarray] = None
 
-    # Thermal hydraulics
+    # Thermal hydraulics - FIXED: Use realistic PWR operating temperatures
     fuel_temperature: float = 575.0  # °C (realistic steady-state average)
-    coolant_temperature: float = 280.0  # °C
+    coolant_temperature: float = 310.0  # °C (average of hot/cold leg: ~327+293)/2)
     coolant_pressure: float = 15.5  # MPa
     coolant_flow_rate: float = 20000.0  # kg/s
     coolant_void_fraction: float = 0.0  # Steam void fraction (0-1)
@@ -186,7 +186,7 @@ class PrimaryReactorPhysics:
         # Extract heat source results
         self.thermal_power_mw = heat_result['thermal_power_mw']
         self.state.power_level = heat_result['power_percent']
-        
+
         # Update neutron flux if provided
         if 'neutron_flux' in heat_result:
             self.state.neutron_flux = heat_result['neutron_flux']
@@ -261,7 +261,6 @@ class PrimaryReactorPhysics:
             'thermal_hydraulics_state': getattr(self.thermal_hydraulics, 'get_state_dict', lambda: {})(),
             'safety_state': getattr(self.scram_system, 'get_state_dict', lambda: {})()
         }
-        
         return system_result
     
     def _apply_control_actions(self, control_inputs: dict, dt: float):

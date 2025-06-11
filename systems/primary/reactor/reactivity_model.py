@@ -461,6 +461,7 @@ def create_equilibrium_state(
     reactivity_model = ReactivityModel()
 
     # Calculate equilibrium neutron flux
+    # TODO: see if this is realistic. We shouldn't hardcode this value
     flux_normalization = 1e13  # n/cm²/s at 100% power
     neutron_flux = flux_normalization * (power_level / 100.0)
 
@@ -478,9 +479,13 @@ def create_equilibrium_state(
     state.iodine_concentration = eq_fp["iodine"]
     state.samarium_concentration = eq_fp["samarium"]
 
-    # Set realistic temperatures for power level
+    # FIXED: Set realistic PWR temperatures for power level
     state.fuel_temperature = 575.0 + (power_level - 100.0) * 2.0  # °C
-    state.coolant_temperature = 280.0 + (power_level - 100.0) * 0.5  # °C
+    # Use realistic PWR coolant temperature (average of hot/cold leg)
+    # At 100% power: Hot leg = 327°C, Cold leg = 293°C, Average = 310°C
+    power_fraction = power_level / 100.0
+    target_avg_temp = 293.0 + (17.0 * power_fraction)  # 293°C to 310°C
+    state.coolant_temperature = target_avg_temp
 
     # Initialize delayed neutron precursors for equilibrium at this power level
     # For equilibrium, precursor concentration = (beta_i / lambda_i) * (neutron_flux / lambda_prompt)
