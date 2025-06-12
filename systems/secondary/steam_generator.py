@@ -125,6 +125,42 @@ class SteamGeneratorPhysics:
         self.overall_htc = 0.0  # Will be calculated
         self.heat_flux = 0.0  # W/m²
         
+    def calculate_effective_heat_transfer_area(self, water_level: float) -> float:
+        """
+        Calculate effective heat transfer area based on water level
+        
+        Physical Basis:
+        - Heat transfer only occurs where tubes are submerged in water
+        - Lower water level reduces wetted surface area
+        - Below minimum level, only emergency heat transfer possible
+        
+        Args:
+            water_level: Current steam generator water level (m)
+            
+        Returns:
+            Effective heat transfer area (m²)
+        """
+        normal_level = 12.5  # m (normal operating level)
+        design_area = self.config.heat_transfer_area  # m² (full design area)
+        
+        # Level factor: relationship between level and wetted area
+        if water_level >= normal_level:
+            # Above normal level - full area available
+            level_factor = 1.0
+        else:
+            # Below normal level - reduced area
+            min_level = 8.0  # m (minimum level for meaningful heat transfer)
+            
+            if water_level <= min_level:
+                # Emergency level - only minimal heat transfer possible
+                level_factor = 0.1  # 10% of design area
+            else:
+                # Linear interpolation between minimum and normal level
+                level_factor = 0.1 + 0.9 * (water_level - min_level) / (normal_level - min_level)
+        
+        effective_area = design_area * level_factor
+        return effective_area
+
     def calculate_heat_transfer(self, 
                               primary_temp_in: float,
                               primary_temp_out: float,
@@ -134,7 +170,8 @@ class SteamGeneratorPhysics:
         Calculate heat transfer from primary to secondary side using overall HTC method
         
         Physical Basis:
-        - Overall heat transfer: Q = U * A * LMTD
+        - Overall heat transfer: Q = U * A_eff * LMTD
+        - Effective area depends on water level (wetted surface area)
         - Thermal resistance network: 1/U = 1/h_p + t_w/k_w + 1/h_s
         - Log mean temperature difference for counter-current flow
         
@@ -185,8 +222,11 @@ class SteamGeneratorPhysics:
         # Overall heat transfer coefficient
         overall_htc = 1.0 / (r_primary + r_wall + r_secondary)
         
-        # Heat transfer rate
-        heat_transfer_rate = overall_htc * self.config.heat_transfer_area * lmtd
+        # Calculate effective heat transfer area based on current water level
+        effective_area = self.calculate_effective_heat_transfer_area(self.water_level)
+        
+        # Heat transfer rate using effective area (level-dependent)
+        heat_transfer_rate = overall_htc * effective_area * lmtd
         
         # ENHANCED PHYSICAL CONSTRAINTS: cannot exceed energy available from primary coolant
         # Q_max = m_dot * cp * (T_in - T_out)
@@ -257,8 +297,8 @@ class SteamGeneratorPhysics:
         Physical Basis:
         - Mass balance: dm/dt = m_in - m_out
         - Energy balance: dE/dt = H_in - H_out + Q_in
-        - Two-phase flow: homogeneous equilibrium model
-        - Level dynamics: includes swell effects from void fraction changes
+        - Pressure dynamics: Based on steam demand and inventory changes
+        - Steam quality: Based on moisture separation efficiency and design
         
         Args:
             heat_input: Heat transfer rate from primary (W)
@@ -287,42 +327,48 @@ class SteamGeneratorPhysics:
         # Energy balance (convert heat_input to kJ/s)
         heat_input_kj = heat_input / 1000.0  # Convert W to kJ/s
         
-        # Energy flows
-        energy_in_feedwater = feedwater_flow_in * h_fw  # kJ/s
-        energy_in_heat = heat_input_kj  # kJ/s
-        energy_out_steam = steam_flow_out * h_g  # kJ/s
-        
-        # Net energy change rate
-        energy_change_rate = energy_in_feedwater + energy_in_heat - energy_out_steam  # kJ/s
-        
         # Steam generation rate from energy balance
         # Energy available for steam generation = heat input - sensible heating of feedwater
         energy_for_steam_gen = heat_input_kj - feedwater_flow_in * (h_f - h_fw)
         steam_generation_rate = energy_for_steam_gen / h_fg  # kg/s
         steam_generation_rate = max(0, steam_generation_rate)  # Cannot be negative
         
-        # Pressure dynamics
-        # Based on energy imbalance and compressibility effects
-        # Simplified model: pressure change proportional to energy imbalance
-        specific_volume_liquid = 1.0 / rho_f
-        specific_volume_steam = 1.0 / rho_g
+        # CRITICAL FIX: If feedwater flow is zero, steam generation must be zero
+        # Cannot generate steam without feedwater input
+        if feedwater_flow_in < 0.1:  # Less than 0.1 kg/s (essentially zero)
+            steam_generation_rate = 0.0
         
-        # Average specific volume in steam generator
-        avg_specific_volume = (self.steam_void_fraction * specific_volume_steam + 
-                             (1 - self.steam_void_fraction) * specific_volume_liquid)
+        # FIXED PRESSURE DYNAMICS - Based on steam demand and inventory, NOT energy balance
+        # Pressure responds to steam flow demand vs steam generation capability
+        steam_demand_factor = steam_flow_out / self.config.secondary_design_flow  # Normalized demand
+        steam_supply_factor = steam_generation_rate / self.config.secondary_design_flow  # Normalized supply
         
-        # Pressure change due to energy imbalance (simplified thermodynamic relation)
-        pressure_change_rate = (energy_change_rate / self.config.secondary_water_mass) * 0.001  # MPa/s
-        pressure_change_rate = np.clip(pressure_change_rate, -0.1, 0.1)  # Limit rate of change
+        # Pressure change based on supply-demand imbalance
+        supply_demand_imbalance = steam_supply_factor - steam_demand_factor
+        
+        # Pressure dynamics: higher demand -> lower pressure, higher supply -> higher pressure
+        base_pressure_change_rate = -supply_demand_imbalance * 0.01  # MPa/s (tuned for realistic response)
+        
+        # Additional pressure effects
+        # 1. Inventory depletion effect
+        if feedwater_flow_in < 0.1 and steam_flow_out > 0.1:
+            # Rapid pressure drop when steam is extracted without feedwater replacement
+            inventory_depletion_rate = -steam_flow_out / self.config.secondary_water_mass  # 1/s
+            pressure_drop_rate = inventory_depletion_rate * self.secondary_pressure * 5.0
+            base_pressure_change_rate += pressure_drop_rate
+        
+        # 2. Heat input effect (secondary effect on pressure)
+        design_heat_input = self.config.design_thermal_power / 1000.0  # kJ/s
+        heat_input_factor = heat_input_kj / design_heat_input
+        heat_pressure_effect = (heat_input_factor - 1.0) * 0.002  # Small effect: 0.2% per 100% heat change
+        
+        pressure_change_rate = base_pressure_change_rate + heat_pressure_effect
+        pressure_change_rate = np.clip(pressure_change_rate, -0.05, 0.05)  # Limit rate of change
         
         new_pressure = self.secondary_pressure + pressure_change_rate * dt
-        new_pressure = np.clip(new_pressure, 4.0, 8.5)  # Physical operating limits
+        new_pressure = np.clip(new_pressure, 0.1, 8.5)  # Physical limits
         
         # Water level dynamics with swell effects
-        # Level change has two components:
-        # 1. Mass inventory change
-        # 2. Density change due to void fraction variation
-        
         # Cross-sectional area of steam generator (simplified cylindrical geometry)
         sg_diameter = 4.0  # m (typical large PWR steam generator)
         sg_cross_section = np.pi * (sg_diameter / 2.0) ** 2  # m²
@@ -332,6 +378,8 @@ class SteamGeneratorPhysics:
         
         # Level change due to steam generation (swell effect)
         # Steam bubbles increase apparent liquid level
+        specific_volume_liquid = 1.0 / rho_f
+        specific_volume_steam = 1.0 / rho_g
         volume_expansion = steam_generation_rate * dt * (specific_volume_steam - specific_volume_liquid)
         level_change_swell = volume_expansion / sg_cross_section
         
@@ -339,15 +387,44 @@ class SteamGeneratorPhysics:
         new_water_level = self.water_level + total_level_change
         new_water_level = np.clip(new_water_level, 8.0, 16.0)  # Physical limits
         
-        # Update steam quality and void fraction
-        # Steam quality based on energy balance
-        if steam_flow_out > 0:
-            # Quality change based on steam generation vs steam flow
-            quality_change_rate = (steam_generation_rate - steam_flow_out) / self.config.secondary_water_mass
-            new_steam_quality = self.steam_quality + quality_change_rate * dt
-            new_steam_quality = np.clip(new_steam_quality, 0.05, 1.0)
-        else:
-            new_steam_quality = self.steam_quality
+        # FIXED STEAM QUALITY CALCULATION - Based on moisture separation physics
+        # Steam quality should be relatively stable in well-designed PWR steam generators
+        # and primarily depend on separator/dryer performance, not energy balance
+        
+        # Design steam quality for PWR (target)
+        design_quality = 0.995  # 99.5% quality for well-designed PWR SG
+        
+        # Quality degradation factors
+        quality_degradation = 0.0
+        
+        # 1. Water level effect - low level reduces separation efficiency
+        if new_water_level < 11.0:  # Below normal operating level
+            level_factor = (11.0 - new_water_level) / 3.0  # Normalized degradation
+            quality_degradation += level_factor * 0.02  # Up to 2% quality loss
+        
+        # 2. Flow rate effect - very high steam flow reduces separation time
+        flow_factor = steam_flow_out / self.config.secondary_design_flow
+        if flow_factor > 1.1:  # Above 110% design flow
+            flow_degradation = (flow_factor - 1.1) * 0.01  # 1% per 10% excess flow
+            quality_degradation += min(flow_degradation, 0.03)  # Max 3% degradation
+        
+        # 3. Heat flux effect - very high heat flux can cause carryover
+        design_heat_flux = self.config.design_thermal_power / self.config.heat_transfer_area
+        current_heat_flux = heat_input / self.config.heat_transfer_area
+        heat_flux_ratio = current_heat_flux / design_heat_flux
+        if heat_flux_ratio > 1.2:  # Above 120% design heat flux
+            heat_flux_degradation = (heat_flux_ratio - 1.2) * 0.005  # 0.5% per 10% excess
+            quality_degradation += min(heat_flux_degradation, 0.02)  # Max 2% degradation
+        
+        # Calculate new steam quality
+        target_quality = design_quality - quality_degradation
+        target_quality = np.clip(target_quality, 0.90, 1.0)  # Physical limits
+        
+        # Smooth transition to target quality (first-order lag)
+        quality_time_constant = 30.0  # seconds (realistic for moisture separator response)
+        quality_change_rate = (target_quality - self.steam_quality) / quality_time_constant
+        new_steam_quality = self.steam_quality + quality_change_rate * dt
+        new_steam_quality = np.clip(new_steam_quality, 0.90, 1.0)
         
         # Void fraction from steam quality (homogeneous flow model)
         # α = x * ρ_f / (x * ρ_f + (1-x) * ρ_g)
@@ -359,6 +436,12 @@ class SteamGeneratorPhysics:
             new_void_fraction = 0.0
         
         new_void_fraction = np.clip(new_void_fraction, 0.0, 0.8)  # Physical limits
+        
+        # Calculate energy balance for reporting (not used for state updates)
+        energy_in_feedwater = feedwater_flow_in * h_fw  # kJ/s
+        energy_in_heat = heat_input_kj  # kJ/s
+        energy_out_steam = steam_flow_out * h_g  # kJ/s
+        energy_change_rate = energy_in_feedwater + energy_in_heat - energy_out_steam  # kJ/s
         
         return {
             'pressure_change_rate': pressure_change_rate,
@@ -373,7 +456,10 @@ class SteamGeneratorPhysics:
             'energy_balance': energy_change_rate,
             'level_change_mass': level_change_mass,
             'level_change_swell': level_change_swell,
-            'mass_change_rate': mass_change_rate
+            'mass_change_rate': mass_change_rate,
+            'supply_demand_imbalance': supply_demand_imbalance,
+            'quality_degradation': quality_degradation,
+            'target_quality': target_quality
         }
     
     def update_state(self,
