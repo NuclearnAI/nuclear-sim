@@ -61,7 +61,14 @@ class NuclearPlantSimulator:
                 'cooling_water_temperature': [],
                 'cooling_water_flow': [],
                 'load_demand': [],
-                'vacuum_pump_operation': []
+                'vacuum_pump_operation': [],
+                'feedwater_pump_power': [],
+                'feedwater_pump_flow': [],
+                'feedwater_pump_speed': [],
+                'feedwater_pump_status': [],
+                'feedwater_system_available': [],
+                'feedwater_auto_control': [],
+                'feedwater_num_running_pumps': []
             },
             'integration': {
                 'primary_hot_leg_temp': [],
@@ -182,12 +189,21 @@ class NuclearPlantSimulator:
             self.history['secondary']['condenser_temperature'].append(secondary_result.get('condenser_temperature', 0.0))
             self.history['secondary']['turbine_power'].append(secondary_result.get('turbine_power_mw', 0.0))
             self.history['secondary']['generator_power'].append(secondary_result['electrical_power_mw'])
-            self.history['secondary']['feedwater_flow'].append(secondary_result.get('feedwater_flow', 0.0))
+            self.history['secondary']['feedwater_flow'].append(secondary_result.get('total_feedwater_flow', 0.0))
             self.history['secondary']['feedwater_temperature'].append(227.0)  # From control inputs
             self.history['secondary']['cooling_water_temperature'].append(self.cooling_water_temp)
             self.history['secondary']['cooling_water_flow'].append(45000.0)  # From control inputs
             self.history['secondary']['load_demand'].append(self.load_demand)
             self.history['secondary']['vacuum_pump_operation'].append(1.0)  # From control inputs
+            
+            # Feedwater pump system measurements
+            self.history['secondary']['feedwater_pump_power'].append(secondary_result.get('feedwater_total_power', 0.0))
+            self.history['secondary']['feedwater_pump_flow'].append(secondary_result.get('feedwater_total_flow', 0.0))
+            self.history['secondary']['feedwater_pump_speed'].append(100.0)  # Average speed - could be calculated from pump states
+            self.history['secondary']['feedwater_pump_status'].append(float(secondary_result.get('feedwater_system_available', False)))
+            self.history['secondary']['feedwater_system_available'].append(float(secondary_result.get('feedwater_system_available', False)))
+            self.history['secondary']['feedwater_auto_control'].append(float(secondary_result.get('feedwater_auto_control', True)))
+            self.history['secondary']['feedwater_num_running_pumps'].append(secondary_result.get('feedwater_num_running_pumps', 0))
             
             # Integration measurements
             primary_conditions = self._calculate_primary_to_secondary_coupling()
@@ -230,36 +246,22 @@ class NuclearPlantSimulator:
         
         # Add secondary system information if available
         if secondary_result is not None:
-            # Calculate realistic thermal efficiency with robust error handling
-            thermal_power_mw = primary_result['thermal_power_mw']
-            electrical_power_mw = secondary_result['electrical_power_mw']
-            
-            # Hard cutoff: if thermal power is effectively zero, force electrical power to zero
-            if thermal_power_mw < 50.0:  # Less than 50 MW thermal (minimum for meaningful generation)
-                electrical_power_mw = 0.0
-                realistic_efficiency = 0.0
-                print(f"DEBUG: Forcing electrical power to zero - thermal power too low: {thermal_power_mw:.3f} MW")
-            else:
-                # Robust efficiency calculation with NaN/Inf checking
-                if (thermal_power_mw > 10.0 and 
-                    np.isfinite(thermal_power_mw) and 
-                    np.isfinite(electrical_power_mw) and 
-                    electrical_power_mw >= 0):
-                    realistic_efficiency = electrical_power_mw / thermal_power_mw
-                    # Cap efficiency at reasonable values (max 40% for nuclear plants)
-                    realistic_efficiency = min(max(realistic_efficiency, 0.0), 0.40)
-                else:
-                    realistic_efficiency = 0.0  # No efficiency when reactor is shut down or invalid values
+            # Use the realistic thermal efficiency calculated by the secondary system
+            # This eliminates the dual calculation problem and ensures consistency
             
             # Validate all secondary system values before using them
-            electrical_power = electrical_power_mw if np.isfinite(electrical_power_mw) else 0.0
+            electrical_power = secondary_result['electrical_power_mw'] if np.isfinite(secondary_result['electrical_power_mw']) else 0.0
+            thermal_efficiency = secondary_result['thermal_efficiency'] if np.isfinite(secondary_result['thermal_efficiency']) else 0.0
             steam_flow = secondary_result['total_steam_flow'] if np.isfinite(secondary_result['total_steam_flow']) else 1665.0
             steam_pressure = secondary_result['sg_avg_pressure'] if np.isfinite(secondary_result['sg_avg_pressure']) else 6.895
             condenser_pressure = secondary_result['condenser_pressure'] if np.isfinite(secondary_result['condenser_pressure']) else 0.007
             
+            # Additional validation: ensure thermal efficiency is within realistic bounds
+            thermal_efficiency = max(0.0, min(thermal_efficiency, 0.35))  # Cap at 35% for PWR
+            
             info.update({
                 "electrical_power": electrical_power,
-                "thermal_efficiency": realistic_efficiency,
+                "thermal_efficiency": thermal_efficiency,
                 "steam_flow": steam_flow,
                 "steam_pressure": steam_pressure,
                 "condenser_pressure": condenser_pressure,
@@ -336,7 +338,16 @@ class NuclearPlantSimulator:
                 secondary_state['cooling_water_temperature'] / 35,  # Normalized cooling water temp
             ]
             
-            return np.array(primary_obs + secondary_obs)
+            # Add feedwater pump observations
+            feedwater_state = secondary_state.get('feedwater_state', {})
+            feedwater_obs = [
+                feedwater_state.get('feedwater_total_flow', 0.0) / 1665,  # Normalized feedwater flow
+                feedwater_state.get('feedwater_total_power', 0.0) / 40,  # Normalized pump power (4 pumps * 10MW each)
+                float(feedwater_state.get('feedwater_system_availability', False)),  # System availability (0 or 1)
+                feedwater_state.get('feedwater_total_flow', 0.0) / 1665,  # Normalized target flow (using actual flow as proxy)
+            ]
+            
+            return np.array(primary_obs + secondary_obs + feedwater_obs)
         
         return np.array(primary_obs)
 
@@ -348,6 +359,7 @@ class NuclearPlantSimulator:
         1. Primary thermal power is transferred to secondary via steam generators
         2. Primary coolant temperatures are calculated based on heat removal
         3. Secondary steam conditions are determined by primary heat input
+        4. Feedwater pump status affects heat transfer capability
         
         Returns:
             Dictionary with coupling parameters for each steam generator
@@ -365,8 +377,14 @@ class NuclearPlantSimulator:
         primary_hot_leg_temp = 293.0 + (34.0 * power_fraction)  # 293°C to 327°C
         primary_cold_leg_temp = 293.0  # Cold leg stays relatively constant
         
+        # NOTE: Feedwater pump effects on primary temperatures are now handled
+        # through the physically accurate steam generator level mechanism.
+        # The steam generator heat transfer area is reduced when water level drops
+        # due to feedwater pump failures, which naturally leads to higher primary
+        # temperatures through reduced heat removal capability.
+        
         # Ensure temperatures are within realistic PWR operating range
-        primary_hot_leg_temp = np.clip(primary_hot_leg_temp, 293.0, 340.0)
+        primary_hot_leg_temp = np.clip(primary_hot_leg_temp, 293.0, 350.0)
         primary_cold_leg_temp = np.clip(primary_cold_leg_temp, 280.0, 300.0)
         
         # Ensure hot leg is always hotter than cold leg
@@ -379,6 +397,10 @@ class NuclearPlantSimulator:
         # Flow varies with power level (reactor coolant pumps may be load-following)
         flow_fraction = max(0.3, power_fraction)  # Minimum 30% flow even at low power
         total_primary_flow = design_flow * flow_fraction
+        
+        # NOTE: Primary flow is no longer directly affected by feedwater pump status.
+        # The effect now occurs naturally through steam generator level changes
+        # affecting heat transfer area and thus heat removal capability.
         
         # Validate heat balance: Q = m_dot * cp * delta_T
         cp_primary = 5.2  # kJ/kg/K at PWR conditions
@@ -395,6 +417,8 @@ class NuclearPlantSimulator:
         print(f"  Primary Flow: {total_primary_flow:.0f} kg/s")
         print(f"  Calculated Thermal Power: {calculated_thermal_power:.1f} MW")
         print(f"  Target Thermal Power: {primary_thermal_power:.1f} MW")
+        print(f"  Feedwater System Available: {feedwater_system_available}")
+        print(f"  Feedwater Pumps Running: {feedwater_num_pumps}")
         '''
         # Calculate conditions for each steam generator loop
         primary_conditions = {}
@@ -418,6 +442,8 @@ class NuclearPlantSimulator:
         1. Steam demand affecting primary heat removal
         2. Feedwater temperature affecting steam generator performance
         3. Load demand affecting overall plant operation
+        4. Feedwater pump status affecting steam generator level control
+        5. Feedwater pump availability affecting plant operation
         
         Args:
             secondary_result: Results from secondary system update
@@ -433,10 +459,51 @@ class NuclearPlantSimulator:
         electrical_load = secondary_result['electrical_power_mw']
         load_factor = electrical_load / 1100.0  # Normalize to design power
         
+        # Feedwater pump feedback effects
+        feedwater_system_available = secondary_result.get('feedwater_system_available', True)
+        feedwater_flow_rate = secondary_result.get('feedwater_total_flow', 1665.0)
+        feedwater_num_pumps = secondary_result.get('feedwater_num_running_pumps', 3)
+        
+        # Feedwater pump availability affects steam generator level control
+        # If feedwater pumps are unavailable, this affects heat removal capability
+        if not feedwater_system_available:
+            # Reduce effective heat removal when feedwater system is unavailable
+            heat_removal_factor *= 0.5  # 50% reduction in heat removal capability
+            
+        # Feedwater flow rate affects steam generator performance
+        # Mismatch between feedwater flow and steam demand affects SG level
+        feedwater_flow_factor = feedwater_flow_rate / 1665.0  # Normalize to design
+        
+        # Number of running pumps affects system reliability
+        pump_reliability_factor = min(1.0, feedwater_num_pumps / 3.0)  # Normalize to 3 pumps
+        
+        # CRITICAL FIX: Update primary system steam flow rate with secondary system's calculated value
+        # This ensures that simulator.state.steam_flow_rate reflects the actual steam demand
+        self.state.steam_flow_rate = steam_demand
+        
+        # Update primary system state with feedwater pump feedback
+        if hasattr(self.state, 'feedwater_pump_status'):
+            self.state.feedwater_pump_status = feedwater_system_available
+        if hasattr(self.state, 'feedwater_pump_speed'):
+            # Estimate average pump speed from flow rate
+            if feedwater_flow_rate > 0:
+                estimated_speed = min(100.0, (feedwater_flow_rate / 1665.0) * 100.0)
+                self.state.feedwater_pump_speed = estimated_speed
+            else:
+                self.state.feedwater_pump_speed = 0.0
+        if hasattr(self.state, 'feedwater_system_available'):
+            self.state.feedwater_system_available = feedwater_system_available
+        if hasattr(self.state, 'feedwater_pump_power'):
+            self.state.feedwater_pump_power = secondary_result.get('feedwater_total_power', 0.0)
+        if hasattr(self.state, 'feedwater_num_running_pumps'):
+            self.state.feedwater_num_running_pumps = feedwater_num_pumps
+        
         # Apply simplified feedback (in a real plant this would be more complex)
-        # For now, we just store the feedback factors for potential future use
+        # Store feedback factors for potential future use
         self._last_heat_removal_factor = heat_removal_factor
         self._last_load_factor = load_factor
+        self._last_feedwater_flow_factor = feedwater_flow_factor
+        self._last_pump_reliability_factor = pump_reliability_factor
 
     def calculate_reward(self, secondary_result: dict = None) -> float:
         """Calculate reward for RL training with optional secondary system performance"""
@@ -675,7 +742,11 @@ class NuclearPlantEnv:
         self.sim = NuclearPlantSimulator(enable_secondary=enable_secondary)
         self.action_space_size = len(ControlAction)
         # Dynamic observation space size based on secondary system
-        self.observation_space_size = 18 if enable_secondary else 12
+        # Primary: 12 observations
+        # Secondary: 6 observations  
+        # Feedwater pumps: 4 observations
+        # Total: 12 + 6 + 4 = 22 observations when secondary is enabled
+        self.observation_space_size = 22 if enable_secondary else 12
 
     def step(self, action_idx: int, load_demand: float = None, cooling_water_temp: float = None):
         action = ControlAction(action_idx)
