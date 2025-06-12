@@ -4,6 +4,9 @@ Primary Coolant Pump Models for Nuclear Reactor Simulation
 This module provides realistic pump models that integrate with the existing
 thermal hydraulics system, focusing on flow control and system dynamics
 rather than detailed pump performance curves.
+
+This module now includes base classes that can be inherited by other pump types
+(e.g., feedwater pumps, condensate pumps) for consistent behavior and code reuse.
 """
 
 import numpy as np
@@ -25,11 +28,11 @@ class PumpStatus(Enum):
 
 
 @dataclass
-class PumpState:
-    """State of a single reactor coolant pump"""
+class BasePumpState:
+    """Base state class for all pump types"""
     # Basic operational parameters
     speed_percent: float = 100.0  # Pump speed as % of rated
-    flow_rate: float = 5700.0  # Actual flow rate (kg/s)
+    flow_rate: float = 1000.0  # Actual flow rate (kg/s) - default generic value
     status: PumpStatus = PumpStatus.RUNNING
     
     # Control parameters
@@ -37,7 +40,7 @@ class PumpState:
     auto_control: bool = True
     
     # Simplified performance metrics
-    power_consumption: float = 6.5  # Motor power (MW)
+    power_consumption: float = 1.0  # Motor power (MW) - default generic value
     available: bool = True  # Pump available for operation
     
     # Protection status
@@ -45,47 +48,63 @@ class PumpState:
     trip_reason: str = ""
 
 
-class ReactorCoolantPump:
+@dataclass
+class PumpState(BasePumpState):
+    """State of a single reactor coolant pump - inherits from base"""
+    # RCP-specific defaults
+    flow_rate: float = 5700.0  # Actual flow rate (kg/s)
+    power_consumption: float = 6.5  # Motor power (MW)
+
+
+class BasePump:
     """
-    Simplified reactor coolant pump model focused on flow control
+    Base pump class with common functionality for all pump types
     
-    This model emphasizes:
-    1. Flow rate control based on speed
-    2. Realistic startup/shutdown dynamics
-    3. Protection system integration
-    4. Integration with existing thermal hydraulics
+    This base class provides:
+    1. Common pump dynamics (start/stop, speed control)
+    2. Basic protection systems
+    3. Standard interfaces for control and monitoring
+    4. Power consumption calculations
+    
+    Derived classes should override:
+    - _calculate_flow_rate() for pump-specific performance
+    - _check_protection_systems() for pump-specific protections
+    - __init__() for pump-specific parameters
     """
     
-    def __init__(self, pump_id: str = "RCP-1", rated_flow: float = 5700.0):
+    def __init__(self, pump_id: str = "PUMP-1", pump_type: str = "generic", 
+                 rated_flow: float = 1000.0, state_class=BasePumpState):
         """
-        Initialize reactor coolant pump
+        Initialize base pump
         
         Args:
             pump_id: Unique identifier for the pump
+            pump_type: Type of pump (for identification)
             rated_flow: Rated flow at 100% speed (kg/s)
+            state_class: State class to use (allows pump-specific states)
         """
         self.pump_id = pump_id
+        self.pump_type = pump_type
         self.rated_flow = rated_flow
-        self.state = PumpState()
+        self.state = state_class()
         
-        # Performance parameters
-        self.rated_power = 6.5  # MW at rated conditions
+        # Performance parameters (can be overridden by derived classes)
+        self.rated_power = 1.0  # MW at rated conditions
         self.min_speed = 30.0  # Minimum operating speed (%)
         self.max_speed = 105.0  # Maximum speed (%)
         
-        # Dynamic parameters
+        # Dynamic parameters (can be overridden by derived classes)
         self.speed_ramp_rate = 10.0  # %/s maximum speed change
         self.startup_time = 30.0  # seconds to reach rated speed
         self.coastdown_time = 120.0  # seconds to coast down from rated speed
         
-        # Protection setpoints
-        self.low_flow_trip = 1000.0  # kg/s
-        self.high_vibration_trip = False  # Simplified - not modeled in detail
-        
+        # Protection setpoints (can be overridden by derived classes)
+        self.low_flow_trip = 100.0  # kg/s (generic default)
+    
     def update_pump(self, dt: float, system_conditions: Dict, 
                    control_inputs: Dict = None) -> Dict:
         """
-        Update pump state for one time step
+        Update pump state for one time step (base implementation)
         
         Args:
             dt: Time step (s)
@@ -111,10 +130,13 @@ class ReactorCoolantPump:
         self._calculate_power_consumption()
         
         # Check protection systems
+        self._simulate_sensors(system_conditions)
         self._check_protection_systems(system_conditions)
         
+
         return {
             'pump_id': self.pump_id,
+            'pump_type': self.pump_type,
             'flow_rate': self.state.flow_rate,
             'speed_percent': self.state.speed_percent,
             'power_consumption': self.state.power_consumption,
@@ -124,7 +146,7 @@ class ReactorCoolantPump:
         }
     
     def _process_control_inputs(self, control_inputs: Dict):
-        """Process control inputs for this pump"""
+        """Process control inputs for this pump (base implementation)"""
         # Speed setpoint changes
         if f'{self.pump_id}_speed_setpoint' in control_inputs:
             new_setpoint = control_inputs[f'{self.pump_id}_speed_setpoint']
@@ -142,7 +164,7 @@ class ReactorCoolantPump:
                 self.stop_pump()
     
     def _update_pump_dynamics(self, dt: float):
-        """Update pump speed dynamics"""
+        """Update pump speed dynamics (base implementation)"""
         if self.state.status == PumpStatus.RUNNING:
             # Normal speed control with ramp rate limiting
             speed_error = self.state.speed_setpoint - self.state.speed_percent
@@ -174,6 +196,128 @@ class ReactorCoolantPump:
         
         # Ensure speed stays within bounds
         self.state.speed_percent = np.clip(self.state.speed_percent, 0.0, self.max_speed)
+    
+    def _calculate_flow_rate(self, system_conditions: Dict):
+        """
+        Calculate pump flow rate (base implementation - should be overridden)
+        
+        This base implementation provides simple speed-proportional flow.
+        Derived classes should override for pump-specific performance.
+        """
+        if self.state.status in [PumpStatus.RUNNING, PumpStatus.STARTING]:
+            # Simple speed-proportional flow
+            speed_ratio = self.state.speed_percent / 100.0
+            self.state.flow_rate = self.rated_flow * speed_ratio
+            
+            # Ensure minimum flow when running
+            if self.state.status == PumpStatus.RUNNING:
+                min_flow = self.rated_flow * self.min_speed / 100.0
+                self.state.flow_rate = max(self.state.flow_rate, min_flow)
+        else:
+            # Pump stopped or tripped
+            self.state.flow_rate = 0.0
+    
+    def _calculate_power_consumption(self):
+        """Calculate pump motor power consumption (base implementation)"""
+        if self.state.status in [PumpStatus.RUNNING, PumpStatus.STARTING]:
+            # Power roughly proportional to speed cubed for centrifugal pumps
+            speed_ratio = self.state.speed_percent / 100.0
+            self.state.power_consumption = self.rated_power * (speed_ratio ** 2.5)
+            
+            # Minimum power when starting
+            if self.state.status == PumpStatus.STARTING:
+                self.state.power_consumption = max(self.state.power_consumption, 
+                                                 self.rated_power * 0.3)
+        else:
+            self.state.power_consumption = 0.0
+    
+    def _check_protection_systems(self, system_conditions: Dict):
+        """
+        Check pump protection systems (base implementation)
+        
+        Derived classes should override to add pump-specific protections.
+        """
+        # Reset trip if pump is stopped
+        if self.state.status == PumpStatus.STOPPED:
+            self.state.trip_active = False
+            self.state.trip_reason = ""
+            return
+        
+        # Basic low flow protection
+        if (self.state.status == PumpStatus.RUNNING and 
+            self.state.flow_rate < self.low_flow_trip):
+            self._trip_pump("Low Flow")
+            return
+    
+    def _trip_pump(self, reason: str):
+        """Trip the pump due to protection system activation"""
+        self.state.status = PumpStatus.TRIPPED
+        self.state.trip_active = True
+        self.state.trip_reason = reason
+        self.state.available = False
+        print(f"PUMP TRIP: {self.pump_id} - {reason}")
+    
+    def start_pump(self) -> bool:
+        """Start the pump if conditions permit"""
+        if (self.state.status == PumpStatus.STOPPED and 
+            self.state.available and not self.state.trip_active):
+            self.state.status = PumpStatus.STARTING
+            return True
+        return False
+    
+    def stop_pump(self) -> bool:
+        """Stop the pump"""
+        if self.state.status in [PumpStatus.RUNNING, PumpStatus.STARTING]:
+            self.state.status = PumpStatus.STOPPING
+            return True
+        return False
+    
+    def reset_trip(self) -> bool:
+        """Reset pump trip (manual action)"""
+        if self.state.status == PumpStatus.TRIPPED:
+            self.state.trip_active = False
+            self.state.trip_reason = ""
+            self.state.available = True
+            self.state.status = PumpStatus.STOPPED
+            return True
+        return False
+
+
+class ReactorCoolantPump(BasePump):
+    """
+    Reactor coolant pump - inherits from BasePump
+    
+    This model emphasizes:
+    1. Flow rate control based on speed
+    2. Realistic startup/shutdown dynamics
+    3. Protection system integration
+    4. Integration with existing thermal hydraulics
+    """
+    
+    def __init__(self, pump_id: str = "RCP-1", rated_flow: float = 5700.0):
+        """
+        Initialize reactor coolant pump
+        
+        Args:
+            pump_id: Unique identifier for the pump
+            rated_flow: Rated flow at 100% speed (kg/s)
+        """
+        # Initialize base pump with RCP-specific parameters
+        super().__init__(pump_id, "reactor_coolant", rated_flow, PumpState)
+        
+        # RCP-specific performance parameters
+        self.rated_power = 6.5  # MW at rated conditions
+        self.min_speed = 30.0  # Minimum operating speed (%)
+        self.max_speed = 105.0  # Maximum speed (%)
+        
+        # RCP-specific dynamic parameters
+        self.speed_ramp_rate = 10.0  # %/s maximum speed change
+        self.startup_time = 30.0  # seconds to reach rated speed
+        self.coastdown_time = 120.0  # seconds to coast down from rated speed
+        
+        # RCP-specific protection setpoints
+        self.low_flow_trip = 1000.0  # kg/s
+        self.high_vibration_trip = False  # Simplified - not modeled in detail
     
     def _calculate_flow_rate(self, system_conditions: Dict):
         """

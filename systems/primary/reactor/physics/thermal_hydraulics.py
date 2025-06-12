@@ -16,10 +16,12 @@ class ThermalHydraulicsModel:
 
     def __init__(self):
         """Initialize thermal hydraulics model with physical constants"""
-        # Physical constants
-        self.FUEL_HEAT_CAPACITY = 300.0  # J/kg/K
+        # Physical constants - FIXED: Realistic fuel mass with effective heat capacity
+        # Realistic UO₂ fuel mass (~200 tons) with effective heat capacity that accounts
+        # for thermal coupling with cladding, structure, and immediate coolant
+        self.FUEL_MASS = 200000.0  # kg (200 tons UO₂ - realistic PWR fuel loading)
+        self.FUEL_HEAT_CAPACITY = 1500.0  # J/kg/K (effective heat capacity including thermal coupling)
         self.COOLANT_HEAT_CAPACITY = 5200.0  # J/kg/K
-        self.FUEL_MASS = 100000.0  # kg
         self.COOLANT_MASS = 300000.0  # kg
 
     def calculate_thermal_hydraulics(self, reactor_state, thermal_power: float) -> Dict[str, float]:
@@ -109,16 +111,60 @@ class ThermalHydraulicsModel:
 
     def calculate_heat_transfer_coefficient(self, reactor_state) -> float:
         """
-        Calculate heat transfer coefficient based on flow rate
+        Calculate heat transfer coefficient using Dittus-Boelter correlation
         
         Args:
             reactor_state: Current reactor state
             
         Returns:
-            Heat transfer coefficient
+            Overall UA value (W/K) for fuel-to-coolant heat transfer
         """
-        # Simplified correlation
-        return 50000 + 2.0 * reactor_state.coolant_flow_rate
+        # PWR fuel rod geometry (typical 3000 MW PWR)
+        fuel_rod_diameter = 0.0095  # m (9.5mm typical PWR fuel rod)
+        fuel_rod_length = 3.66      # m (12 ft active length)
+        num_fuel_rods = 50000       # Typical large PWR
+        
+        # Calculate total heat transfer area
+        heat_transfer_area = np.pi * fuel_rod_diameter * fuel_rod_length * num_fuel_rods
+        
+        # Coolant properties at ~310°C, 15.5 MPa (typical PWR conditions)
+        density = 700.0              # kg/m³
+        viscosity = 9.0e-5           # Pa·s
+        thermal_conductivity = 0.55  # W/m·K
+        specific_heat = 5200.0       # J/kg·K
+        
+        # Estimate flow velocity (simplified)
+        # Assume flow area is ~10 m² for large PWR
+        flow_area = 10.0  # m²
+        velocity = reactor_state.coolant_flow_rate / (density * flow_area)
+        
+        # Calculate Reynolds number
+        reynolds = density * velocity * fuel_rod_diameter / viscosity
+        reynolds = max(reynolds, 1000)  # Minimum for correlation validity
+        
+        # Calculate Prandtl number
+        prandtl = viscosity * specific_heat / thermal_conductivity
+        
+        # Dittus-Boelter correlation: Nu = 0.023 × Re^0.8 × Pr^0.4
+        # Valid for Re > 10,000 and 0.7 < Pr < 160
+        nusselt = 0.023 * (reynolds ** 0.8) * (prandtl ** 0.4)
+        
+        # Heat transfer coefficient (W/m²·K)
+        h = nusselt * thermal_conductivity / fuel_rod_diameter
+        
+        # Overall UA value (W/K)
+        overall_ua = h * heat_transfer_area
+        
+        # FIXED: Scale down the heat transfer coefficient for more realistic values
+        # The Dittus-Boelter correlation gives very high values, so we scale it down
+        # to achieve better thermal balance
+        scaling_factor = 0.1  # Reduce by factor of 10 for more realistic heat transfer
+        overall_ua = overall_ua * scaling_factor
+        
+        # Ensure reasonable bounds (scaled down from original range)
+        overall_ua = np.clip(overall_ua, 10e6, 50e6)  # 10-50 million W/K range
+        
+        return overall_ua
 
     def update_thermal_state(self, reactor_state, thermal_params: Dict[str, float], dt: float) -> None:
         """

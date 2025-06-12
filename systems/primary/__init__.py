@@ -35,6 +35,10 @@ class ControlAction(Enum):
     NO_ACTION = 8
     DILUTE_BORON = 9  # Reduce boron concentration (add reactivity)
     BORATE_COOLANT = 10  # Add boron concentration (reduce reactivity)
+    START_FEEDWATER_PUMP = 11  # Start a feedwater pump
+    STOP_FEEDWATER_PUMP = 12  # Stop a feedwater pump
+    INCREASE_FEEDWATER_PUMP_SPEED = 13  # Increase feedwater pump speed
+    DECREASE_FEEDWATER_PUMP_SPEED = 14  # Decrease feedwater pump speed
 
 
 @dataclass
@@ -47,7 +51,11 @@ class ReactorState:
     delayed_neutron_precursors: Optional[np.ndarray] = None
 
     # Thermal hydraulics - FIXED: Use realistic PWR operating temperatures
-    fuel_temperature: float = 575.0  # °C (realistic steady-state average)
+    # FIXED: Set initial fuel temperature closer to equilibrium to prevent dramatic temperature changes
+    # With scaled heat transfer coefficient (~30M W/K) and 3000MW thermal power:
+    # Equilibrium temp difference = 3000MW / 30M W/K = 100°C
+    # So fuel temp = coolant temp + 100°C = 310°C + 100°C = 410°C
+    fuel_temperature: float = 410.0  # °C (equilibrium temperature for 3000MW)
     coolant_temperature: float = 310.0  # °C (average of hot/cold leg: ~327+293)/2)
     coolant_pressure: float = 15.5  # MPa
     coolant_flow_rate: float = 20000.0  # kg/s
@@ -65,6 +73,13 @@ class ReactorState:
     )
     steam_valve_position: float = 50.0  # % open    
     boron_concentration: float = 12000.0  # ppm
+    
+    # Feedwater pump system
+    feedwater_pump_status: bool = True  # At least one pump running
+    feedwater_pump_speed: float = 100.0  # % rated speed
+    feedwater_system_available: bool = True  # System available for operation
+    feedwater_pump_power: float = 10.0  # MW total power consumption
+    feedwater_num_running_pumps: int = 3  # Number of running pumps
 
     # Fission product poisons - start deeply subcritical
     xenon_concentration: float = 2.8e15  # atoms/cm³
