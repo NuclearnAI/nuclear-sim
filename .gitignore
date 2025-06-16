@@ -11,3 +11,6 @@ wheels/
 
 # runs
 runs/
+
+.DS_Store
+.vscode
