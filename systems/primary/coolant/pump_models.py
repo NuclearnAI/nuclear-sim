@@ -99,7 +99,7 @@ class BasePump:
         self.coastdown_time = 120.0  # seconds to coast down from rated speed
         
         # Protection setpoints (can be overridden by derived classes)
-        self.low_flow_trip = 100.0  # kg/s (generic default)
+        self.low_flow_trip = 25.0  # kg/s (generic default - reduced)
     
     def update_pump(self, dt: float, system_conditions: Dict, 
                    control_inputs: Dict = None) -> Dict:

@@ -277,7 +277,7 @@ class FeedwaterPumpLubricationSystem(BaseLubricationSystem):
         
         Args:
             pump_operating_conditions: Pump operating conditions
-            dt: Time step (hours)
+            dt: Time step (minutes)
             
         Returns:
             Dictionary with pump lubrication effects
@@ -300,8 +300,14 @@ class FeedwaterPumpLubricationSystem(BaseLubricationSystem):
         
         # Oil level decreases due to seal leakage
         if self.seal_leakage_rate > 0:
-            oil_loss_rate = self.seal_leakage_rate * dt / 60.0 / self.config.oil_reservoir_capacity * 100.0
-            self.oil_level = max(0.0, self.oil_level - oil_loss_rate)
+            # Calculate oil lost during this time step
+            # seal_leakage_rate is in L/min, dt is in minutes
+            oil_lost_liters = self.seal_leakage_rate * dt  # L/min * minutes = L
+            oil_loss_percentage = (oil_lost_liters / self.config.oil_reservoir_capacity) * 100.0
+            self.oil_level = max(0.0, self.oil_level - oil_loss_percentage)
+            
+        # Apply bounds checking to prevent oil level exceeding 100%
+        self.oil_level = min(100.0, max(0.0, self.oil_level))
         
         # Calculate performance degradation
         self._calculate_pump_performance_degradation()

@@ -713,53 +713,90 @@ class SecondaryReactorPhysics(StateProviderMixin):
             self.steam_generator_system.set_initial_steam_flow(steam_flow_per_sg)
     
     def _initialize_feedwater_system_to_steady_state(self, equilibrium: Dict) -> None:
-        """Initialize feedwater pumps to steady-state operation"""
-        # Initialize pumps to running state at calculated speeds
+        """Initialize feedwater pumps to steady-state operation with perfect initial conditions"""
         if hasattr(self.feedwater_system, 'pump_system'):
             pump_system = self.feedwater_system.pump_system
             
-            # Start required number of pumps in RUNNING state
+            # Calculate perfect system conditions for steady-state operation
+            suction_pressure = 0.5  # MPa from condensate system
+            discharge_pressure = equilibrium['steam_pressure'] + 0.5  # Steam pressure + margin
+            npsh_available = 25.0  # m - well above minimum requirement
+            feedwater_temp = 40.0  # °C - condensate temperature, not final feedwater temp
+            
+            # Get pump IDs and determine how many to start
             pump_ids = list(pump_system.pumps.keys())
             pumps_to_start = min(equilibrium['pumps_needed'], len(pump_ids))
             
-            for i in range(pumps_to_start):
-                pump_id = pump_ids[i]
-                pump = pump_system.pumps[pump_id]
-                
-                # Set pump to RUNNING state with calculated speed and flow
-                from systems.primary.coolant.pump_models import PumpStatus
-                pump.state.status = PumpStatus.RUNNING
-                pump.state.speed_percent = equilibrium['pump_speed']
-                pump.state.speed_setpoint = equilibrium['pump_speed']
-                pump.state.flow_rate = equilibrium['feedwater_flow'] / pumps_to_start
+            # First, set ALL pumps to perfect initial conditions (stopped but ready)
+            from systems.primary.coolant.pump_models import PumpStatus
+            for pump_id, pump in pump_system.pumps.items():
+                # Set pump to stopped but available state
+                pump.state.status = PumpStatus.STOPPED
                 pump.state.available = True
                 pump.state.auto_control = True
                 pump.state.trip_active = False
                 pump.state.trip_reason = ""
                 
-                # Set appropriate hydraulic conditions
-                pump.state.suction_pressure = 0.5  # MPa from condensate system
-                pump.state.discharge_pressure = equilibrium['steam_pressure'] + 0.5
-                pump.state.npsh_available = 25.0  # Adequate NPSH
-                pump.state.differential_pressure = pump.state.discharge_pressure - pump.state.suction_pressure
+                # Set perfect hydraulic conditions
+                pump.state.suction_pressure = suction_pressure
+                pump.state.discharge_pressure = discharge_pressure
+                pump.state.npsh_available = npsh_available
+                pump.state.differential_pressure = discharge_pressure - suction_pressure
                 
-                # Calculate power consumption for steady state
-                pump._calculate_power_consumption()
+                # Set perfect mechanical conditions
+                pump.state.oil_level = 100.0  # % - full oil level
+                pump.state.oil_temperature = 45.0  # °C - normal operating temperature
+                pump.state.bearing_temperature = 50.0  # °C - normal bearing temperature
+                pump.state.motor_temperature = 65.0  # °C - normal motor temperature
+                pump.state.vibration_level = 1.5  # mm/s - normal vibration
+                pump.state.motor_current = 0.0  # A - no current when stopped
+                pump.state.motor_voltage = 6.6  # kV - normal voltage
+                
+                # Set perfect wear and damage conditions
+                pump.state.impeller_wear = 0.0  # % - new condition
+                pump.state.bearing_wear = 0.0  # % - new condition
+                pump.state.seal_wear = 0.0  # % - new condition
+                pump.state.seal_leakage = 0.1  # L/min - minimal leakage
+                pump.state.cavitation_intensity = 0.0  # No cavitation
+                pump.state.cavitation_damage = 0.0  # No damage
+                pump.state.cavitation_time = 0.0  # No cavitation time
+                
+                # Set perfect performance factors
+                pump.state.flow_degradation_factor = 1.0  # Perfect performance
+                pump.state.efficiency_degradation_factor = 1.0  # Perfect efficiency
+                pump.state.head_degradation_factor = 1.0  # Perfect head
+                
+                # Set speed setpoint and initial conditions for pumps that will start
+                if pump_id in pump_ids[:pumps_to_start]:
+                    pump.state.speed_setpoint = equilibrium['pump_speed']
+                    pump.set_flow_demand(equilibrium['feedwater_flow'] / pumps_to_start)
+                    
+                    # CRITICAL: Set equilibrium flow and speed immediately to prevent low flow trips
+                    pump.state.speed_percent = equilibrium['pump_speed']
+                    pump.state.flow_rate = equilibrium['feedwater_flow'] / pumps_to_start
+                    pump._calculate_power_consumption()  # Calculate power based on flow
+                else:
+                    pump.state.speed_setpoint = 0.0
+                    pump.set_flow_demand(0.0)
+                    pump.state.speed_percent = 0.0
+                    pump.state.flow_rate = 0.0
+                    pump.state.power_consumption = 0.0
             
-            # Keep remaining pumps stopped
-            for i in range(pumps_to_start, len(pump_ids)):
+            # Now start the required pumps using proper startup sequence
+            # This will transition them from STOPPED -> STARTING -> RUNNING
+            for i in range(pumps_to_start):
                 pump_id = pump_ids[i]
                 pump = pump_system.pumps[pump_id]
-                pump.state.status = PumpStatus.STOPPED
-                pump.state.speed_percent = 0.0
-                pump.state.flow_rate = 0.0
-                pump.state.power_consumption = 0.0
+                
+                # Use proper startup method - this will put pump in STARTING state
+                success = pump.start_pump()
+                if not success:
+                    print(f"Warning: Failed to start pump {pump_id} during equilibrium initialization")
             
-            # Update system totals
-            pump_system.running_pumps = pump_ids[:pumps_to_start]
-            pump_system.total_flow = equilibrium['feedwater_flow']
-            pump_system.total_power = sum(pump_system.pumps[pid].state.power_consumption 
-                                        for pid in pump_system.running_pumps)
+            # Initialize system state (will be updated properly on first update cycle)
+            pump_system.running_pumps = []  # Will be populated during first update
+            pump_system.total_flow = 0.0  # Will be calculated during first update
+            pump_system.total_power = 0.0  # Will be calculated during first update
             pump_system.system_available = True
     
     def _initialize_turbine_to_steady_state(self, equilibrium: Dict) -> None:

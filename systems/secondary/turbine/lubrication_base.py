@@ -129,7 +129,7 @@ class BaseLubricationSystem(ABC):
         self.components = {comp.component_id: comp for comp in components}
         
         # Oil system state
-        self.oil_level = config.oil_reservoir_capacity * 0.9  # 90% full initially
+        self.oil_level = 90.0                                # % oil level (0-100%)
         self.oil_temperature = 55.0                           # °C current temperature
         self.oil_pressure = config.oil_operating_pressure     # MPa current pressure
         self.oil_flow_rate = 50.0                            # L/min circulation rate
@@ -396,11 +396,17 @@ class BaseLubricationSystem(ABC):
         if self.oil_moisture_content >= self.config.moisture_limit:
             trips.append("Excessive Oil Moisture")
         
-        # Oil level and pressure alarms
-        if self.oil_level < self.config.oil_reservoir_capacity * 0.2:
+        # Oil level and pressure alarms (oil_level is now in percentage 0-100%)
+        if self.oil_level < 20.0:  # Below 20%
             alarms.append("Low Oil Level")
-        if self.oil_level < self.config.oil_reservoir_capacity * 0.1:
+        if self.oil_level < 10.0:  # Below 10%
             trips.append("Very Low Oil Level")
+        
+        # High oil level protection
+        if self.oil_level > 95.0:  # Above 95%
+            alarms.append("High Oil Level")
+        if self.oil_level > 105.0:  # Above 105% (overfill with spillage)
+            trips.append("Oil System Overfill")
         
         if self.oil_pressure < self.config.oil_operating_pressure * 0.8:
             alarms.append("Low Oil Pressure")
@@ -464,8 +470,8 @@ class BaseLubricationSystem(ABC):
             self.anti_wear_additive_level = 100.0
             self.corrosion_inhibitor_level = 100.0
             
-            # Restore oil level
-            self.oil_level = self.config.oil_reservoir_capacity * 0.95
+            # Restore oil level to 95%
+            self.oil_level = 95.0
             
             self.oil_changes_performed += 1
             results['oil_hours_reset'] = old_hours
@@ -541,7 +547,7 @@ class BaseLubricationSystem(ABC):
     def reset(self) -> None:
         """Reset lubrication system to initial conditions"""
         # Reset oil system state
-        self.oil_level = self.config.oil_reservoir_capacity * 0.9
+        self.oil_level = 90.0  # % oil level (0-100%)
         self.oil_temperature = 55.0
         self.oil_pressure = self.config.oil_operating_pressure
         self.oil_flow_rate = 50.0

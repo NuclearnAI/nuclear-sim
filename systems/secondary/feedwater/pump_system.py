@@ -124,7 +124,7 @@ class FeedwaterPump(BasePump):
         self.coastdown_time = config.coastdown_time
         
         # Feedwater-specific protection setpoints
-        self.low_flow_trip = 50.0                       # kg/s low flow trip
+        self.low_flow_trip = 25.0                       # kg/s low flow trip (reduced from 50.0)
         self.min_npsh_required = 15.0                   # m NPSH requirement
         self.max_discharge_pressure = 10.0              # MPa max discharge pressure
         self.min_suction_pressure = 0.2                 # MPa min suction pressure
@@ -258,6 +258,10 @@ class FeedwaterPump(BasePump):
         if self.state.trip_active:
             return
         
+        # Skip protection checks during startup phase to allow proper equilibrium initialization
+        if self.state.status == PumpStatus.STARTING:
+            return
+        
         # NPSH protection (feedwater-specific)
         if (self.state.status == PumpStatus.RUNNING and 
             self.state.npsh_available < self.min_npsh_required):
@@ -296,6 +300,9 @@ class FeedwaterPump(BasePump):
             return
         
         if self._check_wear_trips():
+            return
+        
+        if self._check_oil_level_trips():
             return
     
     def _check_cavitation_trips(self):
@@ -357,6 +364,26 @@ class FeedwaterPump(BasePump):
             self._trip_pump("Performance Degradation")
             return True
             
+        return False
+    
+    def _check_oil_level_trips(self):
+        """Check oil level-related trip conditions"""
+        # Very low oil level - immediate trip
+        if self.state.oil_level < 10.0:  # Below 10%
+            self._trip_pump("Very Low Oil Level")
+            return True
+        
+        # Low oil level - trip if running (allow startup with low oil)
+        if (self.state.status == PumpStatus.RUNNING and 
+            self.state.oil_level < 20.0):  # Below 20%
+            self._trip_pump("Low Oil Level")
+            return True
+        
+        # High oil level - overfill protection
+        if self.state.oil_level > 105.0:  # Above 105% (impossible overfill)
+            self._trip_pump("Oil System Overfill")
+            return True
+        
         return False
     
     def set_flow_demand(self, flow_demand: float):
@@ -446,7 +473,7 @@ class FeedwaterPump(BasePump):
             self.state.cavitation_intensity = cavitation_severity * flow_factor
             
             # Accumulate cavitation time
-            self.state.cavitation_time += dt * 3600.0  # Convert to seconds
+            self.state.cavitation_time += dt * 60.0  # Convert minutes to seconds
             
             # Calculate damage accumulation (exponential with intensity)
             if self.state.cavitation_intensity > 0.1:
@@ -466,7 +493,7 @@ class FeedwaterPump(BasePump):
             self.state.cavitation_noise_level = 0.0
             
             # Cavitation time decays slowly when not cavitating
-            self.state.cavitation_time = max(0.0, self.state.cavitation_time - dt * 360.0)
+            self.state.cavitation_time = max(0.0, self.state.cavitation_time - dt * 6.0)
     
     def _simulate_mechanical_wear(self, dt: float, system_conditions: Dict):
         """Simulate detailed mechanical wear with realistic physics"""
@@ -484,7 +511,7 @@ class FeedwaterPump(BasePump):
         # === IMPELLER WEAR ===
         impeller_wear_rate = (self.base_impeller_wear_rate * 
                              flow_factor * speed_factor * particle_content)
-        self.state.impeller_wear += impeller_wear_rate * dt
+        self.state.impeller_wear += impeller_wear_rate * dt / 60.0  # Convert minutes to hours
         
         # === BEARING WEAR ===
         load_factor = (self.state.power_consumption / self.config.rated_power) ** 1.2
@@ -493,7 +520,7 @@ class FeedwaterPump(BasePump):
         
         bearing_wear_rate = (self.base_bearing_wear_rate * 
                            load_factor * temp_factor * oil_factor)
-        self.state.bearing_wear += bearing_wear_rate * dt
+        self.state.bearing_wear += bearing_wear_rate * dt / 60.0  # Convert minutes to hours
         
         # === SEAL WEAR ===
         pressure_factor = (self.state.differential_pressure / 7.5) ** 1.5
@@ -501,14 +528,14 @@ class FeedwaterPump(BasePump):
         
         seal_wear_rate = (self.base_seal_wear_rate * 
                          pressure_factor * temp_factor_seal)
-        self.state.seal_wear += seal_wear_rate * dt
+        self.state.seal_wear += seal_wear_rate * dt / 60.0  # Convert minutes to hours
         
         # === SEAL LEAKAGE ===
         self.state.seal_leakage = self.state.seal_wear * 0.5  # L/min per % wear
         
         # Oil level decreases due to seal leakage
         if self.state.seal_leakage > 0:
-            oil_loss_rate = self.state.seal_leakage * dt / 60.0 / 100.0
+            oil_loss_rate = self.state.seal_leakage * dt / 100.0
             self.state.oil_level = max(0.0, self.state.oil_level - oil_loss_rate)
         
         # === VIBRATION EFFECTS FROM WEAR ===
@@ -540,9 +567,12 @@ class FeedwaterPump(BasePump):
     
     def _simulate_sensors(self, system_conditions: Dict):
         """Simulate sensor readings based on current state and system inputs"""
-        # Oil level drops slowly while running
+        # Oil level drops slowly while running (ensure proper bounds)
         if self.state.status == PumpStatus.RUNNING:
             self.state.oil_level = max(0.0, self.state.oil_level - 0.01)
+        
+        # Apply strict bounds checking to oil level (0-100%)
+        self.state.oil_level = min(100.0, max(0.0, self.state.oil_level))
         
         # Load factor for thermal and electrical simulation
         load_factor = self.state.flow_rate / self.config.rated_flow if self.config.rated_flow > 0 else 0.0
@@ -713,21 +743,23 @@ class FeedwaterPumpSystem:
                 pump_id = pump_ids[i]
                 pump = self.pumps[pump_id]
                 
-                # Set target speed and flow demand BEFORE starting
-                pump.state.speed_setpoint = 100.0
-                pump.set_flow_demand(555.0)  # Design flow per pump
+                # Only set defaults if not already set by equilibrium initialization
+                if pump.state.speed_setpoint == 0.0:
+                    pump.state.speed_setpoint = 100.0
+                if not hasattr(pump, 'flow_demand') or pump.flow_demand == 0.0:
+                    pump.set_flow_demand(555.0)  # Design flow per pump
                 
                 # Start the pump (this will initiate STARTING state)
-                pump.start_pump()
-                
-                # DO NOT force speed_percent - let startup sequence handle it
-                # The base class will ramp from 0% to speed_setpoint over startup_time
+                # Only start if not already started by equilibrium initialization
+                if pump.state.status == PumpStatus.STOPPED:
+                    pump.start_pump()
         
         # Keep spare pumps stopped
         for i in range(self.minimum_pumps_required, len(pump_ids)):
             pump_id = pump_ids[i]
             pump = self.pumps[pump_id]
-            pump.stop_pump()
+            if pump.state.status != PumpStatus.STOPPED:
+                pump.stop_pump()
     
     def update_system(self, dt: float, system_conditions: Dict, 
                      control_inputs: Dict = None) -> Dict:

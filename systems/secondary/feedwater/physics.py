@@ -235,9 +235,9 @@ class EnhancedFeedwaterPhysics(StateProviderMixin):
             'individual_demands': control_demands['individual_demands']
         })
         
-        # CRITICAL FIX: Convert dt from hours to seconds for pump system
-        # The feedwater physics receives dt in hours, but pump system expects seconds
-        dt_seconds = dt * 3600.0
+        # CRITICAL FIX: Convert dt from minutes to seconds for pump system
+        # The feedwater physics receives dt in minutes, but pump system expects seconds
+        dt_seconds = dt * 60.0
         
         pump_results = self.pump_system.update_system(
             dt=dt_seconds,

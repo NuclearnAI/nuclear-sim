@@ -147,7 +147,7 @@ class NPSHProtection:
         if len(self.npsh_history) >= 2:
             self.npsh_trend = (self.npsh_history[-1] - self.npsh_history[0]) / len(self.npsh_history)
         
-        dt_seconds = dt * 3600.0
+        dt_seconds = dt * 60.0
         
         # NPSH Low Alarm
         if npsh_available < self.config.npsh_low_alarm:
@@ -267,7 +267,7 @@ class FeedwaterProtectionSystem:
         if not self.protection_system_available:
             return {'system_trip_active': False, 'protection_unavailable': True}
         
-        dt_seconds = dt * 3600.0
+        dt_seconds = dt * 60.0
         current_trips = []
         current_alarms = []
         

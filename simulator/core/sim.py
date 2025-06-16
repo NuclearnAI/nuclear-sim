@@ -468,6 +468,10 @@ class NuclearPlantSimulator:
             # Get thermal power from primary physics system
             thermal_power_mw = self.primary_physics.thermal_power_mw
             
+            # CRITICAL FIX: If thermal power is zero (during initialization), use rated power
+            if thermal_power_mw <= 0.0:
+                thermal_power_mw = self.primary_physics.rated_power_mw  # Use rated power (3000 MW)
+            
             # Reset secondary system with optional steady-state initialization
             self.secondary_physics.reset_system(
                 start_at_steady_state=start_at_steady_state,
