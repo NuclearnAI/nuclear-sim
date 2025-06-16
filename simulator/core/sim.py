@@ -17,67 +17,20 @@ from systems.primary import PrimaryReactorPhysics, ReactorState, ControlAction
 from systems.secondary import SecondaryReactorPhysics
 from systems.primary.reactor.reactivity_model import create_equilibrium_state
 
+# Import the new state management system
+from simulator.state import StateManager, StateProvider, StateVariable, StateCategory
+
 warnings.filterwarnings("ignore")
 
 
 class NuclearPlantSimulator:
     """Physics-based nuclear power plant simulator with integrated primary and secondary systems"""
 
-    def __init__(self, dt: float = 1.0, heat_source=None, enable_secondary: bool = True):
+    def __init__(self, dt: float = 1.0, heat_source=None, enable_secondary: bool = True, 
+                 enable_state_management: bool = True, max_state_rows: int = 100000):
         self.dt = dt  # Time step in seconds
         self.time = 0.0
-        self.history = {
-            'time': [],
-            'primary': {
-                'neutron_flux': [],
-                'fuel_temperature': [],
-                'coolant_temperature': [],
-                'coolant_pressure': [],
-                'coolant_flow_rate': [],
-                'steam_temperature': [],
-                'steam_pressure': [],
-                'steam_flow_rate': [],
-                'control_rod_position': [],
-                'steam_valve_position': [],
-                'power_level': [],
-                'scram_status': [],
-                'reactivity': [],
-                'boron_concentration': [],
-                'thermal_power': []
-            },
-            'secondary': {
-                'electrical_power': [],
-                'thermal_efficiency': [],
-                'total_steam_flow': [],
-                'sg_avg_pressure': [],
-                'sg_avg_temperature': [],
-                'sg_avg_steam_quality': [],
-                'condenser_pressure': [],
-                'condenser_temperature': [],
-                'turbine_power': [],
-                'generator_power': [],
-                'feedwater_flow': [],
-                'feedwater_temperature': [],
-                'cooling_water_temperature': [],
-                'cooling_water_flow': [],
-                'load_demand': [],
-                'vacuum_pump_operation': [],
-                'feedwater_pump_power': [],
-                'feedwater_pump_flow': [],
-                'feedwater_pump_speed': [],
-                'feedwater_pump_status': [],
-                'feedwater_system_available': [],
-                'feedwater_auto_control': [],
-                'feedwater_num_running_pumps': []
-            },
-            'integration': {
-                'primary_hot_leg_temp': [],
-                'primary_cold_leg_temp': [],
-                'heat_removal_rate': [],
-                'overall_plant_efficiency': [],
-                'coupling_factor': []
-            }
-        }
+        self.enable_state_management = enable_state_management
         self.enable_secondary = enable_secondary
         
         # Initialize primary reactor physics system
@@ -91,6 +44,19 @@ class NuclearPlantSimulator:
             self.secondary_physics = SecondaryReactorPhysics(num_steam_generators=3)
         else:
             self.secondary_physics = None
+        
+        # Initialize state management system
+        if self.enable_state_management:
+            self.state_manager = StateManager(max_rows=max_state_rows, auto_manage_memory=True)
+            
+            # Register physics systems as state providers
+            self.state_manager.register_provider(self.primary_physics, "primary")
+            if self.enable_secondary and self.secondary_physics is not None:
+                self.state_manager.register_provider(self.secondary_physics, "secondary")
+            
+            print(f"State management initialized: {self.state_manager}")
+        else:
+            self.state_manager = None
         
         # Integration parameters for primary-secondary coupling
         self.primary_loops = 3  # Number of primary loops
@@ -156,84 +122,15 @@ class NuclearPlantSimulator:
         # Update time
         self.time += self.dt
         
-        # Store history
+        # Collect states using the new state management system
+        if self.enable_state_management and self.state_manager is not None:
+            try:
+                collected_states = self.state_manager.collect_states(self.time)
+            except Exception as e:
+                warnings.warn(f"State collection failed: {e}")
+        
+        # Get observation for RL
         observation = self.get_observation()
-        self.history['time'].append(self.time)
-        
-        # Primary system measurements
-        self.history['primary']['neutron_flux'].append(self.state.neutron_flux)
-        self.history['primary']['fuel_temperature'].append(self.state.fuel_temperature)
-        self.history['primary']['coolant_temperature'].append(self.state.coolant_temperature)
-        self.history['primary']['coolant_pressure'].append(self.state.coolant_pressure)
-        self.history['primary']['coolant_flow_rate'].append(self.state.coolant_flow_rate)
-        self.history['primary']['steam_temperature'].append(self.state.steam_temperature)
-        self.history['primary']['steam_pressure'].append(self.state.steam_pressure)
-        self.history['primary']['steam_flow_rate'].append(self.state.steam_flow_rate)
-        self.history['primary']['control_rod_position'].append(self.state.control_rod_position)
-        self.history['primary']['steam_valve_position'].append(self.state.steam_valve_position)
-        self.history['primary']['power_level'].append(self.state.power_level)
-        self.history['primary']['scram_status'].append(float(self.state.scram_status))
-        self.history['primary']['reactivity'].append(primary_result['total_reactivity_pcm'])
-        self.history['primary']['boron_concentration'].append(getattr(self.state, 'boron_concentration', 0.0))
-        self.history['primary']['thermal_power'].append(primary_result['thermal_power_mw'])
-        
-        # Secondary system measurements
-        if secondary_result is not None:
-            self.history['secondary']['electrical_power'].append(secondary_result['electrical_power_mw'])
-            self.history['secondary']['thermal_efficiency'].append(secondary_result['thermal_efficiency'])
-            self.history['secondary']['total_steam_flow'].append(secondary_result['total_steam_flow'])
-            self.history['secondary']['sg_avg_pressure'].append(secondary_result['sg_avg_pressure'])
-            self.history['secondary']['sg_avg_steam_quality'].append(secondary_result['sg_avg_steam_quality'])
-            self.history['secondary']['sg_avg_temperature'].append(secondary_result.get('sg_avg_temperature', 0.0))
-            self.history['secondary']['condenser_pressure'].append(secondary_result['condenser_pressure'])
-            self.history['secondary']['condenser_temperature'].append(secondary_result.get('condenser_temperature', 0.0))
-            self.history['secondary']['turbine_power'].append(secondary_result.get('turbine_power_mw', 0.0))
-            self.history['secondary']['generator_power'].append(secondary_result['electrical_power_mw'])
-            self.history['secondary']['feedwater_flow'].append(secondary_result.get('total_feedwater_flow', 0.0))
-            self.history['secondary']['feedwater_temperature'].append(227.0)  # From control inputs
-            self.history['secondary']['cooling_water_temperature'].append(self.cooling_water_temp)
-            self.history['secondary']['cooling_water_flow'].append(45000.0)  # From control inputs
-            self.history['secondary']['load_demand'].append(self.load_demand)
-            self.history['secondary']['vacuum_pump_operation'].append(1.0)  # From control inputs
-            
-            # Feedwater pump system measurements
-            self.history['secondary']['feedwater_pump_power'].append(secondary_result.get('feedwater_total_power', 0.0))
-            self.history['secondary']['feedwater_pump_flow'].append(secondary_result.get('feedwater_total_flow', 0.0))
-            self.history['secondary']['feedwater_pump_speed'].append(100.0)  # Average speed - could be calculated from pump states
-            self.history['secondary']['feedwater_pump_status'].append(float(secondary_result.get('feedwater_system_available', False)))
-            self.history['secondary']['feedwater_system_available'].append(float(secondary_result.get('feedwater_system_available', False)))
-            self.history['secondary']['feedwater_auto_control'].append(float(secondary_result.get('feedwater_auto_control', True)))
-            self.history['secondary']['feedwater_num_running_pumps'].append(secondary_result.get('feedwater_num_running_pumps', 0))
-            
-            # Integration measurements
-            primary_conditions = self._calculate_primary_to_secondary_coupling()
-            self.history['integration']['primary_hot_leg_temp'].append(primary_conditions['sg_1_inlet_temp'])
-            self.history['integration']['primary_cold_leg_temp'].append(primary_conditions['sg_1_outlet_temp'])
-            self.history['integration']['heat_removal_rate'].append(primary_result['thermal_power_mw'])
-            self.history['integration']['overall_plant_efficiency'].append(secondary_result['thermal_efficiency'])
-            self.history['integration']['coupling_factor'].append(getattr(self, '_last_heat_removal_factor', 1.0))
-        else:
-            # Add default values when secondary system is not enabled
-            self.history['secondary']['electrical_power'].append(0.0)
-            self.history['secondary']['thermal_efficiency'].append(0.0)
-            self.history['secondary']['total_steam_flow'].append(0.0)
-            self.history['secondary']['sg_avg_pressure'].append(0.0)
-            self.history['secondary']['sg_avg_temperature'].append(0.0)
-            self.history['secondary']['condenser_pressure'].append(0.0)
-            self.history['secondary']['condenser_temperature'].append(0.0)
-            self.history['secondary']['turbine_power'].append(0.0)
-            self.history['secondary']['generator_power'].append(0.0)
-            self.history['secondary']['feedwater_flow'].append(0.0)
-            self.history['secondary']['feedwater_temperature'].append(0.0)
-            self.history['secondary']['cooling_water_temperature'].append(self.cooling_water_temp)
-            self.history['secondary']['cooling_water_flow'].append(0.0)
-            self.history['secondary']['load_demand'].append(self.load_demand)
-            self.history['secondary']['vacuum_pump_operation'].append(0.0)
-            self.history['integration']['primary_hot_leg_temp'].append(self.state.coolant_temperature)
-            self.history['integration']['primary_cold_leg_temp'].append(self.state.coolant_temperature)
-            self.history['integration']['heat_removal_rate'].append(primary_result['thermal_power_mw'])
-            self.history['integration']['overall_plant_efficiency'].append(0.0)
-            self.history['integration']['coupling_factor'].append(1.0)
 
         # Prepare return information
         info = {
@@ -255,6 +152,7 @@ class NuclearPlantSimulator:
             steam_flow = secondary_result['total_steam_flow'] if np.isfinite(secondary_result['total_steam_flow']) else 1665.0
             steam_pressure = secondary_result['sg_avg_pressure'] if np.isfinite(secondary_result['sg_avg_pressure']) else 6.895
             condenser_pressure = secondary_result['condenser_pressure'] if np.isfinite(secondary_result['condenser_pressure']) else 0.007
+            condenser_heat_rejection = secondary_result['condenser_heat_rejection'] if np.isfinite(secondary_result['condenser_heat_rejection']) else 0.0
             
             # Additional validation: ensure thermal efficiency is within realistic bounds
             thermal_efficiency = max(0.0, min(thermal_efficiency, 0.35))  # Cap at 35% for PWR
@@ -265,6 +163,7 @@ class NuclearPlantSimulator:
                 "steam_flow": steam_flow,
                 "steam_pressure": steam_pressure,
                 "condenser_pressure": condenser_pressure,
+                "condenser_heat_rejection": condenser_heat_rejection,  # Energy-balance-corrected value
                 "secondary_system": secondary_result
             })
 
@@ -559,11 +458,10 @@ class NuclearPlantSimulator:
         
         self.state = self.primary_physics.state
         self.time = 0.0
-        # Reset history by clearing all lists in the hierarchical structure
-        self.history['time'] = []
-        for category in ['primary', 'secondary', 'integration']:
-            for key in self.history[category]:
-                self.history[category][key] = []
+        
+        # Reset state management system
+        if self.enable_state_management and self.state_manager is not None:
+            self.state_manager.clear_data()
         
         # Reset control parameters
         self.load_demand = 100.0
@@ -572,77 +470,220 @@ class NuclearPlantSimulator:
         return self.get_observation()
 
     def plot_parameters(self, parameters: List[str] = None, time_window: int = None):
-        """Plot selected parameters over time using hierarchical history structure"""
-        if not self.history['time']:
+        """Plot selected parameters over time using state management data"""
+        if not self.enable_state_management or self.state_manager is None:
+            print("State management is not enabled. Cannot plot parameters.")
+            return
+        
+        if self.state_manager.data.empty:
             print("No simulation data to plot")
             return
 
         if parameters is None:
-            parameters = [
-                "primary.power_level",
-                "primary.fuel_temperature", 
-                "primary.coolant_temperature",
-                "primary.coolant_pressure",
-                "primary.control_rod_position",
-            ]
+            # Default parameters to plot
+            available_vars = self.get_available_state_variables()
+            parameters = []
+            
+            # Try to find common parameters
+            for var in available_vars:
+                if any(param in var.lower() for param in ['power_level', 'fuel_temperature', 'coolant_temperature', 'control_rod']):
+                    parameters.append(var)
+                if len(parameters) >= 4:  # Limit to 4 plots
+                    break
+            
+            if not parameters:
+                parameters = available_vars[:4]  # Just take first 4 if no common ones found
 
-        # Get time data
-        time_data = np.array(self.history['time'])
-        if time_window:
-            time_data = time_data[-time_window:]
+        # Get time series data
+        try:
+            time_range = None
+            if time_window:
+                max_time = self.state_manager.data['time'].max()
+                min_time = max_time - time_window
+                time_range = (min_time, max_time)
+            
+            data = self.state_manager.get_time_series(['time'] + parameters, time_range)
+            
+            if data.empty:
+                print("No data available for plotting")
+                return
+            
+            # Create plots
+            fig, axes = plt.subplots(len(parameters), 1, figsize=(12, 3 * len(parameters)))
+            if len(parameters) == 1:
+                axes = [axes]
 
-        fig, axes = plt.subplots(len(parameters), 1, figsize=(12, 3 * len(parameters)))
-        if len(parameters) == 1:
-            axes = [axes]
-
-        for i, param in enumerate(parameters):
-            # Parse hierarchical parameter name (e.g., "primary.power_level")
-            if '.' in param:
-                category, param_name = param.split('.', 1)
-                if category in self.history and param_name in self.history[category]:
-                    data = np.array(self.history[category][param_name])
-                    if time_window:
-                        data = data[-time_window:]
-                    
+            for i, param in enumerate(parameters):
+                if param in data.columns:
                     # Create readable labels
-                    ylabel = param_name.replace('_', ' ').title()
-                    if 'temperature' in param_name.lower():
+                    ylabel = param.replace('_', ' ').replace('.', ' ').title()
+                    if 'temperature' in param.lower():
                         ylabel += " (°C)"
-                    elif 'pressure' in param_name.lower():
+                    elif 'pressure' in param.lower():
                         ylabel += " (MPa)"
-                    elif 'power' in param_name.lower() or 'level' in param_name.lower():
-                        ylabel += " (%)" if 'level' in param_name.lower() else " (MW)"
-                    elif 'position' in param_name.lower():
+                    elif 'power' in param.lower() or 'level' in param.lower():
+                        ylabel += " (%)" if 'level' in param.lower() else " (MW)"
+                    elif 'position' in param.lower():
                         ylabel += " (%)"
-                    elif 'flow' in param_name.lower():
+                    elif 'flow' in param.lower():
                         ylabel += " (kg/s)"
-                    elif 'efficiency' in param_name.lower():
+                    elif 'efficiency' in param.lower():
                         ylabel += " (%)"
-                        data = data * 100  # Convert to percentage
+                        data[param] = data[param] * 100  # Convert to percentage
                     
-                    axes[i].plot(time_data, data, linewidth=2)
+                    axes[i].plot(data['time'], data[param], linewidth=2)
                     axes[i].set_ylabel(ylabel)
                     axes[i].grid(True, alpha=0.3)
-                    axes[i].set_title(f"{category.title()} - {ylabel}")
+                    axes[i].set_title(ylabel)
                 else:
-                    print(f"Parameter {param} not found in history")
-            else:
-                # Handle legacy parameter names for backward compatibility
-                if param in self.history['primary']:
-                    data = np.array(self.history['primary'][param])
-                    if time_window:
-                        data = data[-time_window:]
-                    
-                    ylabel = param.replace('_', ' ').title()
-                    axes[i].plot(time_data, data, linewidth=2)
-                    axes[i].set_ylabel(ylabel)
-                    axes[i].grid(True, alpha=0.3)
-                else:
-                    print(f"Parameter {param} not found in primary history")
+                    print(f"Parameter {param} not found in data")
 
-        axes[-1].set_xlabel("Time (s)")
-        plt.tight_layout()
-        plt.show()
+            axes[-1].set_xlabel("Time (s)")
+            plt.tight_layout()
+            plt.show()
+            
+        except Exception as e:
+            print(f"Error plotting parameters: {e}")
+
+    # State Management Methods
+    def export_state_data(self, filename: str, time_range: Optional[Tuple[float, float]] = None,
+                         variables: Optional[List[str]] = None) -> None:
+        """
+        Export state data to CSV using the new state management system.
+        
+        Args:
+            filename: Output CSV filename
+            time_range: Optional tuple of (start_time, end_time) to filter data
+            variables: Optional list of variables to include (default: all)
+        """
+        if not self.enable_state_management or self.state_manager is None:
+            print("State management is not enabled. Cannot export state data.")
+            return
+        
+        self.state_manager.export_to_csv(filename, time_range, variables)
+
+    def export_state_data_by_category(self, category: str, filename: str,
+                                    time_range: Optional[Tuple[float, float]] = None) -> None:
+        """
+        Export state data for a specific category (e.g., 'primary', 'secondary').
+        
+        Args:
+            category: Category name
+            filename: Output CSV filename
+            time_range: Optional time range filter
+        """
+        if not self.enable_state_management or self.state_manager is None:
+            print("State management is not enabled. Cannot export state data.")
+            return
+        
+        self.state_manager.export_by_category(category, filename, time_range)
+
+    def export_state_data_by_subcategory(self, category: str, subcategory: str, filename: str,
+                                       time_range: Optional[Tuple[float, float]] = None) -> None:
+        """
+        Export state data for a specific subcategory (e.g., 'primary.neutronics').
+        
+        Args:
+            category: Category name
+            subcategory: Subcategory name
+            filename: Output CSV filename
+            time_range: Optional time range filter
+        """
+        if not self.enable_state_management or self.state_manager is None:
+            print("State management is not enabled. Cannot export state data.")
+            return
+        
+        self.state_manager.export_by_subcategory(category, subcategory, filename, time_range)
+
+    def export_state_summary_statistics(self, filename: str) -> None:
+        """
+        Export statistical summary of all state variables.
+        
+        Args:
+            filename: Output CSV filename for summary statistics
+        """
+        if not self.enable_state_management or self.state_manager is None:
+            print("State management is not enabled. Cannot export summary statistics.")
+            return
+        
+        self.state_manager.export_summary_statistics(filename)
+
+    def get_state_data_info(self) -> Dict[str, any]:
+        """
+        Get information about the collected state data.
+        
+        Returns:
+            Dictionary with dataset information
+        """
+        if not self.enable_state_management or self.state_manager is None:
+            return {
+                'state_management_enabled': False,
+                'message': 'State management is not enabled'
+            }
+        
+        info = self.state_manager.get_data_info()
+        info['state_management_enabled'] = True
+        return info
+
+    def get_available_state_variables(self) -> List[str]:
+        """
+        Get list of all available state variables.
+        
+        Returns:
+            List of variable names
+        """
+        if not self.enable_state_management or self.state_manager is None:
+            return []
+        
+        return self.state_manager.get_available_variables()
+
+    def get_available_state_categories(self) -> List[str]:
+        """
+        Get list of all available state categories.
+        
+        Returns:
+            List of category names
+        """
+        if not self.enable_state_management or self.state_manager is None:
+            return []
+        
+        return self.state_manager.get_available_categories()
+
+    def get_state_variable_history(self, variable_name: str,
+                                 time_range: Optional[Tuple[float, float]] = None):
+        """
+        Get time series for a specific state variable.
+        
+        Args:
+            variable_name: Name of the variable
+            time_range: Optional tuple of (start_time, end_time) to filter data
+            
+        Returns:
+            pandas Series with the variable's time series data
+        """
+        if not self.enable_state_management or self.state_manager is None:
+            print("State management is not enabled. Cannot retrieve variable history.")
+            return None
+        
+        return self.state_manager.get_variable_history(variable_name, time_range)
+
+    def get_state_time_series(self, variable_names: List[str],
+                            time_range: Optional[Tuple[float, float]] = None):
+        """
+        Get time series DataFrame for multiple state variables.
+        
+        Args:
+            variable_names: List of variable names to include
+            time_range: Optional tuple of (start_time, end_time) to filter data
+            
+        Returns:
+            pandas DataFrame with time and selected variables
+        """
+        if not self.enable_state_management or self.state_manager is None:
+            print("State management is not enabled. Cannot retrieve time series.")
+            return None
+        
+        return self.state_manager.get_time_series(variable_names, time_range)
 
 
 # Example usage and testing
@@ -716,20 +757,33 @@ def run_simulation_example():
     
     if 'electrical_power' in result['info']:
         print(f"  Electrical Power Output: {result['info']['electrical_power']:.1f} MW")
-        print(f"  Thermal: Efficiency: {result['info']['thermal_efficiency']*100:.2f}%")
+        print(f"  Thermal Efficiency: {result['info']['thermal_efficiency']*100:.2f}%")
         print(f"  Steam Flow Rate: {result['info']['steam_flow']:.0f} kg/s")
         print(f"  Steam Pressure: {result['info']['steam_pressure']:.2f} MPa")
         print(f"  Condenser Pressure: {result['info']['condenser_pressure']:.4f} MPa")
 
-    # Plot results
-    sim.plot_parameters(
-        [
-            "power_level",
-            "fuel_temperature",
-            "coolant_temperature",
-            "control_rod_position",
-        ]
-    )
+    # Demonstrate new state management capabilities
+    if sim.enable_state_management:
+        print(f"\nState Management System:")
+        state_info = sim.get_state_data_info()
+        print(f"  Total rows collected: {state_info['total_rows']}")
+        print(f"  Total variables: {state_info['total_variables']}")
+        print(f"  Available categories: {state_info['categories']}")
+        print(f"  Memory usage: {state_info['memory_usage_mb']:.1f} MB")
+        print(f"  Average collection time: {state_info['avg_collection_time_ms']:.2f} ms")
+        
+        # Export examples
+        print(f"\nExporting state data...")
+        sim.export_state_data("simulation_complete_data.csv")
+        sim.export_state_data_by_category("primary", "simulation_primary_data.csv")
+        sim.export_state_data_by_category("secondary", "simulation_secondary_data.csv")
+        sim.export_state_summary_statistics("simulation_summary_stats.csv")
+        
+        print(f"  Available variables: {len(sim.get_available_state_variables())}")
+        print(f"  Available categories: {sim.get_available_state_categories()}")
+
+    # Plot results using state management data
+    sim.plot_parameters()
 
     return sim
 
