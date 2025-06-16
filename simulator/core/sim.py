@@ -2,6 +2,7 @@ import warnings
 import sys
 import os
 from typing import Dict, List, Optional, Tuple
+import pandas as pd
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -68,6 +69,8 @@ class NuclearPlantSimulator:
         
         # Expose state for backward compatibility
         self.state = self.primary_physics.state
+
+        self.state_df = pd.DataFrame()
 
     def step(
         self, action: Optional[ControlAction] = None, magnitude: float = 1.0,
@@ -166,6 +169,8 @@ class NuclearPlantSimulator:
                 "condenser_heat_rejection": condenser_heat_rejection,  # Energy-balance-corrected value
                 "secondary_system": secondary_result
             })
+
+        self.state_df = pd.concat([self.state_df, self.get_state_df()], ignore_index=False).set_index('time', drop=False)
 
         # Return step information
         return {
@@ -544,6 +549,20 @@ class NuclearPlantSimulator:
             
         except Exception as e:
             print(f"Error plotting parameters: {e}")
+
+    def get_state_df(self) -> Dict[str, any]:
+        """
+        Get the current state of the simulator as a dictionary.
+        
+        Returns:
+            Dictionary with current state information
+        """
+        df = pd.json_normalize(self.primary_physics.get_state_dict(), sep='.')
+        df = df.assign(**self.secondary_physics.get_state_dict()) if self.enable_secondary else df
+        df = df.assign(time=self.time)
+        return df
+
+    
 
     # State Management Methods
     def export_state_data(self, filename: str, time_range: Optional[Tuple[float, float]] = None,

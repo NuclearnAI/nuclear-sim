@@ -1201,8 +1201,9 @@ class EnhancedCondenserPhysics(StateProvider):
             'water_chlorine': self.water_quality.chlorine_residual,
             'water_langelier_index': self.water_quality.langelier_saturation_index
         })
-        
-        return state_dict
+
+        prefixed = {f"condenser.{key}": value for key, value in state_dict.items()}
+        return prefixed
     
     def reset(self) -> None:
         """Reset enhanced condenser to initial conditions"""

@@ -170,7 +170,7 @@ class NPSHProtection:
         
         # NPSH Critical Trip (instantaneous)
         if npsh_available < self.config.npsh_critical_trip:
-            if not self.npsh_criticalre _trip_active:
+            if not self.npsh_critical_trip_active:
                 self.npsh_critical_trip_active = True
                 self.protection_actions_taken.append(f"NPSH Critical Trip at {npsh_available:.1f}m")
         else:

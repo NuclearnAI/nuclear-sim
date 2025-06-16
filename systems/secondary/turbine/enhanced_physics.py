@@ -703,8 +703,9 @@ class EnhancedTurbinePhysics(StateProvider):
         # Add subsystem states
         state_dict.update(self.stage_system.get_state_dict())
         state_dict.update(self.rotor_dynamics.get_state_dict())
-        
-        return state_dict
+
+        prefixed = {f"turbine.{key}": value for key, value in state_dict.items()} 
+        return prefixed
     
     def reset(self) -> None:
         """Reset enhanced turbine to initial conditions"""

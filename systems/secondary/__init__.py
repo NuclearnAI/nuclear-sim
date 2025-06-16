@@ -8,6 +8,7 @@ Enhanced with state management integration for comprehensive data collection.
 
 import numpy as np
 from typing import Dict, Any, Optional
+import pandas as pd
 
 # Import state management interfaces
 from simulator.state import StateProvider, StateVariable, StateCategory, make_state_name
@@ -885,7 +886,26 @@ class SecondaryReactorPhysics(StateProvider):
             current_state.update(self.feedwater_system.get_current_state())
         
         return current_state
-    
+
+    def get_state_dict(self) -> pd.DataFrame:
+        """
+        Get the current state of the secondary system as a DataFrame.
+        
+        Returns:
+            DataFrame with state variable names as columns and current values
+        """
+        state_dict = {}
+        state_dict.update(self.feedwater_system.get_state_dict())
+        state_dict.update(self.condenser.get_state_dict())
+        state_dict.update(self.turbine.get_state_dict())
+
+        for i, sg in enumerate(self.steam_generators):
+            sg_state = sg.get_state_dict()
+            prefixed = {f"sg_{i+1}.{key}": value for key, value in sg_state.items()}
+            state_dict.update(prefixed)
+
+        prefixed = {f"secondary.{key}": value for key, value in state_dict.items()}
+        return prefixed
 
 
 # Example usage and testing

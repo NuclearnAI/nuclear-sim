@@ -355,9 +355,9 @@ class PrimaryReactorPhysics(StateProvider):
                 - self.max_valve_speed * dt * valve_magnitude,
             )
     
-    def get_system_state(self) -> dict:
+    def get_state_dict(self) -> dict:
         """Get complete primary system state for monitoring and logging"""
-        return {
+        state_dict = {
             'rated_power_mw': self.rated_power_mw,
             'thermal_power_mw': self.thermal_power_mw,
             'total_reactivity_pcm': self.total_reactivity_pcm,
@@ -381,7 +381,10 @@ class PrimaryReactorPhysics(StateProvider):
                 'safety': getattr(self.scram_system, 'get_state_dict', lambda: {})()
             }
         }
-    
+
+        prefixed = {f"primary.{key}": value for key, value in state_dict.items()} 
+        return prefixed
+
     def reset_system(self) -> None:
         """Reset all components to initial steady-state conditions"""
         # Reset heat source if it has a reset method

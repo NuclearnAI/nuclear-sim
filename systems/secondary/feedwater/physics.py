@@ -279,12 +279,7 @@ class EnhancedFeedwaterPhysics(StateProvider):
             system_conditions=pump_system_conditions,
             dt=dt
         )
-        printed = False
-        if not printed and protection_results['system_trip_active']:
-            # Print protection system trip details
-            print(f"Protection System Trip Active: {protection_results['active_trips']}")
-            printed = True
-
+        
         # Update system state
         self.total_flow_rate = pump_results['total_flow_rate']
         self.total_power_consumption = pump_results['total_power_consumption']
@@ -466,7 +461,8 @@ class EnhancedFeedwaterPhysics(StateProvider):
         state_dict.update(self.diagnostics.get_state_dict())
         state_dict.update(self.protection_system.get_state_dict())
         
-        return state_dict
+        prefixed = {f"feedwater.{key}": value for key, value in state_dict.items()}
+        return prefixed
     
     def reset(self) -> None:
         """Reset enhanced feedwater system to initial conditions"""
@@ -692,14 +688,14 @@ class EnhancedFeedwaterPhysics(StateProvider):
         # Basic Feedwater Performance State
         current_state[make_state_name("secondary", "feedwater", "total_flow")] = self.total_flow_rate
         current_state[make_state_name("secondary", "feedwater", "total_power")] = feedwater_state.get('feedwater_total_power', 0.0)
-        current_state[make_state_name("secondary", "feedwater", "num_running_pumps")] = feedwater_state.get('feedwater_num_running_pumps', 0)
-        current_state[make_state_name("secondary", "feedwater", "system_available")] = feedwater_state.get('feedwater_system_availability', True)
+        current_state[make_state_name("secondary", "feedwater", "num_running_pumps")] = feedwater_state.get('pump_system_num_running', 0)
+        current_state[make_state_name("secondary", "feedwater", "system_available")] = feedwater_state.get('pump_system_available', True)
         current_state[make_state_name("secondary", "feedwater", "temperature")] = self.config.design_feedwater_temperature
         
         # Enhanced Feedwater - Pump Performance State
-        current_state[make_state_name("secondary", "feedwater_pumps", "fwp001_flow")] = feedwater_state.get('pump_fwp-001_flow', 0.0)
-        current_state[make_state_name("secondary", "feedwater_pumps", "fwp002_flow")] = feedwater_state.get('pump_fwp-002_flow', 0.0)
-        current_state[make_state_name("secondary", "feedwater_pumps", "fwp003_flow")] = feedwater_state.get('pump_fwp-003_flow', 0.0)
+        current_state[make_state_name("secondary", "feedwater_pumps", "fwp001_flow")] = feedwater_state.get('pump_fwp-1_flow_rate', 0.0)
+        current_state[make_state_name("secondary", "feedwater_pumps", "fwp002_flow")] = feedwater_state.get('pump_fwp-2_flow_rate', 0.0)
+        current_state[make_state_name("secondary", "feedwater_pumps", "fwp003_flow")] = feedwater_state.get('pump_fwp-3_flow_rate', 0.0)
         current_state[make_state_name("secondary", "feedwater_pumps", "avg_efficiency")] = feedwater_state.get('pump_avg_efficiency', 0.8)
         current_state[make_state_name("secondary", "feedwater_pumps", "cavitation_risk")] = feedwater_state.get('pump_cavitation_risk', 0.0)
         current_state[make_state_name("secondary", "feedwater_pumps", "bearing_wear")] = feedwater_state.get('pump_bearing_wear', 0.0)
