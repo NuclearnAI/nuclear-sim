@@ -41,11 +41,13 @@ from .interfaces import (
 
 from .state_registry import StateRegistry
 from .state_manager import StateManager
+from .auto_provider import StateProviderMixin
 
 __all__ = [
     # Core classes
     'StateManager',
     'StateRegistry',
+    'StateProviderMixin',
     
     # Interfaces and protocols
     'StateProvider',

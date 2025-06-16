@@ -19,7 +19,7 @@ from typing import Dict, List, Optional, Tuple, Any
 import numpy as np
 
 # Import state management interfaces
-from simulator.state import StateProvider, StateVariable, StateCategory, make_state_name
+from simulator.state import StateProviderMixin
 
 warnings.filterwarnings("ignore")
 
@@ -116,7 +116,7 @@ __all__ = [
 ]
 
 
-class PrimaryReactorPhysics(StateProvider):
+class PrimaryReactorPhysics(StateProviderMixin):
     """
     Integrated primary reactor physics system
     
@@ -358,32 +358,50 @@ class PrimaryReactorPhysics(StateProvider):
     def get_state_dict(self) -> dict:
         """Get complete primary system state for monitoring and logging"""
         state_dict = {
+            # System-level variables
             'rated_power_mw': self.rated_power_mw,
             'thermal_power_mw': self.thermal_power_mw,
             'total_reactivity_pcm': self.total_reactivity_pcm,
             'scram_activated': self.scram_activated,
-            'reactor_state': {
-                'neutron_flux': self.state.neutron_flux,
-                'reactivity': self.state.reactivity,
-                'fuel_temperature': self.state.fuel_temperature,
-                'coolant_temperature': self.state.coolant_temperature,
-                'coolant_pressure': self.state.coolant_pressure,
-                'coolant_flow_rate': self.state.coolant_flow_rate,
-                'power_level': self.state.power_level,
-                'control_rod_position': self.state.control_rod_position,
-                'boron_concentration': self.state.boron_concentration,
-                'scram_status': self.state.scram_status
-            },
-            'component_states': {
-                'heat_source': getattr(self.heat_source, 'get_state', lambda: {})(),
-                'neutronics': getattr(self.neutronics, 'get_state_dict', lambda: {})(),
-                'thermal_hydraulics': getattr(self.thermal_hydraulics, 'get_state_dict', lambda: {})(),
-                'safety': getattr(self.scram_system, 'get_state_dict', lambda: {})()
-            }
+            
+            # Neutronics variables
+            'neutronics_neutron_flux': self.state.neutron_flux,
+            'neutronics_reactivity': self.state.reactivity,
+            'neutronics_reactivity_pcm': self.total_reactivity_pcm,
+            'neutronics_xenon_concentration': self.state.xenon_concentration,
+            'neutronics_iodine_concentration': self.state.iodine_concentration,
+            'neutronics_samarium_concentration': self.state.samarium_concentration,
+            
+            # Thermal hydraulics variables
+            'thermal_fuel_temperature': self.state.fuel_temperature,
+            'thermal_coolant_temperature': self.state.coolant_temperature,
+            'thermal_coolant_pressure': self.state.coolant_pressure,
+            'thermal_coolant_flow_rate': self.state.coolant_flow_rate,
+            'thermal_coolant_void_fraction': self.state.coolant_void_fraction,
+            'thermal_thermal_power': self.thermal_power_mw,
+            
+            # Steam cycle variables
+            'steam_steam_temperature': self.state.steam_temperature,
+            'steam_steam_pressure': self.state.steam_pressure,
+            'steam_steam_flow_rate': self.state.steam_flow_rate,
+            'steam_feedwater_flow_rate': self.state.feedwater_flow_rate,
+            
+            # Control system variables
+            'control_control_rod_position': self.state.control_rod_position,
+            'control_steam_valve_position': self.state.steam_valve_position,
+            'control_boron_concentration': self.state.boron_concentration,
+            'control_power_level': self.state.power_level,
+            
+            # Safety system variables
+            'safety_scram_status': self.state.scram_status,
+            'safety_scram_activated': self.scram_activated,
+            
+            # Fuel depletion variables
+            'fuel_fuel_burnup': self.state.fuel_burnup,
+            'fuel_burnable_poison_worth': self.state.burnable_poison_worth
         }
 
-        prefixed = {f"primary.{key}": value for key, value in state_dict.items()} 
-        return prefixed
+        return state_dict
 
     def reset_system(self) -> None:
         """Reset all components to initial steady-state conditions"""
@@ -405,321 +423,7 @@ class PrimaryReactorPhysics(StateProvider):
         self.total_reactivity_pcm = 0.0
         self.scram_activated = False
     
-    def get_state_variables(self) -> Dict[str, StateVariable]:
-        """
-        Return metadata for all state variables this component provides.
-        
-        Returns:
-            Dictionary mapping variable names to their metadata
-        """
-        variables = {}
-        
-        # Neutronics variables
-        variables[make_state_name("primary", "neutronics", "neutron_flux")] = StateVariable(
-            name=make_state_name("primary", "neutronics", "neutron_flux"),
-            category=StateCategory.PRIMARY,
-            subcategory="neutronics",
-            unit="neutrons/cm²/s",
-            description="Neutron flux in reactor core",
-            data_type=float,
-            valid_range=(1e8, 1e14),
-            is_critical=True
-        )
-        
-        variables[make_state_name("primary", "neutronics", "reactivity")] = StateVariable(
-            name=make_state_name("primary", "neutronics", "reactivity"),
-            category=StateCategory.PRIMARY,
-            subcategory="neutronics",
-            unit="delta-k/k",
-            description="Reactor reactivity",
-            data_type=float,
-            valid_range=(-0.1, 0.1),
-            is_critical=True
-        )
-        
-        variables[make_state_name("primary", "neutronics", "reactivity_pcm")] = StateVariable(
-            name=make_state_name("primary", "neutronics", "reactivity_pcm"),
-            category=StateCategory.PRIMARY,
-            subcategory="neutronics",
-            unit="pcm",
-            description="Reactor reactivity in pcm",
-            data_type=float,
-            valid_range=(-10000, 10000),
-            is_critical=True
-        )
-        
-        variables[make_state_name("primary", "neutronics", "xenon_concentration")] = StateVariable(
-            name=make_state_name("primary", "neutronics", "xenon_concentration"),
-            category=StateCategory.PRIMARY,
-            subcategory="neutronics",
-            unit="atoms/cm³",
-            description="Xenon-135 concentration",
-            data_type=float,
-            valid_range=(0, 1e17)
-        )
-        
-        variables[make_state_name("primary", "neutronics", "iodine_concentration")] = StateVariable(
-            name=make_state_name("primary", "neutronics", "iodine_concentration"),
-            category=StateCategory.PRIMARY,
-            subcategory="neutronics",
-            unit="atoms/cm³",
-            description="Iodine-135 concentration",
-            data_type=float,
-            valid_range=(0, 1e17)
-        )
-        
-        variables[make_state_name("primary", "neutronics", "samarium_concentration")] = StateVariable(
-            name=make_state_name("primary", "neutronics", "samarium_concentration"),
-            category=StateCategory.PRIMARY,
-            subcategory="neutronics",
-            unit="atoms/cm³",
-            description="Samarium-149 concentration",
-            data_type=float,
-            valid_range=(0, 1e16)
-        )
-        
-        # Thermal hydraulics variables
-        variables[make_state_name("primary", "thermal", "fuel_temperature")] = StateVariable(
-            name=make_state_name("primary", "thermal", "fuel_temperature"),
-            category=StateCategory.PRIMARY,
-            subcategory="thermal",
-            unit="°C",
-            description="Average fuel temperature",
-            data_type=float,
-            valid_range=(200, 1200),
-            is_critical=True
-        )
-        
-        variables[make_state_name("primary", "thermal", "coolant_temperature")] = StateVariable(
-            name=make_state_name("primary", "thermal", "coolant_temperature"),
-            category=StateCategory.PRIMARY,
-            subcategory="thermal",
-            unit="°C",
-            description="Average coolant temperature",
-            data_type=float,
-            valid_range=(250, 350),
-            is_critical=True
-        )
-        
-        variables[make_state_name("primary", "thermal", "coolant_pressure")] = StateVariable(
-            name=make_state_name("primary", "thermal", "coolant_pressure"),
-            category=StateCategory.PRIMARY,
-            subcategory="thermal",
-            unit="MPa",
-            description="Primary coolant pressure",
-            data_type=float,
-            valid_range=(10, 20),
-            is_critical=True
-        )
-        
-        variables[make_state_name("primary", "thermal", "coolant_flow_rate")] = StateVariable(
-            name=make_state_name("primary", "thermal", "coolant_flow_rate"),
-            category=StateCategory.PRIMARY,
-            subcategory="thermal",
-            unit="kg/s",
-            description="Primary coolant flow rate",
-            data_type=float,
-            valid_range=(5000, 50000),
-            is_critical=True
-        )
-        
-        variables[make_state_name("primary", "thermal", "coolant_void_fraction")] = StateVariable(
-            name=make_state_name("primary", "thermal", "coolant_void_fraction"),
-            category=StateCategory.PRIMARY,
-            subcategory="thermal",
-            unit="fraction",
-            description="Steam void fraction in coolant",
-            data_type=float,
-            valid_range=(0, 1)
-        )
-        
-        variables[make_state_name("primary", "thermal", "thermal_power")] = StateVariable(
-            name=make_state_name("primary", "thermal", "thermal_power"),
-            category=StateCategory.PRIMARY,
-            subcategory="thermal",
-            unit="MW",
-            description="Reactor thermal power",
-            data_type=float,
-            valid_range=(0, 4000),
-            is_critical=True
-        )
-        
-        # Steam cycle variables
-        variables[make_state_name("primary", "steam", "steam_temperature")] = StateVariable(
-            name=make_state_name("primary", "steam", "steam_temperature"),
-            category=StateCategory.PRIMARY,
-            subcategory="steam",
-            unit="°C",
-            description="Steam temperature",
-            data_type=float,
-            valid_range=(200, 350)
-        )
-        
-        variables[make_state_name("primary", "steam", "steam_pressure")] = StateVariable(
-            name=make_state_name("primary", "steam", "steam_pressure"),
-            category=StateCategory.PRIMARY,
-            subcategory="steam",
-            unit="MPa",
-            description="Steam pressure",
-            data_type=float,
-            valid_range=(5, 10)
-        )
-        
-        variables[make_state_name("primary", "steam", "steam_flow_rate")] = StateVariable(
-            name=make_state_name("primary", "steam", "steam_flow_rate"),
-            category=StateCategory.PRIMARY,
-            subcategory="steam",
-            unit="kg/s",
-            description="Steam flow rate",
-            data_type=float,
-            valid_range=(0, 3000)
-        )
-        
-        variables[make_state_name("primary", "steam", "feedwater_flow_rate")] = StateVariable(
-            name=make_state_name("primary", "steam", "feedwater_flow_rate"),
-            category=StateCategory.PRIMARY,
-            subcategory="steam",
-            unit="kg/s",
-            description="Feedwater flow rate",
-            data_type=float,
-            valid_range=(0, 3000)
-        )
-        
-        # Control system variables
-        variables[make_state_name("primary", "control", "control_rod_position")] = StateVariable(
-            name=make_state_name("primary", "control", "control_rod_position"),
-            category=StateCategory.PRIMARY,
-            subcategory="control",
-            unit="%",
-            description="Control rod position (% withdrawn)",
-            data_type=float,
-            valid_range=(0, 100),
-            is_critical=True
-        )
-        
-        variables[make_state_name("primary", "control", "steam_valve_position")] = StateVariable(
-            name=make_state_name("primary", "control", "steam_valve_position"),
-            category=StateCategory.PRIMARY,
-            subcategory="control",
-            unit="%",
-            description="Steam valve position (% open)",
-            data_type=float,
-            valid_range=(0, 100)
-        )
-        
-        variables[make_state_name("primary", "control", "boron_concentration")] = StateVariable(
-            name=make_state_name("primary", "control", "boron_concentration"),
-            category=StateCategory.PRIMARY,
-            subcategory="control",
-            unit="ppm",
-            description="Boron concentration in coolant",
-            data_type=float,
-            valid_range=(0, 3000)
-        )
-        
-        variables[make_state_name("primary", "control", "power_level")] = StateVariable(
-            name=make_state_name("primary", "control", "power_level"),
-            category=StateCategory.PRIMARY,
-            subcategory="control",
-            unit="%",
-            description="Reactor power level",
-            data_type=float,
-            valid_range=(0, 120),
-            is_critical=True
-        )
-        
-        # Safety system variables
-        variables[make_state_name("primary", "safety", "scram_status")] = StateVariable(
-            name=make_state_name("primary", "safety", "scram_status"),
-            category=StateCategory.SAFETY,
-            subcategory="safety",
-            unit="boolean",
-            description="Reactor scram status",
-            data_type=bool,
-            is_critical=True
-        )
-        
-        variables[make_state_name("primary", "safety", "scram_activated")] = StateVariable(
-            name=make_state_name("primary", "safety", "scram_activated"),
-            category=StateCategory.SAFETY,
-            subcategory="safety",
-            unit="boolean",
-            description="Scram activation signal",
-            data_type=bool,
-            is_critical=True
-        )
-        
-        # Fuel depletion variables
-        variables[make_state_name("primary", "fuel", "fuel_burnup")] = StateVariable(
-            name=make_state_name("primary", "fuel", "fuel_burnup"),
-            category=StateCategory.PRIMARY,
-            subcategory="fuel",
-            unit="MWd/MTU",
-            description="Fuel burnup",
-            data_type=float,
-            valid_range=(0, 60000)
-        )
-        
-        variables[make_state_name("primary", "fuel", "burnable_poison_worth")] = StateVariable(
-            name=make_state_name("primary", "fuel", "burnable_poison_worth"),
-            category=StateCategory.PRIMARY,
-            subcategory="fuel",
-            unit="pcm",
-            description="Burnable poison reactivity worth",
-            data_type=float,
-            valid_range=(-5000, 0)
-        )
-        
-        return variables
     
-    def get_current_state(self) -> Dict[str, Any]:
-        """
-        Return current values for all state variables this component provides.
-        
-        Returns:
-            Dictionary mapping variable names to their current values
-        """
-        current_state = {}
-        
-        # Neutronics state
-        current_state[make_state_name("primary", "neutronics", "neutron_flux")] = self.state.neutron_flux
-        current_state[make_state_name("primary", "neutronics", "reactivity")] = self.state.reactivity
-        current_state[make_state_name("primary", "neutronics", "reactivity_pcm")] = self.total_reactivity_pcm
-        current_state[make_state_name("primary", "neutronics", "xenon_concentration")] = self.state.xenon_concentration
-        current_state[make_state_name("primary", "neutronics", "iodine_concentration")] = self.state.iodine_concentration
-        current_state[make_state_name("primary", "neutronics", "samarium_concentration")] = self.state.samarium_concentration
-        
-        # Thermal hydraulics state
-        current_state[make_state_name("primary", "thermal", "fuel_temperature")] = self.state.fuel_temperature
-        current_state[make_state_name("primary", "thermal", "coolant_temperature")] = self.state.coolant_temperature
-        current_state[make_state_name("primary", "thermal", "coolant_pressure")] = self.state.coolant_pressure
-        current_state[make_state_name("primary", "thermal", "coolant_flow_rate")] = self.state.coolant_flow_rate
-        current_state[make_state_name("primary", "thermal", "coolant_void_fraction")] = self.state.coolant_void_fraction
-        current_state[make_state_name("primary", "thermal", "thermal_power")] = self.thermal_power_mw
-        
-        # Steam cycle state
-        current_state[make_state_name("primary", "steam", "steam_temperature")] = self.state.steam_temperature
-        current_state[make_state_name("primary", "steam", "steam_pressure")] = self.state.steam_pressure
-        current_state[make_state_name("primary", "steam", "steam_flow_rate")] = self.state.steam_flow_rate
-        current_state[make_state_name("primary", "steam", "feedwater_flow_rate")] = self.state.feedwater_flow_rate
-        
-        # Control system state
-        current_state[make_state_name("primary", "control", "control_rod_position")] = self.state.control_rod_position
-        current_state[make_state_name("primary", "control", "steam_valve_position")] = self.state.steam_valve_position
-        current_state[make_state_name("primary", "control", "boron_concentration")] = self.state.boron_concentration
-        current_state[make_state_name("primary", "control", "power_level")] = self.state.power_level
-        
-        # Safety system state
-        current_state[make_state_name("primary", "safety", "scram_status")] = self.state.scram_status
-        current_state[make_state_name("primary", "safety", "scram_activated")] = self.scram_activated
-        
-        # Fuel depletion state
-        current_state[make_state_name("primary", "fuel", "fuel_burnup")] = self.state.fuel_burnup
-        current_state[make_state_name("primary", "fuel", "burnable_poison_worth")] = self.state.burnable_poison_worth
-        
-        return current_state
-
-
 # Example usage and testing
 if __name__ == "__main__":
     print("Primary Reactor Physics System - Integration Test")

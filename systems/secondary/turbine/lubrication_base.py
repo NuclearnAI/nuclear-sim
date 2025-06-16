@@ -212,7 +212,10 @@ class BaseLubricationSystem(ABC):
         # Thermal degradation (Arrhenius equation)
         # Rate doubles every 10°C above 60°C
         reference_temp = 60.0  # °C
-        activation_factor = max(0.1, 2.0 ** ((self.oil_temperature - reference_temp) / 10.0))
+        temp_diff = self.oil_temperature - reference_temp
+        # Limit temperature difference to prevent overflow (max 200°C above reference)
+        temp_diff = max(-50.0, min(200.0, temp_diff))
+        activation_factor = max(0.1, 2.0 ** (temp_diff / 10.0))
         base_degradation_rate = 0.0001  # Reduced base rate at reference temperature
         thermal_degradation_rate = base_degradation_rate * activation_factor
         

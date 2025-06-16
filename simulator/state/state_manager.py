@@ -376,6 +376,72 @@ class StateManager(StateCollector):
         self.last_collection_time = None
         self._collection_times.clear()
     
+    def auto_discover_providers(self, root_systems: List[Any]) -> None:
+        """
+        Automatically discover and register all StateProvider components.
+        
+        Args:
+            root_systems: List of root system objects to search for StateProviders
+        """
+        discovered_count = 0
+        for root_system in root_systems:
+            discovered_count += self._discover_recursive(root_system, visited=set())
+        
+        print(f"Auto-discovery complete: Found and registered {discovered_count} StateProvider components")
+    
+    def _discover_recursive(self, obj: Any, visited: set, max_depth: int = 10) -> int:
+        """
+        Recursively discover StateProvider components.
+        
+        Args:
+            obj: Object to search for StateProvider components
+            visited: Set of already visited object IDs to prevent infinite loops
+            max_depth: Maximum recursion depth
+            
+        Returns:
+            Number of StateProviders discovered and registered
+        """
+        if max_depth <= 0 or id(obj) in visited:
+            return 0
+        
+        visited.add(id(obj))
+        discovered_count = 0
+        
+        # Check if this object implements StateProvider (either directly or via mixin)
+        if (hasattr(obj, 'get_state_variables') and 
+            hasattr(obj, 'get_current_state') and 
+            callable(getattr(obj, 'get_state_variables')) and
+            callable(getattr(obj, 'get_current_state'))):
+            
+            try:
+                # Try to get category for registration
+                if hasattr(obj, '_infer_category_and_subcategory'):
+                    category, subcategory = obj._infer_category_and_subcategory()
+                    category_name = f"{category.value}.{subcategory}"
+                else:
+                    category_name = obj.__class__.__name__
+                
+                self.register_provider(obj, category_name)
+                print(f"Auto-registered: {obj.__class__.__name__} as {category_name}")
+                discovered_count += 1
+            except Exception as e:
+                warnings.warn(f"Failed to register {obj.__class__.__name__}: {e}")
+        
+        # Recursively check attributes
+        for attr_name in dir(obj):
+            if (not attr_name.startswith('_') and 
+                not callable(getattr(obj, attr_name, None)) and
+                attr_name not in ['config', 'logger', 'data', 'registry']):  # Skip common non-component attributes
+                
+                try:
+                    attr_value = getattr(obj, attr_name)
+                    if hasattr(attr_value, '__dict__'):  # Has attributes (likely a component)
+                        discovered_count += self._discover_recursive(attr_value, visited, max_depth - 1)
+                except:
+                    continue  # Skip attributes that can't be accessed
+        
+        return discovered_count
+    
     def reset(self) -> None:
         """Reset the state manager completely."""
         self.clear_data()

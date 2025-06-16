@@ -24,6 +24,9 @@ from typing import Dict, Optional, Tuple
 
 import numpy as np
 
+# Import state management interfaces
+# Removed StateProviderMixin import - this is now an individual unit managed by enhanced system
+
 warnings.filterwarnings("ignore")
 
 
@@ -76,11 +79,11 @@ class SteamGeneratorConfig:
     steam_pressure_control_gain: float = 0.05  # Proportional gain for pressure control
 
 
-class SteamGeneratorPhysics:
+class SteamGenerator:
     """
-    Comprehensive steam generator physics model for PWR
+    Individual steam generator physics model for PWR
     
-    This model implements:
+    This model implements the core physics for a single steam generator:
     1. Heat transfer from primary to secondary (U-tube bundle)
     2. Two-phase flow dynamics on secondary side
     3. Mass and energy balance equations
@@ -92,6 +95,9 @@ class SteamGeneratorPhysics:
     - Two-Phase Flow: Homogeneous equilibrium model
     - Steam Properties: Simplified NIST correlations
     - Level Dynamics: Mass balance with density effects
+    
+    Note: This is an individual unit managed by EnhancedSteamGeneratorPhysics.
+    Does not inherit from StateProviderMixin to prevent duplicate registration.
     """
     
     def __init__(self, config: Optional[SteamGeneratorConfig] = None):
@@ -697,7 +703,7 @@ class SteamGeneratorPhysics:
 # Example usage and testing
 if __name__ == "__main__":
     # Create steam generator model
-    sg = SteamGeneratorPhysics()
+    sg = SteamGenerator()
     
     print("Steam Generator Physics Model - Parameter Validation")
     print("=" * 60)

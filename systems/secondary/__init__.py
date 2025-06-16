@@ -11,9 +11,14 @@ from typing import Dict, Any, Optional
 import pandas as pd
 
 # Import state management interfaces
-from simulator.state import StateProvider, StateVariable, StateCategory, make_state_name
+from simulator.state import StateProviderMixin
 
-from .steam_generator import SteamGeneratorPhysics, SteamGeneratorConfig
+from .steam_generator import (
+    SteamGenerator, 
+    SteamGeneratorConfig,
+    EnhancedSteamGeneratorPhysics,
+    EnhancedSteamGeneratorConfig
+)
 from .turbine import (
     # Enhanced turbine physics
     EnhancedTurbinePhysics,
@@ -49,9 +54,11 @@ from .feedwater import (
 )
 
 __all__ = [
-    # Steam Generator
-    'SteamGeneratorPhysics',
+    # Steam Generator System
+    'SteamGenerator',
     'SteamGeneratorConfig',
+    'EnhancedSteamGeneratorPhysics',
+    'EnhancedSteamGeneratorConfig',
     
     # Enhanced Turbine System
     'EnhancedTurbinePhysics',
@@ -88,102 +95,9 @@ __all__ = [
 ]
 
 
-class SteamGeneratorStateProvider(StateProvider):
-    """
-    State provider wrapper for steam generator physics to implement StateProvider interface
-    """
-    
-    def __init__(self, steam_generator: SteamGeneratorPhysics, sg_id: str):
-        self.steam_generator = steam_generator
-        self.sg_id = sg_id
-    
-    def get_state_variables(self) -> Dict[str, StateVariable]:
-        """Return metadata for steam generator state variables"""
-        variables = {}
-        
-        # Steam Generator Performance Variables
-        variables[make_state_name("secondary", "steam_generator", f"{self.sg_id}_pressure")] = StateVariable(
-            name=make_state_name("secondary", "steam_generator", f"{self.sg_id}_pressure"),
-            category=StateCategory.SECONDARY,
-            subcategory="steam_generator",
-            unit="MPa",
-            description=f"Steam generator {self.sg_id} secondary pressure",
-            data_type=float,
-            valid_range=(5.0, 8.0),
-            is_critical=True
-        )
-        
-        variables[make_state_name("secondary", "steam_generator", f"{self.sg_id}_temperature")] = StateVariable(
-            name=make_state_name("secondary", "steam_generator", f"{self.sg_id}_temperature"),
-            category=StateCategory.SECONDARY,
-            subcategory="steam_generator",
-            unit="°C",
-            description=f"Steam generator {self.sg_id} secondary temperature",
-            data_type=float,
-            valid_range=(280, 300)
-        )
-        
-        variables[make_state_name("secondary", "steam_generator", f"{self.sg_id}_level")] = StateVariable(
-            name=make_state_name("secondary", "steam_generator", f"{self.sg_id}_level"),
-            category=StateCategory.SECONDARY,
-            subcategory="steam_generator",
-            unit="m",
-            description=f"Steam generator {self.sg_id} water level",
-            data_type=float,
-            valid_range=(8.0, 16.0),
-            is_critical=True
-        )
-        
-        variables[make_state_name("secondary", "steam_generator", f"{self.sg_id}_steam_flow")] = StateVariable(
-            name=make_state_name("secondary", "steam_generator", f"{self.sg_id}_steam_flow"),
-            category=StateCategory.SECONDARY,
-            subcategory="steam_generator",
-            unit="kg/s",
-            description=f"Steam generator {self.sg_id} steam flow rate",
-            data_type=float,
-            valid_range=(0, 800)
-        )
-        
-        variables[make_state_name("secondary", "steam_generator", f"{self.sg_id}_heat_transfer")] = StateVariable(
-            name=make_state_name("secondary", "steam_generator", f"{self.sg_id}_heat_transfer"),
-            category=StateCategory.SECONDARY,
-            subcategory="steam_generator",
-            unit="MW",
-            description=f"Steam generator {self.sg_id} heat transfer rate",
-            data_type=float,
-            valid_range=(0, 1200)
-        )
-        
-        variables[make_state_name("secondary", "steam_generator", f"{self.sg_id}_steam_quality")] = StateVariable(
-            name=make_state_name("secondary", "steam_generator", f"{self.sg_id}_steam_quality"),
-            category=StateCategory.SECONDARY,
-            subcategory="steam_generator",
-            unit="fraction",
-            description=f"Steam generator {self.sg_id} steam quality",
-            data_type=float,
-            valid_range=(0.95, 1.0)
-        )
-        
-        return variables
-    
-    def get_current_state(self) -> Dict[str, Any]:
-        """Return current values for steam generator state variables"""
-        current_state = {}
-        
-        # Get steam generator state
-        sg_state = self.steam_generator.get_state_dict()
-        
-        current_state[make_state_name("secondary", "steam_generator", f"{self.sg_id}_pressure")] = sg_state.get('secondary_pressure', 6.895)
-        current_state[make_state_name("secondary", "steam_generator", f"{self.sg_id}_temperature")] = sg_state.get('secondary_temperature', 285.8)
-        current_state[make_state_name("secondary", "steam_generator", f"{self.sg_id}_level")] = sg_state.get('water_level', 12.5)
-        current_state[make_state_name("secondary", "steam_generator", f"{self.sg_id}_steam_flow")] = sg_state.get('steam_flow_rate', 555.0)
-        current_state[make_state_name("secondary", "steam_generator", f"{self.sg_id}_heat_transfer")] = sg_state.get('heat_transfer_rate', 0.0) / 1e6  # Convert to MW
-        current_state[make_state_name("secondary", "steam_generator", f"{self.sg_id}_steam_quality")] = sg_state.get('steam_quality', 0.99)
-        
-        return current_state
 
 
-class SecondaryReactorPhysics(StateProvider):
+class SecondaryReactorPhysics(StateProviderMixin):
     """
     Integrated secondary reactor physics system with state management integration
     
@@ -217,11 +131,14 @@ class SecondaryReactorPhysics(StateProvider):
         """
         self.num_steam_generators = num_steam_generators
         
-        # Initialize component physics models
-        self.steam_generators = []
-        for i in range(num_steam_generators):
-            sg = SteamGeneratorPhysics(sg_config)
-            self.steam_generators.append(sg)
+        # Initialize enhanced steam generator system
+        enhanced_sg_config = EnhancedSteamGeneratorConfig(
+            num_steam_generators=num_steam_generators
+        )
+        if sg_config is not None:
+            enhanced_sg_config.sg_system_config.sg_config = sg_config
+        
+        self.steam_generator_system = EnhancedSteamGeneratorPhysics(enhanced_sg_config)
         
         # Use enhanced turbine physics instead of legacy
         self.turbine = EnhancedTurbinePhysics(turbine_config)
@@ -277,50 +194,51 @@ class SecondaryReactorPhysics(StateProvider):
         # First, check feedwater system availability (using previous state)
         feedwater_system_available = getattr(self.feedwater_system, 'system_availability', True)
         
-        # Update steam generators
-        sg_results = []
-        total_steam_production = 0.0
-        total_heat_transfer = 0.0
+        # Update enhanced steam generator system
+        # Prepare primary conditions for enhanced steam generator system
+        enhanced_primary_conditions = {
+            'inlet_temps': [primary_conditions.get(f'sg_{i+1}_inlet_temp', 327.0) for i in range(self.num_steam_generators)],
+            'outlet_temps': [primary_conditions.get(f'sg_{i+1}_outlet_temp', 293.0) for i in range(self.num_steam_generators)],
+            'flow_rates': [primary_conditions.get(f'sg_{i+1}_flow', 5700.0) for i in range(self.num_steam_generators)]
+        }
         
-        for i, sg in enumerate(self.steam_generators):
-            # Get primary conditions for this steam generator
-            sg_key = f'sg_{i+1}'
-            primary_inlet_temp = primary_conditions.get(f'{sg_key}_inlet_temp', 327.0)
-            primary_outlet_temp = primary_conditions.get(f'{sg_key}_outlet_temp', 293.0)
-            primary_flow = primary_conditions.get(f'{sg_key}_flow', 5700.0)
-            
-            # Calculate steam flow based on load demand and steam generator capacity
-            design_steam_flow = sg.config.secondary_design_flow  # 555.0 kg/s per SG
-            steam_flow_demand = design_steam_flow * (self.load_demand / 100.0)
-            
-            # FIXED: Ensure minimum reasonable steam flow even with feedwater issues
-            # Instead of dropping to 10%, maintain at least 50% flow for realistic operation
-            if not feedwater_system_available:
-                steam_flow_demand = max(steam_flow_demand * 0.5, design_steam_flow * 0.3)  # Minimum 30% design flow
-            
-            # Ensure feedwater flow matches steam flow for proper mass balance
-            feedwater_flow_demand = steam_flow_demand  # Mass balance: feedwater in = steam out
-            
-            # Update steam generator
-            sg_result = sg.update_state(
-                primary_temp_in=primary_inlet_temp,
-                primary_temp_out=primary_outlet_temp,
-                primary_flow=primary_flow,
-                steam_flow_out=steam_flow_demand,
-                feedwater_flow_in=feedwater_flow_demand,  # Proper mass balance
-                feedwater_temp=self.feedwater_temperature,
-                dt=dt
-            )
-            
-            sg_results.append(sg_result)
-            total_steam_production += sg_result['steam_production_rate']
-            total_heat_transfer += sg_result['heat_transfer_rate']
+        # Calculate total steam demand based on load
+        design_total_steam_flow = self.steam_generator_system.config.design_total_steam_flow
+        total_steam_demand = design_total_steam_flow * (self.load_demand / 100.0)
         
-        # Calculate average steam conditions entering turbine
+        # FIXED: Ensure minimum reasonable steam flow even with feedwater issues
+        if not feedwater_system_available:
+            total_steam_demand = max(total_steam_demand * 0.5, design_total_steam_flow * 0.3)
+        
+        steam_demands = {
+            'total_steam_flow': total_steam_demand,
+            'steam_pressure': 6.895  # Target steam pressure
+        }
+        
+        enhanced_system_conditions = {
+            'feedwater_temperature': self.feedwater_temperature,
+            'load_demand': self.load_demand / 100.0  # Convert to fraction
+        }
+        
+        # Update enhanced steam generator system
+        sg_system_result = self.steam_generator_system.update_system(
+            primary_conditions=enhanced_primary_conditions,
+            steam_demands=steam_demands,
+            system_conditions=enhanced_system_conditions,
+            control_inputs=control_inputs,
+            dt=dt
+        )
+        
+        # Extract results from enhanced system
+        total_heat_transfer = sg_system_result['total_thermal_power']
+        total_steam_production = sg_system_result['total_steam_flow']
+        sg_results = sg_system_result['sg_individual_results']
+        
+        # Calculate average steam conditions entering turbine from enhanced system results
         if len(sg_results) > 0:
-            avg_steam_pressure = sum(sg.secondary_pressure for sg in self.steam_generators) / len(self.steam_generators)
-            avg_steam_temperature = sum(sg.secondary_temperature for sg in self.steam_generators) / len(self.steam_generators)
-            avg_steam_quality = sum(sg.steam_quality for sg in self.steam_generators) / len(self.steam_generators)
+            avg_steam_pressure = sg_system_result['average_steam_pressure']
+            avg_steam_temperature = sg_system_result['average_steam_temperature']
+            avg_steam_quality = sg_system_result['average_steam_quality']
             
             # FIXED: Ensure steam temperature is realistic for turbine operation
             # Steam temperature should be saturation temperature at steam pressure
@@ -402,13 +320,18 @@ class SecondaryReactorPhysics(StateProvider):
         }
         
         # Add individual steam generator levels, steam flows, steam quality, and void fractions for enhanced three-element control
+        # Get data from enhanced steam generator system results
+        sg_levels = sg_system_result.get('sg_levels', [12.5] * self.num_steam_generators)
+        sg_steam_flows = sg_system_result.get('sg_steam_flows', [0.0] * self.num_steam_generators)
+        sg_steam_qualities = sg_system_result.get('sg_steam_qualities', [0.99] * self.num_steam_generators)
+        
         for i in range(self.num_steam_generators):
             sg_key = f'sg_{i+1}'
-            # Use steam generator level from physics model if available, otherwise use nominal
-            sg_level = getattr(self.steam_generators[i], 'water_level', 12.5)  # m (nominal level)
-            sg_steam_flow = sg_results[i]['steam_flow_rate'] if i < len(sg_results) else 0.0
-            sg_steam_quality = getattr(self.steam_generators[i], 'steam_quality', 0.99)  # dimensionless
-            sg_void_fraction = getattr(self.steam_generators[i], 'steam_void_fraction', 0.45)  # dimensionless
+            sg_level = sg_levels[i] if i < len(sg_levels) else 12.5
+            sg_steam_flow = sg_steam_flows[i] if i < len(sg_steam_flows) else 0.0
+            sg_steam_quality = sg_steam_qualities[i] if i < len(sg_steam_qualities) else 0.99
+            # Void fraction can be calculated from steam quality if needed, or use default
+            sg_void_fraction = 0.45  # Default value, could be enhanced later
             
             feedwater_system_conditions[f'{sg_key}_level'] = sg_level
             feedwater_system_conditions[f'{sg_key}_steam_flow'] = sg_steam_flow
@@ -416,12 +339,12 @@ class SecondaryReactorPhysics(StateProvider):
             feedwater_system_conditions[f'{sg_key}_void_fraction'] = sg_void_fraction
         
         # Update enhanced feedwater system
-        # Prepare SG conditions for enhanced feedwater system
+        # Prepare SG conditions for enhanced feedwater system using enhanced system results
         sg_conditions = {
-            'levels': [getattr(self.steam_generators[i], 'water_level', 12.5) for i in range(self.num_steam_generators)],
-            'pressures': [getattr(self.steam_generators[i], 'secondary_pressure', 6.895) for i in range(self.num_steam_generators)],
-            'steam_flows': [sg_results[i]['steam_flow_rate'] if i < len(sg_results) else 0.0 for i in range(self.num_steam_generators)],
-            'steam_qualities': [getattr(self.steam_generators[i], 'steam_quality', 0.99) for i in range(self.num_steam_generators)]
+            'levels': sg_system_result.get('sg_levels', [12.5] * self.num_steam_generators),
+            'pressures': sg_system_result.get('sg_pressures', [6.895] * self.num_steam_generators),
+            'steam_flows': sg_system_result.get('sg_steam_flows', [0.0] * self.num_steam_generators),
+            'steam_qualities': sg_system_result.get('sg_steam_qualities', [0.99] * self.num_steam_generators)
         }
         
         steam_generator_demands = {
@@ -634,7 +557,7 @@ class SecondaryReactorPhysics(StateProvider):
             'cooling_water_outlet_temp': condenser_result['cooling_water_outlet_temp'],
             
             # Detailed component states
-            'steam_generator_states': [sg.get_state_dict() for sg in self.steam_generators],
+            'steam_generator_system_state': self.steam_generator_system.get_state_dict(),
             'turbine_state': self.turbine.get_state_dict(),
             'condenser_state': self.condenser.get_state_dict(),
             'feedwater_state': self.feedwater_system.get_state_dict()
@@ -653,23 +576,27 @@ class SecondaryReactorPhysics(StateProvider):
             'load_demand': self.load_demand,
             'feedwater_temperature': self.feedwater_temperature,
             'cooling_water_temperature': self.cooling_water_temperature,
-            'steam_generator_states': [sg.get_state_dict() for sg in self.steam_generators],
+            'steam_generator_system': self.steam_generator_system.get_state_dict(),
             'turbine_state': self.turbine.get_state_dict(),
             'condenser_state': self.condenser.get_state_dict(),
             'feedwater_state': self.feedwater_system.get_state_dict()
         }
     
-    def reset_system(self) -> None:
-        """Reset all components to initial steady-state conditions"""
-        for sg in self.steam_generators:
-            sg.reset()
+    def reset_system(self, start_at_steady_state: bool = True, thermal_power_mw: float = 3000.0) -> None:
+        """
+        Reset all components to initial conditions
+        
+        Args:
+            start_at_steady_state: If True, initialize to steady-state operation (default)
+            thermal_power_mw: Reactor thermal power for steady-state calculation (default 3000 MW)
+        """
+        # Always reset components first
         self.turbine.reset()
         self.condenser.reset()
+        self.steam_generator_system.reset() 
+        self.feedwater_system.reset()
         
-        # Reset enhanced feedwater system if it has a reset method
-        if hasattr(self.feedwater_system, 'reset'):
-            self.feedwater_system.reset()
-        
+        # Reset system-level variables
         self.total_steam_flow = 0.0
         self.total_heat_transfer = 0.0
         self.electrical_power_output = 0.0
@@ -678,6 +605,181 @@ class SecondaryReactorPhysics(StateProvider):
         self.load_demand = 100.0
         self.feedwater_temperature = 227.0
         self.cooling_water_temperature = 25.0
+        
+        # Optionally initialize to steady state
+        if start_at_steady_state:
+            self.initialize_to_steady_state(thermal_power_mw)
+    
+    def initialize_to_steady_state(self, thermal_power_mw: float) -> None:
+        """
+        Initialize all secondary systems to steady-state operation for given thermal power
+        
+        This method calculates the equilibrium operating point and sets all subsystems
+        to their appropriate steady-state values, eliminating startup transients.
+        
+        Args:
+            thermal_power_mw: Reactor thermal power in MW
+        """
+        # Calculate equilibrium operating point
+        equilibrium = self._calculate_equilibrium_point(thermal_power_mw)
+        
+        # Initialize each subsystem to calculated steady state
+        self._initialize_steam_generators_to_steady_state(equilibrium)
+        self._initialize_feedwater_system_to_steady_state(equilibrium)
+        self._initialize_turbine_to_steady_state(equilibrium)
+        self._initialize_condenser_to_steady_state(equilibrium)
+        
+        # Set system-level state variables
+        self.total_steam_flow = equilibrium['steam_flow']
+        self.total_heat_transfer = equilibrium['heat_transfer']
+        self.electrical_power_output = equilibrium['electrical_power']
+        self.thermal_efficiency = equilibrium['thermal_efficiency']
+        self.total_feedwater_flow = equilibrium['feedwater_flow']
+        self.load_demand = equilibrium['load_demand']
+    
+    def _calculate_equilibrium_point(self, thermal_power_mw: float) -> Dict:
+        """Calculate steady-state operating point for given thermal power"""
+        
+        # Calculate load demand based on thermal power
+        # Assume rated thermal power is 3000 MW for typical PWR
+        rated_thermal_power = 3000.0  # MW
+        load_demand = min(100.0, (thermal_power_mw / rated_thermal_power) * 100.0)
+        
+        # Calculate steam flow based on thermal power and steam conditions
+        # Typical PWR: ~1665 kg/s steam flow at 100% power
+        design_steam_flow = 1665.0  # kg/s at 100% power
+        steam_flow = design_steam_flow * (load_demand / 100.0)
+        
+        # Steam conditions at equilibrium
+        steam_pressure = 6.895  # MPa typical PWR steam pressure
+        steam_temperature = self._saturation_temperature(steam_pressure)  # ~285°C
+        steam_quality = 0.99  # Typical steam quality
+        
+        # Feedwater flow equals steam flow at steady state (mass balance)
+        feedwater_flow = steam_flow
+        
+        # Calculate electrical power based on realistic efficiency
+        if load_demand >= 100.0:
+            thermal_efficiency = 0.34  # 34% at full load
+        elif load_demand >= 75.0:
+            thermal_efficiency = 0.32 + 0.02 * (load_demand - 75.0) / 25.0
+        elif load_demand >= 50.0:
+            thermal_efficiency = 0.28 + 0.04 * (load_demand - 50.0) / 25.0
+        else:
+            thermal_efficiency = 0.20 + 0.08 * (load_demand / 50.0)
+        
+        electrical_power = thermal_power_mw * thermal_efficiency
+        
+        # Steam generator levels for steady-state operation
+        sg_levels = [12.5] * self.num_steam_generators  # Normal operating level
+        
+        # Calculate pump speeds needed for feedwater flow
+        # Each pump rated for 555 kg/s, so speed proportional to required flow
+        pumps_needed = min(4, max(3, int(np.ceil(feedwater_flow / 555.0))))
+        flow_per_pump = feedwater_flow / pumps_needed
+        pump_speed = min(100.0, (flow_per_pump / 555.0) * 100.0)
+        
+        # Condenser conditions
+        condenser_pressure = 0.007  # MPa typical condenser pressure
+        condenser_temperature = self._saturation_temperature(condenser_pressure)  # ~39°C
+        
+        return {
+            'thermal_power': thermal_power_mw,
+            'load_demand': load_demand,
+            'steam_flow': steam_flow,
+            'steam_pressure': steam_pressure,
+            'steam_temperature': steam_temperature,
+            'steam_quality': steam_quality,
+            'feedwater_flow': feedwater_flow,
+            'electrical_power': electrical_power,
+            'thermal_efficiency': thermal_efficiency,
+            'heat_transfer': thermal_power_mw * 1e6,  # Convert to Watts
+            'sg_levels': sg_levels,
+            'pumps_needed': pumps_needed,
+            'pump_speed': pump_speed,
+            'condenser_pressure': condenser_pressure,
+            'condenser_temperature': condenser_temperature
+        }
+    
+    def _initialize_steam_generators_to_steady_state(self, equilibrium: Dict) -> None:
+        """Initialize steam generators to steady-state levels and conditions"""
+        # Set steam generator levels to normal operating level
+        if hasattr(self.steam_generator_system, 'set_initial_levels'):
+            self.steam_generator_system.set_initial_levels(equilibrium['sg_levels'])
+        
+        # Set steam production rates if method exists
+        if hasattr(self.steam_generator_system, 'set_initial_steam_flow'):
+            steam_flow_per_sg = equilibrium['steam_flow'] / self.num_steam_generators
+            self.steam_generator_system.set_initial_steam_flow(steam_flow_per_sg)
+    
+    def _initialize_feedwater_system_to_steady_state(self, equilibrium: Dict) -> None:
+        """Initialize feedwater pumps to steady-state operation"""
+        # Initialize pumps to running state at calculated speeds
+        if hasattr(self.feedwater_system, 'pump_system'):
+            pump_system = self.feedwater_system.pump_system
+            
+            # Start required number of pumps in RUNNING state
+            pump_ids = list(pump_system.pumps.keys())
+            pumps_to_start = min(equilibrium['pumps_needed'], len(pump_ids))
+            
+            for i in range(pumps_to_start):
+                pump_id = pump_ids[i]
+                pump = pump_system.pumps[pump_id]
+                
+                # Set pump to RUNNING state with calculated speed and flow
+                from systems.primary.coolant.pump_models import PumpStatus
+                pump.state.status = PumpStatus.RUNNING
+                pump.state.speed_percent = equilibrium['pump_speed']
+                pump.state.speed_setpoint = equilibrium['pump_speed']
+                pump.state.flow_rate = equilibrium['feedwater_flow'] / pumps_to_start
+                pump.state.available = True
+                pump.state.auto_control = True
+                pump.state.trip_active = False
+                pump.state.trip_reason = ""
+                
+                # Set appropriate hydraulic conditions
+                pump.state.suction_pressure = 0.5  # MPa from condensate system
+                pump.state.discharge_pressure = equilibrium['steam_pressure'] + 0.5
+                pump.state.npsh_available = 25.0  # Adequate NPSH
+                pump.state.differential_pressure = pump.state.discharge_pressure - pump.state.suction_pressure
+                
+                # Calculate power consumption for steady state
+                pump._calculate_power_consumption()
+            
+            # Keep remaining pumps stopped
+            for i in range(pumps_to_start, len(pump_ids)):
+                pump_id = pump_ids[i]
+                pump = pump_system.pumps[pump_id]
+                pump.state.status = PumpStatus.STOPPED
+                pump.state.speed_percent = 0.0
+                pump.state.flow_rate = 0.0
+                pump.state.power_consumption = 0.0
+            
+            # Update system totals
+            pump_system.running_pumps = pump_ids[:pumps_to_start]
+            pump_system.total_flow = equilibrium['feedwater_flow']
+            pump_system.total_power = sum(pump_system.pumps[pid].state.power_consumption 
+                                        for pid in pump_system.running_pumps)
+            pump_system.system_available = True
+    
+    def _initialize_turbine_to_steady_state(self, equilibrium: Dict) -> None:
+        """Initialize turbine to steady-state load"""
+        # Set turbine load demand
+        if hasattr(self.turbine, 'load_demand'):
+            self.turbine.load_demand = equilibrium['load_demand'] / 100.0
+        
+        # Set turbine power output if possible
+        if hasattr(self.turbine, 'total_power_output'):
+            self.turbine.total_power_output = equilibrium['electrical_power']
+    
+    def _initialize_condenser_to_steady_state(self, equilibrium: Dict) -> None:
+        """Initialize condenser to steady-state conditions"""
+        # Set condenser pressure and temperature if possible
+        if hasattr(self.condenser, 'condenser_pressure'):
+            self.condenser.condenser_pressure = equilibrium['condenser_pressure']
+        
+        if hasattr(self.condenser, 'condenser_temperature'):
+            self.condenser.condenser_temperature = equilibrium['condenser_temperature']
     
     def _saturation_temperature(self, pressure_mpa: float) -> float:
         """
@@ -730,182 +832,29 @@ class SecondaryReactorPhysics(StateProvider):
         else:
             raise ValueError("Load demand must be between 0 and 100%")
     
-    def get_state_variables(self) -> Dict[str, StateVariable]:
+    def get_state_dict(self) -> Dict[str, float]:
         """
-        Return metadata for all state variables this secondary system provides.
+        Get the current state of the secondary system as a dictionary.
         
         Returns:
-            Dictionary mapping variable names to their metadata
+            Dictionary with only system-level state variables (children manage their own states)
         """
-        variables = {}
-        
-        # Overall Secondary System Performance Variables
-        variables[make_state_name("secondary", "system", "electrical_power")] = StateVariable(
-            name=make_state_name("secondary", "system", "electrical_power"),
-            category=StateCategory.SECONDARY,
-            subcategory="system",
-            unit="MW",
-            description="Total electrical power output",
-            data_type=float,
-            valid_range=(0, 1200),
-            is_critical=True
-        )
-        
-        variables[make_state_name("secondary", "system", "thermal_efficiency")] = StateVariable(
-            name=make_state_name("secondary", "system", "thermal_efficiency"),
-            category=StateCategory.SECONDARY,
-            subcategory="system",
-            unit="fraction",
-            description="Overall thermal efficiency",
-            data_type=float,
-            valid_range=(0.2, 0.4)
-        )
-        
-        variables[make_state_name("secondary", "system", "total_steam_flow")] = StateVariable(
-            name=make_state_name("secondary", "system", "total_steam_flow"),
-            category=StateCategory.SECONDARY,
-            subcategory="system",
-            unit="kg/s",
-            description="Total steam flow to turbine",
-            data_type=float,
-            valid_range=(0, 2000),
-            is_critical=True
-        )
-        
-        variables[make_state_name("secondary", "system", "total_heat_transfer")] = StateVariable(
-            name=make_state_name("secondary", "system", "total_heat_transfer"),
-            category=StateCategory.SECONDARY,
-            subcategory="system",
-            unit="MW",
-            description="Total heat transfer from primary",
-            data_type=float,
-            valid_range=(0, 3500)
-        )
-        
-        variables[make_state_name("secondary", "system", "load_demand")] = StateVariable(
-            name=make_state_name("secondary", "system", "load_demand"),
-            category=StateCategory.SECONDARY,
-            subcategory="system",
-            unit="%",
-            description="Electrical load demand",
-            data_type=float,
-            valid_range=(0, 105)
-        )
-        
-        # Steam Generator System Variables (aggregated)
-        variables[make_state_name("secondary", "steam_generators", "avg_pressure")] = StateVariable(
-            name=make_state_name("secondary", "steam_generators", "avg_pressure"),
-            category=StateCategory.SECONDARY,
-            subcategory="steam_generators",
-            unit="MPa",
-            description="Average steam generator pressure",
-            data_type=float,
-            valid_range=(5.0, 8.0),
-            is_critical=True
-        )
-        
-        variables[make_state_name("secondary", "steam_generators", "avg_level")] = StateVariable(
-            name=make_state_name("secondary", "steam_generators", "avg_level"),
-            category=StateCategory.SECONDARY,
-            subcategory="steam_generators",
-            unit="m",
-            description="Average steam generator water level",
-            data_type=float,
-            valid_range=(8.0, 16.0),
-            is_critical=True
-        )
-        
-        variables[make_state_name("secondary", "steam_generators", "avg_steam_quality")] = StateVariable(
-            name=make_state_name("secondary", "steam_generators", "avg_steam_quality"),
-            category=StateCategory.SECONDARY,
-            subcategory="steam_generators",
-            unit="fraction",
-            description="Average steam quality",
-            data_type=float,
-            valid_range=(0.95, 1.0)
-        )
-        
-        # Individual Steam Generator Variables
-        for i in range(self.num_steam_generators):
-            sg_id = f"sg{i+1}"
-            sg_provider = SteamGeneratorStateProvider(self.steam_generators[i], sg_id)
-            variables.update(sg_provider.get_state_variables())
-        
-        # Get state variables from subsystems that implement StateProvider
-        if hasattr(self.turbine, 'get_state_variables'):
-            variables.update(self.turbine.get_state_variables())
-        
-        if hasattr(self.condenser, 'get_state_variables'):
-            variables.update(self.condenser.get_state_variables())
-        
-        if hasattr(self.feedwater_system, 'get_state_variables'):
-            variables.update(self.feedwater_system.get_state_variables())
-        
-        return variables
-    
-    def get_current_state(self) -> Dict[str, Any]:
-        """
-        Return current values for all state variables this secondary system provides.
-        
-        Returns:
-            Dictionary mapping variable names to their current values
-        """
-        current_state = {}
-        
-        # Overall Secondary System Performance State
-        current_state[make_state_name("secondary", "system", "electrical_power")] = self.electrical_power_output
-        current_state[make_state_name("secondary", "system", "thermal_efficiency")] = self.thermal_efficiency
-        current_state[make_state_name("secondary", "system", "total_steam_flow")] = self.total_steam_flow
-        current_state[make_state_name("secondary", "system", "total_heat_transfer")] = self.total_heat_transfer / 1e6  # Convert to MW
-        current_state[make_state_name("secondary", "system", "load_demand")] = self.load_demand
-        
-        # Steam Generator System State (aggregated)
-        if self.steam_generators:
-            avg_pressure = sum(sg.secondary_pressure for sg in self.steam_generators) / len(self.steam_generators)
-            avg_level = sum(sg.water_level for sg in self.steam_generators) / len(self.steam_generators)
-            avg_quality = sum(sg.steam_quality for sg in self.steam_generators) / len(self.steam_generators)
-            
-            current_state[make_state_name("secondary", "steam_generators", "avg_pressure")] = avg_pressure
-            current_state[make_state_name("secondary", "steam_generators", "avg_level")] = avg_level
-            current_state[make_state_name("secondary", "steam_generators", "avg_steam_quality")] = avg_quality
-        
-        # Individual Steam Generator State
-        for i, sg in enumerate(self.steam_generators):
-            sg_id = f"sg{i+1}"
-            sg_provider = SteamGeneratorStateProvider(sg, sg_id)
-            current_state.update(sg_provider.get_current_state())
-        
-        # Get current state from subsystems that implement StateProvider
-        if hasattr(self.turbine, 'get_current_state'):
-            current_state.update(self.turbine.get_current_state())
-        
-        if hasattr(self.condenser, 'get_current_state'):
-            current_state.update(self.condenser.get_current_state())
-        
-        if hasattr(self.feedwater_system, 'get_current_state'):
-            current_state.update(self.feedwater_system.get_current_state())
-        
-        return current_state
+        # Return only system-level coordination states
+        # Children's states are collected automatically via StateProviderMixin auto-discovery
+        state_dict = {
+            'system_electrical_power': self.electrical_power_output,
+            'system_thermal_efficiency': self.thermal_efficiency,
+            'system_total_steam_flow': self.total_steam_flow,
+            'system_total_heat_transfer': self.total_heat_transfer / 1e6,  # Convert to MW
+            'system_load_demand': self.load_demand,
+            'system_total_feedwater_flow': self.total_feedwater_flow,
+            'system_feedwater_temperature': self.feedwater_temperature,
+            'system_cooling_water_temperature': self.cooling_water_temperature,
+            'system_operating_hours': self.operating_hours if hasattr(self, 'operating_hours') else 0.0,
+            'system_num_steam_generators': self.num_steam_generators
+        }
 
-    def get_state_dict(self) -> pd.DataFrame:
-        """
-        Get the current state of the secondary system as a DataFrame.
-        
-        Returns:
-            DataFrame with state variable names as columns and current values
-        """
-        state_dict = {}
-        state_dict.update(self.feedwater_system.get_state_dict())
-        state_dict.update(self.condenser.get_state_dict())
-        state_dict.update(self.turbine.get_state_dict())
-
-        for i, sg in enumerate(self.steam_generators):
-            sg_state = sg.get_state_dict()
-            prefixed = {f"sg_{i+1}.{key}": value for key, value in sg_state.items()}
-            state_dict.update(prefixed)
-
-        prefixed = {f"secondary.{key}": value for key, value in state_dict.items()}
-        return prefixed
+        return state_dict
 
 
 # Example usage and testing

@@ -18,8 +18,8 @@ from systems.primary import PrimaryReactorPhysics, ReactorState, ControlAction
 from systems.secondary import SecondaryReactorPhysics
 from systems.primary.reactor.reactivity_model import create_equilibrium_state
 
-# Import the new state management system
-from simulator.state import StateManager, StateProvider, StateVariable, StateCategory
+# Import the enhanced state management system
+from simulator.state import StateManager, StateProviderMixin, StateProvider, StateVariable, StateCategory
 
 warnings.filterwarnings("ignore")
 
@@ -46,16 +46,17 @@ class NuclearPlantSimulator:
         else:
             self.secondary_physics = None
         
-        # Initialize state management system
+        # Initialize state management system with auto-discovery
         if self.enable_state_management:
             self.state_manager = StateManager(max_rows=max_state_rows, auto_manage_memory=True)
             
-            # Register physics systems as state providers
-            self.state_manager.register_provider(self.primary_physics, "primary")
+            # Automatically discover and register all StateProvider components
+            root_systems = [self.primary_physics]
             if self.enable_secondary and self.secondary_physics is not None:
-                self.state_manager.register_provider(self.secondary_physics, "secondary")
+                root_systems.append(self.secondary_physics)
             
-            print(f"State management initialized: {self.state_manager}")
+            self.state_manager.auto_discover_providers(root_systems)
+            print(f"State management initialized with auto-discovery: {self.state_manager}")
         else:
             self.state_manager = None
         
@@ -169,8 +170,6 @@ class NuclearPlantSimulator:
                 "condenser_heat_rejection": condenser_heat_rejection,  # Energy-balance-corrected value
                 "secondary_system": secondary_result
             })
-
-        self.state_df = pd.concat([self.state_df, self.get_state_df()], ignore_index=False).set_index('time', drop=False)
 
         # Return step information
         return {
@@ -455,11 +454,25 @@ class NuclearPlantSimulator:
         
         return base_reward
 
-    def reset(self):
-        """Reset simulation to initial conditions"""
+    def reset(self, start_at_steady_state: bool = True):
+        """
+        Reset simulation to initial conditions
+        
+        Args:
+            start_at_steady_state: If True, initialize secondary systems to steady-state operation (default)
+                                 If False, use traditional startup sequence
+        """
         self.primary_physics.reset_system()
+        
         if self.enable_secondary and self.secondary_physics is not None:
-            self.secondary_physics.reset_system()
+            # Get thermal power from primary physics system
+            thermal_power_mw = self.primary_physics.thermal_power_mw
+            
+            # Reset secondary system with optional steady-state initialization
+            self.secondary_physics.reset_system(
+                start_at_steady_state=start_at_steady_state,
+                thermal_power_mw=thermal_power_mw
+            )
         
         self.state = self.primary_physics.state
         self.time = 0.0
@@ -550,19 +563,6 @@ class NuclearPlantSimulator:
         except Exception as e:
             print(f"Error plotting parameters: {e}")
 
-    def get_state_df(self) -> Dict[str, any]:
-        """
-        Get the current state of the simulator as a dictionary.
-        
-        Returns:
-            Dictionary with current state information
-        """
-        df = pd.json_normalize(self.primary_physics.get_state_dict(), sep='.')
-        df = df.assign(**self.secondary_physics.get_state_dict()) if self.enable_secondary else df
-        df = df.assign(time=self.time)
-        return df
-
-    
 
     # State Management Methods
     def export_state_data(self, filename: str, time_range: Optional[Tuple[float, float]] = None,

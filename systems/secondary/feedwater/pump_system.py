@@ -24,6 +24,16 @@ from systems.primary.coolant.pump_models import (
     BasePump, BasePumpState, PumpStatus
 )
 
+# Import lubrication system components
+from .pump_lubrication import (
+    FeedwaterPumpLubricationSystem, 
+    FeedwaterPumpLubricationConfig, 
+    integrate_lubrication_with_pump
+)
+
+# Import state management - removed StateProviderMixin to prevent double registration
+# The FeedwaterPumpSystem is managed by EnhancedFeedwaterPhysics which handles state collection
+
 warnings.filterwarnings("ignore")
 
 
@@ -630,6 +640,9 @@ class FeedwaterPumpSystem:
     2. Load distribution and sharing
     3. System-level protection and control
     4. Performance monitoring and diagnostics
+    
+    Note: This class does not inherit from StateProviderMixin to prevent
+    double registration. State collection is handled by EnhancedFeedwaterPhysics.
     """
     
     def __init__(self, config: FeedwaterPumpSystemConfig):
@@ -640,6 +653,9 @@ class FeedwaterPumpSystem:
         total_pumps = config.num_steam_generators * config.pumps_per_sg + config.spare_pumps
         self.pumps = {}
         
+        # Create and integrate lubrication systems for each pump
+        self.pump_lubrication_systems = {}
+        
         for i in range(total_pumps):
             pump_config = FeedwaterPumpConfig(
                 pump_id=f"FWP-{i+1}",
@@ -647,7 +663,25 @@ class FeedwaterPumpSystem:
                 rated_power=10.0,  # MW per pump
                 rated_head=1200.0  # m head
             )
-            self.pumps[pump_config.pump_id] = FeedwaterPump(pump_config)
+            
+            # Create the pump
+            pump = FeedwaterPump(pump_config)
+            
+            # Create lubrication system for this pump
+            lubrication_config = FeedwaterPumpLubricationConfig(
+                system_id=f"{pump_config.pump_id}-LUB",
+                pump_rated_power=pump_config.rated_power,
+                pump_rated_speed=3600.0,  # Standard pump speed
+                pump_rated_flow=pump_config.rated_flow
+            )
+            lubrication_system = FeedwaterPumpLubricationSystem(lubrication_config)
+            
+            # Integrate lubrication system with the pump
+            integrate_lubrication_with_pump(pump, lubrication_system)
+            
+            # Store pump and lubrication system
+            self.pumps[pump_config.pump_id] = pump
+            self.pump_lubrication_systems[pump_config.pump_id] = lubrication_system
         
         # System parameters
         self.total_design_flow = 555.0 * config.num_steam_generators
@@ -852,7 +886,7 @@ class FeedwaterPumpSystem:
         
         # Add individual pump states
         for pump_id, pump in self.pumps.items():
-            prefix = f'pump_{pump_id.lower()}_'
+            prefix = f'{pump_id}_'
             state_dict.update({
                 f'{prefix}flow_rate': pump.state.flow_rate,
                 f'{prefix}power_consumption': pump.state.power_consumption,
@@ -866,6 +900,14 @@ class FeedwaterPumpSystem:
                 f'{prefix}bearing_wear': pump.state.bearing_wear,
                 f'{prefix}vibration_level': pump.state.vibration_level
             })
+        
+        # Add lubrication system states
+        for pump_id, lubrication_system in self.pump_lubrication_systems.items():
+            lubrication_state = lubrication_system.get_state_dict()
+            for key, value in lubrication_state.items():
+                # Replace the system ID with pump-specific prefix
+                new_key = key.replace(lubrication_system.config.system_id.lower(), f'pump_{pump_id.lower()}_lubrication')
+                state_dict[new_key] = value
         
         return state_dict
     

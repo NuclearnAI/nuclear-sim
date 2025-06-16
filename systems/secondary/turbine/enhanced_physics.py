@@ -24,7 +24,7 @@ from typing import Dict, List, Optional, Tuple, Any
 import numpy as np
 
 # Import state management interfaces
-from simulator.state import StateProvider, StateVariable, StateCategory, make_state_name
+from simulator.state import StateProviderMixin
 
 from .stage_system import TurbineStageSystem, TurbineStageSystemConfig
 from .rotor_dynamics import RotorDynamicsModel, RotorDynamicsConfig
@@ -433,7 +433,7 @@ class TurbineProtectionSystem:
         self.emergency_actions = {key: False for key in self.emergency_actions}
 
 
-class EnhancedTurbinePhysics(StateProvider):
+class EnhancedTurbinePhysics(StateProviderMixin):
     """
     Enhanced turbine physics model - analogous to EnhancedCondenserPhysics
     
@@ -703,9 +703,17 @@ class EnhancedTurbinePhysics(StateProvider):
         # Add subsystem states
         state_dict.update(self.stage_system.get_state_dict())
         state_dict.update(self.rotor_dynamics.get_state_dict())
+        
+        # Add lubrication system state
+        if hasattr(self, 'bearing_lubrication_system'):
+            lubrication_state = self.bearing_lubrication_system.get_state_dict()
+            # Add lubrication state with turbine-specific prefix
+            for key, value in lubrication_state.items():
+                # Replace the system ID with turbine-specific prefix
+                new_key = key.replace(self.bearing_lubrication_system.config.system_id.lower(), 'turbine_lubrication')
+                state_dict[new_key] = value
 
-        prefixed = {f"turbine.{key}": value for key, value in state_dict.items()} 
-        return prefixed
+        return state_dict
     
     def reset(self) -> None:
         """Reset enhanced turbine to initial conditions"""
@@ -750,275 +758,6 @@ class EnhancedTurbinePhysics(StateProvider):
         h_fg = 2257.0 * (1.0 - temp / 374.0) ** 0.38
         return h_f + h_fg
     
-    def get_state_variables(self) -> Dict[str, StateVariable]:
-        """
-        Return metadata for all state variables this turbine component provides.
-        
-        Returns:
-            Dictionary mapping variable names to their metadata
-        """
-        variables = {}
-        
-        # Basic Turbine Performance Variables
-        variables[make_state_name("secondary", "turbine", "mechanical_power")] = StateVariable(
-            name=make_state_name("secondary", "turbine", "mechanical_power"),
-            category=StateCategory.SECONDARY,
-            subcategory="turbine",
-            unit="MW",
-            description="Turbine mechanical power output",
-            data_type=float,
-            valid_range=(0, 1200)
-        )
-        
-        variables[make_state_name("secondary", "turbine", "efficiency")] = StateVariable(
-            name=make_state_name("secondary", "turbine", "efficiency"),
-            category=StateCategory.SECONDARY,
-            subcategory="turbine",
-            unit="fraction",
-            description="Turbine overall efficiency",
-            data_type=float,
-            valid_range=(0.2, 0.5)
-        )
-        
-        variables[make_state_name("secondary", "turbine", "steam_rate")] = StateVariable(
-            name=make_state_name("secondary", "turbine", "steam_rate"),
-            category=StateCategory.SECONDARY,
-            subcategory="turbine",
-            unit="kg/kWh",
-            description="Turbine steam rate",
-            data_type=float,
-            valid_range=(2, 10)
-        )
-        
-        variables[make_state_name("secondary", "turbine", "hp_power")] = StateVariable(
-            name=make_state_name("secondary", "turbine", "hp_power"),
-            category=StateCategory.SECONDARY,
-            subcategory="turbine",
-            unit="MW",
-            description="High pressure turbine power",
-            data_type=float,
-            valid_range=(0, 800)
-        )
-        
-        variables[make_state_name("secondary", "turbine", "lp_power")] = StateVariable(
-            name=make_state_name("secondary", "turbine", "lp_power"),
-            category=StateCategory.SECONDARY,
-            subcategory="turbine",
-            unit="MW",
-            description="Low pressure turbine power",
-            data_type=float,
-            valid_range=(0, 400)
-        )
-        
-        # Enhanced Turbine - Rotor Dynamics Variables
-        variables[make_state_name("secondary", "turbine_rotor", "speed")] = StateVariable(
-            name=make_state_name("secondary", "turbine_rotor", "speed"),
-            category=StateCategory.SECONDARY,
-            subcategory="turbine_rotor",
-            unit="rpm",
-            description="Turbine rotor speed",
-            data_type=float,
-            valid_range=(0, 3600),
-            is_critical=True
-        )
-        
-        variables[make_state_name("secondary", "turbine_rotor", "vibration_level")] = StateVariable(
-            name=make_state_name("secondary", "turbine_rotor", "vibration_level"),
-            category=StateCategory.SECONDARY,
-            subcategory="turbine_rotor",
-            unit="mm/s",
-            description="Rotor vibration level",
-            data_type=float,
-            valid_range=(0, 50.0),
-            is_critical=True
-        )
-        
-        variables[make_state_name("secondary", "turbine_rotor", "eccentricity")] = StateVariable(
-            name=make_state_name("secondary", "turbine_rotor", "eccentricity"),
-            category=StateCategory.SECONDARY,
-            subcategory="turbine_rotor",
-            unit="mm",
-            description="Rotor eccentricity",
-            data_type=float,
-            valid_range=(0, 5.0)
-        )
-        
-        variables[make_state_name("secondary", "turbine_rotor", "thermal_expansion")] = StateVariable(
-            name=make_state_name("secondary", "turbine_rotor", "thermal_expansion"),
-            category=StateCategory.SECONDARY,
-            subcategory="turbine_rotor",
-            unit="mm",
-            description="Rotor thermal expansion",
-            data_type=float,
-            valid_range=(0, 50.0)
-        )
-        
-        # Enhanced Turbine - Bearing Variables
-        variables[make_state_name("secondary", "turbine_bearings", "tb001_oil_temp")] = StateVariable(
-            name=make_state_name("secondary", "turbine_bearings", "tb001_oil_temp"),
-            category=StateCategory.SECONDARY,
-            subcategory="turbine_bearings",
-            unit="°C",
-            description="Turbine bearing TB-001 oil temperature",
-            data_type=float,
-            valid_range=(40, 80),
-            is_critical=True
-        )
-        
-        variables[make_state_name("secondary", "turbine_bearings", "tb002_oil_temp")] = StateVariable(
-            name=make_state_name("secondary", "turbine_bearings", "tb002_oil_temp"),
-            category=StateCategory.SECONDARY,
-            subcategory="turbine_bearings",
-            unit="°C",
-            description="Turbine bearing TB-002 oil temperature",
-            data_type=float,
-            valid_range=(40, 80),
-            is_critical=True
-        )
-        
-        variables[make_state_name("secondary", "turbine_bearings", "bearing_wear")] = StateVariable(
-            name=make_state_name("secondary", "turbine_bearings", "bearing_wear"),
-            category=StateCategory.SECONDARY,
-            subcategory="turbine_bearings",
-            unit="mm",
-            description="Average bearing wear",
-            data_type=float,
-            valid_range=(0, 2.0)
-        )
-        
-        variables[make_state_name("secondary", "turbine_bearings", "oil_pressure")] = StateVariable(
-            name=make_state_name("secondary", "turbine_bearings", "oil_pressure"),
-            category=StateCategory.SECONDARY,
-            subcategory="turbine_bearings",
-            unit="MPa",
-            description="Bearing oil pressure",
-            data_type=float,
-            valid_range=(0.1, 2.0),
-            is_critical=True
-        )
-        
-        # Enhanced Turbine - Governor System Variables
-        variables[make_state_name("secondary", "turbine_governor", "valve_position")] = StateVariable(
-            name=make_state_name("secondary", "turbine_governor", "valve_position"),
-            category=StateCategory.SECONDARY,
-            subcategory="turbine_governor",
-            unit="%",
-            description="Governor valve position",
-            data_type=float,
-            valid_range=(0, 100),
-            is_critical=True
-        )
-        
-        variables[make_state_name("secondary", "turbine_governor", "control_pressure")] = StateVariable(
-            name=make_state_name("secondary", "turbine_governor", "control_pressure"),
-            category=StateCategory.SECONDARY,
-            subcategory="turbine_governor",
-            unit="MPa",
-            description="Governor control pressure",
-            data_type=float,
-            valid_range=(0, 5.0)
-        )
-        
-        variables[make_state_name("secondary", "turbine_governor", "oil_temperature")] = StateVariable(
-            name=make_state_name("secondary", "turbine_governor", "oil_temperature"),
-            category=StateCategory.SECONDARY,
-            subcategory="turbine_governor",
-            unit="°C",
-            description="Governor oil temperature",
-            data_type=float,
-            valid_range=(40, 70)
-        )
-        
-        # Enhanced Turbine - Stage Performance Variables
-        variables[make_state_name("secondary", "turbine_stages", "hp_efficiency")] = StateVariable(
-            name=make_state_name("secondary", "turbine_stages", "hp_efficiency"),
-            category=StateCategory.SECONDARY,
-            subcategory="turbine_stages",
-            unit="fraction",
-            description="High pressure stage efficiency",
-            data_type=float,
-            valid_range=(0.7, 0.95)
-        )
-        
-        variables[make_state_name("secondary", "turbine_stages", "ip_efficiency")] = StateVariable(
-            name=make_state_name("secondary", "turbine_stages", "ip_efficiency"),
-            category=StateCategory.SECONDARY,
-            subcategory="turbine_stages",
-            unit="fraction",
-            description="Intermediate pressure stage efficiency",
-            data_type=float,
-            valid_range=(0.7, 0.95)
-        )
-        
-        variables[make_state_name("secondary", "turbine_stages", "lp_efficiency")] = StateVariable(
-            name=make_state_name("secondary", "turbine_stages", "lp_efficiency"),
-            category=StateCategory.SECONDARY,
-            subcategory="turbine_stages",
-            unit="fraction",
-            description="Low pressure stage efficiency",
-            data_type=float,
-            valid_range=(0.6, 0.90)
-        )
-        
-        variables[make_state_name("secondary", "turbine_stages", "blade_erosion")] = StateVariable(
-            name=make_state_name("secondary", "turbine_stages", "blade_erosion"),
-            category=StateCategory.SECONDARY,
-            subcategory="turbine_stages",
-            unit="mm",
-            description="Average blade erosion",
-            data_type=float,
-            valid_range=(0, 5.0)
-        )
-        
-        return variables
-    
-    def get_current_state(self) -> Dict[str, Any]:
-        """
-        Return current values for all state variables this turbine component provides.
-        
-        Returns:
-            Dictionary mapping variable names to their current values
-        """
-        current_state = {}
-        
-        # Use last update results if available, otherwise fall back to defaults
-        if hasattr(self, 'last_update_results') and self.last_update_results:
-            results = self.last_update_results
-        else:
-            # Fallback to basic state dict if no update results available
-            results = self.get_state_dict()
-        
-        # Basic Turbine Performance State - use actual calculated values
-        current_state[make_state_name("secondary", "turbine", "mechanical_power")] = results.get('mechanical_power', 0.0)
-        current_state[make_state_name("secondary", "turbine", "efficiency")] = results.get('overall_efficiency', 0.0)
-        current_state[make_state_name("secondary", "turbine", "steam_rate")] = results.get('steam_rate', 0.0)
-        current_state[make_state_name("secondary", "turbine", "hp_power")] = results.get('hp_power', 0.0)
-        current_state[make_state_name("secondary", "turbine", "lp_power")] = results.get('lp_power', 0.0)
-        
-        # Enhanced Turbine - Rotor Dynamics State - use actual calculated values
-        current_state[make_state_name("secondary", "turbine_rotor", "speed")] = results.get('rotor_speed', 3600.0)
-        current_state[make_state_name("secondary", "turbine_rotor", "vibration_level")] = results.get('vibration_displacement', 2.0)
-        current_state[make_state_name("secondary", "turbine_rotor", "eccentricity")] = results.get('rotor_eccentricity', 0.1)
-        current_state[make_state_name("secondary", "turbine_rotor", "thermal_expansion")] = results.get('thermal_expansion', 5.0)
-        
-        # Enhanced Turbine - Bearing State - use actual calculated values
-        current_state[make_state_name("secondary", "turbine_bearings", "tb001_oil_temp")] = results.get('TB-001_oil_temp', 70.0)
-        current_state[make_state_name("secondary", "turbine_bearings", "tb002_oil_temp")] = results.get('TB-002_oil_temp', 70.0)
-        current_state[make_state_name("secondary", "turbine_bearings", "bearing_wear")] = results.get('bearing_wear', 0.0)
-        current_state[make_state_name("secondary", "turbine_bearings", "oil_pressure")] = results.get('bearing_oil_pressure', 0.8)
-        
-        # Enhanced Turbine - Governor System State - use actual calculated values
-        current_state[make_state_name("secondary", "turbine_governor", "valve_position")] = results.get('governor_valve_position', 50.0)
-        current_state[make_state_name("secondary", "turbine_governor", "control_pressure")] = results.get('governor_control_pressure', 2.0)
-        current_state[make_state_name("secondary", "turbine_governor", "oil_temperature")] = results.get('governor_oil_temperature', 50.0)
-        
-        # Enhanced Turbine - Stage Performance State - use actual calculated values
-        current_state[make_state_name("secondary", "turbine_stages", "hp_efficiency")] = results.get('hp_stage_efficiency', 0.85)
-        current_state[make_state_name("secondary", "turbine_stages", "ip_efficiency")] = results.get('ip_stage_efficiency', 0.85)
-        current_state[make_state_name("secondary", "turbine_stages", "lp_efficiency")] = results.get('lp_stage_efficiency', 0.80)
-        current_state[make_state_name("secondary", "turbine_stages", "blade_erosion")] = results.get('blade_erosion', 0.0)
-        
-        return current_state
 
 
 # Example usage and testing

@@ -25,14 +25,13 @@ from typing import Dict, List, Optional, Tuple, Any
 import numpy as np
 
 # Import state management interfaces
-from simulator.state import StateProvider, StateVariable, StateCategory, make_state_name
+from simulator.state import StateProvider, StateVariable, StateCategory, make_state_name, StateProviderMixin
 
 from .pump_system import FeedwaterPumpSystem, FeedwaterPumpSystemConfig
 from .level_control import ThreeElementControl, ThreeElementConfig
 from .water_chemistry import WaterQualityModel, WaterQualityConfig
 from .performance_monitoring import PerformanceDiagnostics, PerformanceDiagnosticsConfig
 from .protection_system import FeedwaterProtectionSystem, FeedwaterProtectionConfig
-from .pump_lubrication import FeedwaterPumpLubricationSystem, FeedwaterPumpLubricationConfig, integrate_lubrication_with_pump
 
 warnings.filterwarnings("ignore")
 
@@ -77,7 +76,7 @@ class EnhancedFeedwaterConfig:
     predictive_maintenance: bool = True                  # Enable predictive maintenance
 
 
-class EnhancedFeedwaterPhysics(StateProvider):
+class EnhancedFeedwaterPhysics(StateProviderMixin):
     """
     Enhanced feedwater physics model - analogous to EnhancedCondenserPhysics
     
@@ -97,7 +96,7 @@ class EnhancedFeedwaterPhysics(StateProvider):
     - Mechanical wear tracking and prediction
     - Protection logic with emergency response
     
-    Implements StateProvider interface for automatic state collection.
+    Implements StateProviderMixin for automatic state collection with proper naming.
     """
     
     def __init__(self, config: Optional[EnhancedFeedwaterConfig] = None):
@@ -128,24 +127,6 @@ class EnhancedFeedwaterPhysics(StateProvider):
         self.water_quality = WaterQualityModel(water_config)
         self.diagnostics = PerformanceDiagnostics(diagnostics_config)
         self.protection_system = FeedwaterProtectionSystem(protection_config)
-        
-        # Create and integrate lubrication systems for each pump
-        self.pump_lubrication_systems = {}
-        for pump_id, pump in self.pump_system.pumps.items():
-            # Create lubrication system for this pump
-            lubrication_config = FeedwaterPumpLubricationConfig(
-                system_id=f"{pump_id}-LUB",
-                pump_rated_power=pump.config.rated_power,
-                pump_rated_speed=3600.0,  # Standard pump speed
-                pump_rated_flow=pump.config.rated_flow
-            )
-            lubrication_system = FeedwaterPumpLubricationSystem(lubrication_config)
-            
-            # Integrate lubrication system with the pump
-            integrate_lubrication_with_pump(pump, lubrication_system)
-            
-            # Store reference to lubrication system
-            self.pump_lubrication_systems[pump_id] = lubrication_system
         
         # Enhanced feedwater state
         self.total_flow_rate = 0.0                       # kg/s total system flow
@@ -494,224 +475,6 @@ class EnhancedFeedwaterPhysics(StateProvider):
         self.control_mode = "automatic"
         self.load_demand = 1.0
     
-    def get_state_variables(self) -> Dict[str, StateVariable]:
-        """
-        Return metadata for all state variables this feedwater component provides.
-        
-        Returns:
-            Dictionary mapping variable names to their metadata
-        """
-        variables = {}
-        
-        # Basic Feedwater Performance Variables
-        variables[make_state_name("secondary", "feedwater", "total_flow")] = StateVariable(
-            name=make_state_name("secondary", "feedwater", "total_flow"),
-            category=StateCategory.SECONDARY,
-            subcategory="feedwater",
-            unit="kg/s",
-            description="Total feedwater flow rate",
-            data_type=float,
-            valid_range=(0, 2000),
-            is_critical=True
-        )
-        
-        variables[make_state_name("secondary", "feedwater", "total_power")] = StateVariable(
-            name=make_state_name("secondary", "feedwater", "total_power"),
-            category=StateCategory.SECONDARY,
-            subcategory="feedwater",
-            unit="MW",
-            description="Total feedwater pump power consumption",
-            data_type=float,
-            valid_range=(0, 50)
-        )
-        
-        variables[make_state_name("secondary", "feedwater", "num_running_pumps")] = StateVariable(
-            name=make_state_name("secondary", "feedwater", "num_running_pumps"),
-            category=StateCategory.SECONDARY,
-            subcategory="feedwater",
-            unit="count",
-            description="Number of running feedwater pumps",
-            data_type=int,
-            valid_range=(0, 4)
-        )
-        
-        variables[make_state_name("secondary", "feedwater", "system_available")] = StateVariable(
-            name=make_state_name("secondary", "feedwater", "system_available"),
-            category=StateCategory.SECONDARY,
-            subcategory="feedwater",
-            unit="boolean",
-            description="Feedwater system availability",
-            data_type=bool,
-            is_critical=True
-        )
-        
-        variables[make_state_name("secondary", "feedwater", "temperature")] = StateVariable(
-            name=make_state_name("secondary", "feedwater", "temperature"),
-            category=StateCategory.SECONDARY,
-            subcategory="feedwater",
-            unit="°C",
-            description="Feedwater temperature",
-            data_type=float,
-            valid_range=(200, 250)
-        )
-        
-        # Enhanced Feedwater - Pump Performance Variables
-        variables[make_state_name("secondary", "feedwater_pumps", "fwp001_flow")] = StateVariable(
-            name=make_state_name("secondary", "feedwater_pumps", "fwp001_flow"),
-            category=StateCategory.SECONDARY,
-            subcategory="feedwater_pumps",
-            unit="kg/s",
-            description="Feedwater pump FWP-001 flow rate",
-            data_type=float,
-            valid_range=(0, 800),
-            is_critical=True
-        )
-        
-        variables[make_state_name("secondary", "feedwater_pumps", "fwp002_flow")] = StateVariable(
-            name=make_state_name("secondary", "feedwater_pumps", "fwp002_flow"),
-            category=StateCategory.SECONDARY,
-            subcategory="feedwater_pumps",
-            unit="kg/s",
-            description="Feedwater pump FWP-002 flow rate",
-            data_type=float,
-            valid_range=(0, 800),
-            is_critical=True
-        )
-        
-        variables[make_state_name("secondary", "feedwater_pumps", "fwp003_flow")] = StateVariable(
-            name=make_state_name("secondary", "feedwater_pumps", "fwp003_flow"),
-            category=StateCategory.SECONDARY,
-            subcategory="feedwater_pumps",
-            unit="kg/s",
-            description="Feedwater pump FWP-003 flow rate",
-            data_type=float,
-            valid_range=(0, 800),
-            is_critical=True
-        )
-        
-        variables[make_state_name("secondary", "feedwater_pumps", "avg_efficiency")] = StateVariable(
-            name=make_state_name("secondary", "feedwater_pumps", "avg_efficiency"),
-            category=StateCategory.SECONDARY,
-            subcategory="feedwater_pumps",
-            unit="fraction",
-            description="Average pump efficiency",
-            data_type=float,
-            valid_range=(0.6, 0.9)
-        )
-        
-        variables[make_state_name("secondary", "feedwater_pumps", "cavitation_risk")] = StateVariable(
-            name=make_state_name("secondary", "feedwater_pumps", "cavitation_risk"),
-            category=StateCategory.SECONDARY,
-            subcategory="feedwater_pumps",
-            unit="factor",
-            description="Cavitation risk factor",
-            data_type=float,
-            valid_range=(0, 1.0),
-            is_critical=True
-        )
-        
-        variables[make_state_name("secondary", "feedwater_pumps", "bearing_wear")] = StateVariable(
-            name=make_state_name("secondary", "feedwater_pumps", "bearing_wear"),
-            category=StateCategory.SECONDARY,
-            subcategory="feedwater_pumps",
-            unit="mm",
-            description="Average pump bearing wear",
-            data_type=float,
-            valid_range=(0, 2.0)
-        )
-        
-        # Enhanced Feedwater - Three Element Control Variables
-        variables[make_state_name("secondary", "feedwater_control", "sg1_level_error")] = StateVariable(
-            name=make_state_name("secondary", "feedwater_control", "sg1_level_error"),
-            category=StateCategory.SECONDARY,
-            subcategory="feedwater_control",
-            unit="m",
-            description="Steam generator 1 level error",
-            data_type=float,
-            valid_range=(-2.0, 2.0)
-        )
-        
-        variables[make_state_name("secondary", "feedwater_control", "sg2_level_error")] = StateVariable(
-            name=make_state_name("secondary", "feedwater_control", "sg2_level_error"),
-            category=StateCategory.SECONDARY,
-            subcategory="feedwater_control",
-            unit="m",
-            description="Steam generator 2 level error",
-            data_type=float,
-            valid_range=(-2.0, 2.0)
-        )
-        
-        variables[make_state_name("secondary", "feedwater_control", "sg3_level_error")] = StateVariable(
-            name=make_state_name("secondary", "feedwater_control", "sg3_level_error"),
-            category=StateCategory.SECONDARY,
-            subcategory="feedwater_control",
-            unit="m",
-            description="Steam generator 3 level error",
-            data_type=float,
-            valid_range=(-2.0, 2.0)
-        )
-        
-        variables[make_state_name("secondary", "feedwater_control", "auto_control_active")] = StateVariable(
-            name=make_state_name("secondary", "feedwater_control", "auto_control_active"),
-            category=StateCategory.SECONDARY,
-            subcategory="feedwater_control",
-            unit="boolean",
-            description="Automatic control system active",
-            data_type=bool,
-            is_critical=True
-        )
-        
-        variables[make_state_name("secondary", "feedwater_control", "steam_quality_compensation")] = StateVariable(
-            name=make_state_name("secondary", "feedwater_control", "steam_quality_compensation"),
-            category=StateCategory.SECONDARY,
-            subcategory="feedwater_control",
-            unit="factor",
-            description="Steam quality compensation factor",
-            data_type=float,
-            valid_range=(0.8, 1.2)
-        )
-        
-        return variables
-    
-    def get_current_state(self) -> Dict[str, Any]:
-        """
-        Return current values for all state variables this feedwater component provides.
-        
-        Returns:
-            Dictionary mapping variable names to their current values
-        """
-        current_state = {}
-        
-        # Get current feedwater state from internal state dict
-        feedwater_state = self.get_state_dict()
-        
-        # Basic Feedwater Performance State
-        current_state[make_state_name("secondary", "feedwater", "total_flow")] = self.total_flow_rate
-        current_state[make_state_name("secondary", "feedwater", "total_power")] = feedwater_state.get('feedwater_total_power', 0.0)
-        current_state[make_state_name("secondary", "feedwater", "num_running_pumps")] = feedwater_state.get('pump_system_num_running', 0)
-        current_state[make_state_name("secondary", "feedwater", "system_available")] = feedwater_state.get('pump_system_available', True)
-        current_state[make_state_name("secondary", "feedwater", "temperature")] = self.config.design_feedwater_temperature
-        
-        # Enhanced Feedwater - Pump Performance State
-        current_state[make_state_name("secondary", "feedwater_pumps", "fwp001_flow")] = feedwater_state.get('pump_fwp-1_flow_rate', 0.0)
-        current_state[make_state_name("secondary", "feedwater_pumps", "fwp002_flow")] = feedwater_state.get('pump_fwp-2_flow_rate', 0.0)
-        current_state[make_state_name("secondary", "feedwater_pumps", "fwp003_flow")] = feedwater_state.get('pump_fwp-3_flow_rate', 0.0)
-        current_state[make_state_name("secondary", "feedwater_pumps", "avg_efficiency")] = feedwater_state.get('pump_avg_efficiency', 0.8)
-        current_state[make_state_name("secondary", "feedwater_pumps", "cavitation_risk")] = feedwater_state.get('pump_cavitation_risk', 0.0)
-        current_state[make_state_name("secondary", "feedwater_pumps", "bearing_wear")] = feedwater_state.get('pump_bearing_wear', 0.0)
-        
-        # Enhanced Feedwater - Three Element Control State
-        # Calculate level errors from current SG levels vs design level
-        design_level = self.config.design_sg_level
-        level_errors = [level - design_level for level in self.sg_levels]
-        
-        current_state[make_state_name("secondary", "feedwater_control", "sg1_level_error")] = level_errors[0] if len(level_errors) > 0 else 0.0
-        current_state[make_state_name("secondary", "feedwater_control", "sg2_level_error")] = level_errors[1] if len(level_errors) > 1 else 0.0
-        current_state[make_state_name("secondary", "feedwater_control", "sg3_level_error")] = level_errors[2] if len(level_errors) > 2 else 0.0
-        current_state[make_state_name("secondary", "feedwater_control", "auto_control_active")] = self.config.auto_level_control
-        current_state[make_state_name("secondary", "feedwater_control", "steam_quality_compensation")] = feedwater_state.get('steam_quality_compensation', 1.0)
-        
-        return current_state
 
 
 # Example usage and testing

@@ -97,7 +97,7 @@ class FeedwaterPumpLubricationSystem(BaseLubricationSystem):
                 speed_wear_exponent=1.8,           # Very high speed sensitivity
                 contamination_wear_factor=2.5,     # High contamination sensitivity
                 wear_performance_factor=0.015,     # 1.5% performance loss per % wear
-                lubrication_performance_factor=0.4, # 40% performance loss with poor lube
+                lubrication_performance_factor=0.05, # 5% performance loss with poor lube (reduced)
                 wear_alarm_threshold=10.0,         # % wear alarm
                 wear_trip_threshold=25.0           # % wear trip
             ),
@@ -112,7 +112,7 @@ class FeedwaterPumpLubricationSystem(BaseLubricationSystem):
                 speed_wear_exponent=1.6,           # High speed sensitivity
                 contamination_wear_factor=3.0,     # Very sensitive to contamination
                 wear_performance_factor=0.02,      # 2% performance loss per % wear
-                lubrication_performance_factor=0.5, # 50% performance loss with poor lube
+                lubrication_performance_factor=0.1, # 10% performance loss with poor lube (reduced)
                 wear_alarm_threshold=8.0,          # % wear alarm (lower threshold)
                 wear_trip_threshold=20.0           # % wear trip
             ),
@@ -127,7 +127,7 @@ class FeedwaterPumpLubricationSystem(BaseLubricationSystem):
                 speed_wear_exponent=1.4,           # Moderate speed sensitivity
                 contamination_wear_factor=3.5,     # Extremely sensitive to contamination
                 wear_performance_factor=0.025,     # 2.5% performance loss per % wear
-                lubrication_performance_factor=0.6, # 60% performance loss with poor lube
+                lubrication_performance_factor=0.15, # 15% performance loss with poor lube (reduced)
                 wear_alarm_threshold=6.0,          # % wear alarm (very low threshold)
                 wear_trip_threshold=15.0           # % wear trip
             ),
@@ -142,7 +142,7 @@ class FeedwaterPumpLubricationSystem(BaseLubricationSystem):
                 speed_wear_exponent=1.2,           # Moderate speed sensitivity
                 contamination_wear_factor=4.0,     # Extremely sensitive to contamination
                 wear_performance_factor=0.03,      # 3% performance loss per % wear
-                lubrication_performance_factor=0.7, # 70% performance loss with poor lube
+                lubrication_performance_factor=0.2, # 20% performance loss with poor lube (reduced)
                 wear_alarm_threshold=5.0,          # % wear alarm (very low threshold)
                 wear_trip_threshold=12.0           # % wear trip
             ),
@@ -157,7 +157,7 @@ class FeedwaterPumpLubricationSystem(BaseLubricationSystem):
                 speed_wear_exponent=1.0,           # Low speed sensitivity
                 contamination_wear_factor=1.5,     # Low contamination sensitivity
                 wear_performance_factor=0.01,      # 1% performance loss per % wear
-                lubrication_performance_factor=0.2, # 20% performance loss
+                lubrication_performance_factor=0.05, # 5% performance loss (reduced)
                 wear_alarm_threshold=15.0,         # % wear alarm
                 wear_trip_threshold=35.0           # % wear trip
             )
@@ -331,8 +331,8 @@ class FeedwaterPumpLubricationSystem(BaseLubricationSystem):
         seal_wear = self.component_wear.get('mechanical_seals', 0.0)
         seal_efficiency_loss = seal_wear * 0.01  # Seal wear increases internal leakage
         
-        # Lubrication quality effects
-        lubrication_efficiency_loss = (1.0 - self.lubrication_effectiveness) * 0.05
+        # Lubrication quality effects (reduced impact)
+        lubrication_efficiency_loss = (1.0 - self.lubrication_effectiveness) * 0.02  # Reduced from 0.05
         
         # Total pump efficiency degradation
         self.pump_efficiency_degradation = (bearing_efficiency_loss + 
@@ -455,8 +455,8 @@ def integrate_lubrication_with_pump(pump, lubrication_system: FeedwaterPumpLubri
             
             # Update lubrication system
             oil_temp = 45.0 + load_factor * 25.0
-            contamination_input = load_factor * 0.05  # Contamination from operation
-            moisture_input = 0.0005  # Base moisture input
+            contamination_input = load_factor * 0.01  # Reduced contamination input
+            moisture_input = 0.0001  # Reduced moisture input
             
             oil_quality_results = lubrication_system.update_oil_quality(
                 oil_temp, contamination_input, moisture_input, dt
@@ -620,15 +620,4 @@ if __name__ == "__main__":
     print("Final Component Wear Status:")
     for comp_id in lubrication_system.components:
         wear = lubrication_system.component_wear[comp_id]
-        performance = lubrication_system.component_performance_factors[comp_id]
-        print(f"  {comp_id}: {wear:.3f}% wear, {performance:.3f} performance factor")
-    
-    print()
-    print("Feedwater Pump Lubrication System - Ready for Integration!")
-    print("Key Features Implemented:")
-    print("- Unified lubrication system for 5 pump components")
-    print("- Oil quality tracking and degradation modeling")
-    print("- Component wear calculation with lubrication effects")
-    print("- Cavitation effects on bearing and seal lubrication")
-    print("- Performance degradation tracking")
-    print("- Integration wrapper for existing pump models")
+        performance = lubrication_system
