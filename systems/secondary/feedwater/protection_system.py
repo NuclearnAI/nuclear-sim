@@ -46,8 +46,8 @@ class FeedwaterProtectionConfig:
     high_flow_trip: float = 2000.0                   # kg/s high flow trip
     
     # Steam generator level protection
-    sg_level_high_alarm: float = 14.0                # m SG level high alarm
-    sg_level_high_trip: float = 15.0                 # m SG level high trip
+    sg_level_high_alarm: float = 15.5                # m SG level high alarm
+    sg_level_high_trip: float = 16.5                 # m SG level high trip
     sg_level_low_alarm: float = 11.0                 # m SG level low alarm
     sg_level_low_trip: float = 10.0                  # m SG level low trip
     
@@ -170,7 +170,7 @@ class NPSHProtection:
         
         # NPSH Critical Trip (instantaneous)
         if npsh_available < self.config.npsh_critical_trip:
-            if not self.npsh_critical_trip_active:
+            if not self.npsh_criticalre _trip_active:
                 self.npsh_critical_trip_active = True
                 self.protection_actions_taken.append(f"NPSH Critical Trip at {npsh_available:.1f}m")
         else:

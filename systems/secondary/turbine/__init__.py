@@ -39,6 +39,27 @@ from .rotor_dynamics import (
     BearingModel
 )
 
+from .lubrication_base import (
+    BaseLubricationSystem,
+    BaseLubricationConfig,
+    LubricationComponent
+)
+
+from .governor_system import (
+    TurbineGovernorSystem,
+    GovernorControlConfig,
+    GovernorValveConfig,
+    GovernorLubricationConfig,
+    GovernorLubricationSystem,
+    GovernorValveModel
+)
+
+from .turbine_bearing_lubrication import (
+    TurbineBearingLubricationSystem,
+    TurbineBearingLubricationConfig,
+    integrate_lubrication_with_turbine
+)
+
 # Note: Legacy turbine classes are imported directly in systems.secondary.__init__.py
 # to avoid circular import issues
 
@@ -66,7 +87,25 @@ __all__ = [
     'RotorDynamicsModel',
     'RotorDynamicsConfig',
     'VibrationMonitor',
-    'BearingModel'
+    'BearingModel',
+    
+    # Lubrication base classes
+    'BaseLubricationSystem',
+    'BaseLubricationConfig',
+    'LubricationComponent',
+    
+    # Governor system with lubrication
+    'TurbineGovernorSystem',
+    'GovernorControlConfig',
+    'GovernorValveConfig',
+    'GovernorLubricationConfig',
+    'GovernorLubricationSystem',
+    'GovernorValveModel',
+    
+    # Turbine bearing lubrication
+    'TurbineBearingLubricationSystem',
+    'TurbineBearingLubricationConfig',
+    'integrate_lubrication_with_turbine'
     
     # Note: Legacy turbine classes (TurbinePhysics, TurbineConfig) are imported
     # directly in systems.secondary.__init__.py to avoid circular imports

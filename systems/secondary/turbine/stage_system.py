@@ -699,14 +699,19 @@ class TurbineStageSystem:
             )
             
             results['stages'][stage_id] = stage_result
-            results['total_power'] += stage_result['power_output']
-            results['total_extraction'] += stage_result['extraction_flow']
+            
+            # Accumulate power and extraction
+            stage_power = stage_result['power_output']
+            stage_extraction = stage_result['extraction_flow']
+            
+            results['total_power'] += stage_power
+            results['total_extraction'] += stage_extraction
             
             # Update conditions for next stage
             current_pressure = stage_result['outlet_pressure']
             current_temperature = stage_result['outlet_temperature']
             current_flow = stage_result['outlet_flow']
-        
+         
         # Final outlet conditions
         results['outlet_conditions'] = {
             'pressure': current_pressure,

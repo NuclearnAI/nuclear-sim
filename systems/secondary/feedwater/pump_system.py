@@ -34,11 +34,13 @@ class FeedwaterPumpConfig:
     rated_flow: float = 555.0                   # kg/s rated flow per pump
     rated_power: float = 10.0                   # MW rated power
     rated_head: float = 1200.0                  # m rated head
-    min_speed: float = 0.0                      # % minimum speed
+    min_speed: float = 30.0                     # % minimum speed (was 0.0)
     max_speed: float = 110.0                    # % maximum speed
     speed_ramp_rate: float = 15.0               # %/s speed ramp rate
     startup_time: float = 20.0                  # seconds startup time
     coastdown_time: float = 60.0                # seconds coastdown time
+    auto_start_enabled: bool = True             # Enable automatic startup
+    min_flow_for_start: float = 50.0            # kg/s minimum flow to start
 
 
 @dataclass
@@ -269,9 +271,10 @@ class FeedwaterPump(BasePump):
         max_sg_level = max(sg_levels) if sg_levels else 12.5
         
         # DEBUG: Print steam generator levels to understand the issue
+        '''
         if self.state.status == PumpStatus.RUNNING and max_sg_level > 14.0:
             print(f"DEBUG {self.config.pump_id}: SG levels = {sg_levels}, max = {max_sg_level:.2f}m")
-        
+        '''
         # FIXED: Increase high level trip setpoint to prevent nuisance trips
         # Normal operating level is 12.5m, allow operation up to 16.0m
         if max_sg_level > 16.0:  # High level trip (was 15.0)
@@ -612,6 +615,10 @@ class FeedwaterPumpSystemConfig:
     pump_config: FeedwaterPumpConfig = field(default_factory=FeedwaterPumpConfig)
     auto_sequencing: bool = True                       # Enable automatic pump sequencing
     load_sharing: bool = True                          # Enable load sharing between pumps
+    auto_start_enabled: bool = True                    # Enable system auto-start
+    startup_sequence_enabled: bool = True              # Enable sequential startup
+    min_running_pumps: int = 3                         # Minimum pumps for operation
+    max_running_pumps: int = 4                         # Maximum pumps allowed
 
 
 class FeedwaterPumpSystem:
@@ -659,19 +666,28 @@ class FeedwaterPumpSystem:
         """Initialize pumps to proper operating state"""
         pump_ids = list(self.pumps.keys())
         
-        # Start the required number of pumps
+        # Configure all pumps for auto-start
+        for pump_id, pump in self.pumps.items():
+            pump.config.auto_start_enabled = True
+            pump.config.min_flow_for_start = 50.0
+            pump.state.auto_control = True
+            pump.state.available = True
+        
+        # Start the required number of pumps with proper startup sequence
         for i in range(self.minimum_pumps_required):
             if i < len(pump_ids):
                 pump_id = pump_ids[i]
                 pump = self.pumps[pump_id]
                 
-                # Start the pump
+                # Set target speed and flow demand BEFORE starting
+                pump.state.speed_setpoint = 100.0
+                pump.set_flow_demand(555.0)  # Design flow per pump
+                
+                # Start the pump (this will initiate STARTING state)
                 pump.start_pump()
                 
-                # Set initial speed and flow demand
-                pump.state.speed_setpoint = 100.0
-                pump.state.speed_percent = 100.0
-                pump.set_flow_demand(555.0)  # Design flow per pump
+                # DO NOT force speed_percent - let startup sequence handle it
+                # The base class will ramp from 0% to speed_setpoint over startup_time
         
         # Keep spare pumps stopped
         for i in range(self.minimum_pumps_required, len(pump_ids)):

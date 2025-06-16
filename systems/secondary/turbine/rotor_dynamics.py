@@ -166,6 +166,10 @@ class BearingModel:
         self.clearance_increase = 0.0            # mm clearance increase due to wear
         self.oil_contamination_level = 0.0       # ppm contamination level
         
+        # External lubrication system integration
+        self.external_oil_temp = False           # Flag for external oil temperature
+        self.external_oil_temperature = 85.0    # External oil temperature (°C)
+        
     def calculate_bearing_loads(self,
                               rotor_weight: float,
                               steam_thrust: float,
@@ -215,13 +219,38 @@ class BearingModel:
             'load_factor': total_load / self.config.design_load_capacity
         }
     
+    def set_lubrication_state(self, oil_temp: float, oil_flow: float, oil_quality: Dict):
+        """
+        Accept lubrication state from external lubrication system
+        
+        Args:
+            oil_temp: Oil temperature from lubrication system (°C)
+            oil_flow: Oil flow rate from lubrication system (L/min)
+            oil_quality: Oil quality metrics dictionary
+        """
+        # Validate inputs to prevent NaN propagation
+        if np.isfinite(oil_temp) and oil_temp > 0:
+            self.oil_temperature = oil_temp
+            # Mark that we have external oil temperature
+            self.external_oil_temp = True
+            self.external_oil_temperature = oil_temp
+        
+        if np.isfinite(oil_flow) and oil_flow > 0:
+            self.oil_flow_rate = oil_flow
+        
+        # Update oil quality metrics
+        if isinstance(oil_quality, dict):
+            contamination = oil_quality.get('contamination', 0.0)
+            if np.isfinite(contamination):
+                self.oil_contamination_level = contamination
+
     def calculate_bearing_temperature(self,
                                     oil_inlet_temp: float,
                                     bearing_load: float,
                                     rotor_speed: float,
                                     dt: float) -> Dict[str, float]:
         """
-        Calculate bearing temperatures
+        Calculate bearing temperatures with corrected physics and NaN prevention
         
         Args:
             oil_inlet_temp: Oil inlet temperature (°C)
@@ -232,38 +261,103 @@ class BearingModel:
         Returns:
             Dictionary with temperature results
         """
-        # Heat generation from friction
-        friction_power = (bearing_load * 1000.0 * self.config.friction_coefficient * 
-                         rotor_speed * 2 * np.pi / 60.0 * self.config.bearing_clearance / 1000.0)  # W
+        # Validate inputs
+        oil_inlet_temp = max(20.0, min(150.0, oil_inlet_temp)) if np.isfinite(oil_inlet_temp) else 60.0
+        bearing_load = max(0.0, bearing_load) if np.isfinite(bearing_load) else 0.0
+        rotor_speed = max(0.0, rotor_speed) if np.isfinite(rotor_speed) else 0.0
+        dt = max(0.0, dt) if np.isfinite(dt) else 1.0
+        
+        # CORRECTED: Heat generation from friction using proper tribology physics
+        # Friction power = Friction_torque × Angular_velocity
+        # Friction_torque = μ × Normal_force × bearing_radius
+        
+        # Bearing geometry (typical turbine bearing dimensions)
+        bearing_radius = 0.15  # m (typical 300mm diameter bearing)
+        
+        # Convert units properly
+        bearing_load_n = bearing_load * 1000.0  # Convert kN to N
+        angular_velocity = rotor_speed * 2 * np.pi / 60.0  # Convert RPM to rad/s
+        
+        # Calculate friction torque (N⋅m)
+        friction_torque = self.config.friction_coefficient * bearing_load_n * bearing_radius
+        
+        # Calculate friction power (W)
+        friction_power = friction_torque * angular_velocity
+        
+        # Apply realistic limits (typical turbine bearing: 1-50 kW max)
+        max_friction_power = 50000.0  # W (50 kW maximum realistic)
+        friction_power = min(friction_power, max_friction_power)
+        
+        # Ensure friction power is finite and positive
+        if not np.isfinite(friction_power) or friction_power < 0:
+            friction_power = 0.0
         
         # Heat transfer to oil
         oil_heat_capacity = 2000.0  # J/kg/K
         oil_density = 850.0         # kg/m³
+        
+        # Ensure oil flow rate is valid
+        if not np.isfinite(self.oil_flow_rate) or self.oil_flow_rate <= 0:
+            self.oil_flow_rate = 10.0  # Default flow rate L/min
+        
         oil_mass_flow = self.oil_flow_rate / 60.0 * oil_density / 1000.0  # kg/s
         
-        # Temperature rise calculation
-        if oil_mass_flow > 0:
+        # Temperature rise calculation with safety checks
+        if oil_mass_flow > 0 and np.isfinite(oil_mass_flow):
             temp_rise = friction_power / (oil_mass_flow * oil_heat_capacity)
+            # Limit temperature rise to reasonable values
+            temp_rise = min(50.0, max(0.0, temp_rise))
         else:
             temp_rise = 0.0
         
-        # Oil temperature (first-order lag)
-        time_constant = 30.0  # seconds
-        oil_temp_target = oil_inlet_temp + temp_rise
-        temp_change = (oil_temp_target - self.oil_temperature) / time_constant * dt * 3600.0
-        self.oil_temperature += temp_change
+        # Ensure temp_rise is finite
+        if not np.isfinite(temp_rise):
+            temp_rise = 0.0
+        
+        # Use external oil temperature if available, otherwise calculate internally
+        if hasattr(self, 'external_oil_temp') and self.external_oil_temp:
+            # Use externally provided oil temperature (from lubrication system)
+            # Don't override it with internal calculations
+            pass  # Keep the external oil temperature
+        else:
+            # Calculate oil temperature internally (fallback)
+            time_constant = 30.0  # seconds
+            oil_temp_target = oil_inlet_temp + temp_rise
+            
+            # Ensure target temperature is reasonable
+            oil_temp_target = max(20.0, min(150.0, oil_temp_target))
+            
+            # Ensure current oil temperature is valid
+            if not np.isfinite(self.oil_temperature):
+                self.oil_temperature = oil_inlet_temp
+            
+            temp_change = (oil_temp_target - self.oil_temperature) / time_constant * dt * 3600.0
+            
+            # Limit temperature change rate
+            temp_change = max(-10.0, min(10.0, temp_change))
+            
+            self.oil_temperature += temp_change
+            
+            # Ensure oil temperature stays within bounds
+            self.oil_temperature = max(20.0, min(150.0, self.oil_temperature))
         
         # Metal temperature (higher than oil temperature)
         metal_temp_rise = temp_rise * 1.5  # Metal runs hotter than oil
         self.metal_temperature = oil_inlet_temp + metal_temp_rise
         
-        return {
-            'oil_temperature': self.oil_temperature,
-            'metal_temperature': self.metal_temperature,
-            'temperature_rise': temp_rise,
-            'friction_power': friction_power,
-            'oil_flow_rate': self.oil_flow_rate
+        # Ensure metal temperature is reasonable
+        self.metal_temperature = max(30.0, min(200.0, self.metal_temperature))
+        
+        # Final validation of all outputs
+        results = {
+            'oil_temperature': self.oil_temperature if np.isfinite(self.oil_temperature) else 60.0,
+            'metal_temperature': self.metal_temperature if np.isfinite(self.metal_temperature) else 90.0,
+            'temperature_rise': temp_rise if np.isfinite(temp_rise) else 0.0,
+            'friction_power': friction_power if np.isfinite(friction_power) else 0.0,
+            'oil_flow_rate': self.oil_flow_rate if np.isfinite(self.oil_flow_rate) else 10.0
         }
+        
+        return results
     
     def update_bearing_wear(self,
                           bearing_load: float,
@@ -339,6 +433,8 @@ class BearingModel:
         self.efficiency_factor = 1.0
         self.clearance_increase = 0.0
         self.oil_contamination_level = 0.0
+        self.external_oil_temp = False
+        self.external_oil_temperature = 85.0
 
 
 class VibrationMonitor:

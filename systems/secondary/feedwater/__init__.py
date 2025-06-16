@@ -64,6 +64,13 @@ from .protection_system import (
     NPSHProtection
 )
 
+# Import pump lubrication system
+from .pump_lubrication import (
+    FeedwaterPumpLubricationSystem,
+    FeedwaterPumpLubricationConfig,
+    integrate_lubrication_with_pump
+)
+
 __all__ = [
     # Main enhanced physics
     'EnhancedFeedwaterPhysics',
@@ -97,5 +104,10 @@ __all__ = [
     # Protection system
     'FeedwaterProtectionSystem',
     'FeedwaterProtectionConfig',
-    'NPSHProtection'
+    'NPSHProtection',
+    
+    # Pump lubrication system
+    'FeedwaterPumpLubricationSystem',
+    'FeedwaterPumpLubricationConfig',
+    'integrate_lubrication_with_pump'
 ]
