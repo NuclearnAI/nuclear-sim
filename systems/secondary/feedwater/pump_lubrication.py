@@ -292,9 +292,9 @@ class FeedwaterPumpLubricationSystem(BaseLubricationSystem):
         
         # Calculate seal leakage based on seal wear
         seal_wear = self.component_wear.get('mechanical_seals', 0.0)
-        base_seal_leakage = 0.1  # L/min base leakage
-        wear_leakage = seal_wear * 0.2  # Additional leakage from wear
-        cavitation_leakage = cavitation_intensity * 0.5  # Cavitation damages seals
+        base_seal_leakage = 0.05  # L/min base leakage (50 mL/min)
+        wear_leakage = seal_wear * 0.  # Additional leakage from wear
+        cavitation_leakage = cavitation_intensity * 0.  # Cavitation damages seals
         
         self.seal_leakage_rate = base_seal_leakage + wear_leakage + cavitation_leakage
         

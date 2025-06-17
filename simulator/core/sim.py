@@ -156,8 +156,9 @@ class NuclearPlantSimulator:
             steam_flow = secondary_result['total_steam_flow'] if np.isfinite(secondary_result['total_steam_flow']) else 1665.0
             steam_pressure = secondary_result['sg_avg_pressure'] if np.isfinite(secondary_result['sg_avg_pressure']) else 6.895
             condenser_pressure = secondary_result['condenser_pressure'] if np.isfinite(secondary_result['condenser_pressure']) else 0.007
-            condenser_heat_rejection = secondary_result['condenser_heat_rejection'] if np.isfinite(secondary_result['condenser_heat_rejection']) else 0.0
+            condenser_heat_rejection = secondary_result['total_system_heat_rejection'] if np.isfinite(secondary_result['total_system_heat_rejection']) else 0.0
             
+           
             # Additional validation: ensure thermal efficiency is within realistic bounds
             thermal_efficiency = max(0.0, min(thermal_efficiency, 0.35))  # Cap at 35% for PWR
             
@@ -491,7 +492,7 @@ class NuclearPlantSimulator:
         
         return self.get_observation()
 
-    def plot_parameters(self, parameters: List[str] = None, time_window: int = None):
+    def plot_parameters(self, parameters: List[str] = None, time_window: int = None, save: bool = False):
         """Plot selected parameters over time using state management data"""
         if not self.enable_state_management or self.state_manager is None:
             print("State management is not enabled. Cannot plot parameters.")
@@ -538,7 +539,9 @@ class NuclearPlantSimulator:
             for i, param in enumerate(parameters):
                 if param in data.columns:
                     # Create readable labels
-                    ylabel = param.replace('_', ' ').replace('.', ' ').title()
+                    ylabel = " ".join(param.split('.')[1:])
+                    print(ylabel)
+                    ylabel = ylabel.replace('_', ' ').replace('.', '').title()
                     if 'temperature' in param.lower():
                         ylabel += " (°C)"
                     elif 'pressure' in param.lower():
@@ -562,7 +565,12 @@ class NuclearPlantSimulator:
 
             axes[-1].set_xlabel("Time (s)")
             plt.tight_layout()
+
+            if save:
+                plt.savefig(f"simulation_parameters.png")
+                print(f"Saved plot to simulation_parameters.png")
             plt.show()
+
             
         except Exception as e:
             print(f"Error plotting parameters: {e}")

@@ -29,6 +29,9 @@ import numpy as np
 # Import state management interfaces
 from simulator.state import StateProviderMixin
 
+# Import heat flow tracking
+from ..heat_flow_tracker import HeatFlowProvider, ThermodynamicProperties
+
 from .vacuum_system import VacuumSystem, VacuumSystemConfig
 from .vacuum_pump import SteamEjectorConfig
 
@@ -671,7 +674,7 @@ class EnhancedCondenserConfig:
     """Enhanced condenser configuration with all advanced models"""
     
     # Basic condenser parameters (FIXED for realistic PWR sizing)
-    design_heat_duty: float = 2000.0e6
+    design_heat_duty: float = 2200.0e6
     design_steam_flow: float = 1665.0
     design_cooling_water_flow: float = 45000.0
     heat_transfer_area: float = 75000.0     # INCREASED: Realistic PWR condenser area
@@ -691,7 +694,7 @@ class EnhancedCondenserConfig:
     vacuum_system_config: VacuumSystemConfig = None
 
 
-class EnhancedCondenserPhysics(StateProviderMixin):
+class EnhancedCondenserPhysics(StateProviderMixin, HeatFlowProvider):
     """
     Enhanced condenser physics model with advanced degradation states
     
@@ -794,51 +797,32 @@ class EnhancedCondenserPhysics(StateProviderMixin):
         condensate_temp = sat_temp
         h_condensate = self._water_enthalpy(condensate_temp, steam_pressure)
         
-        # CORRECT PWR CONDENSER PHYSICS: Steam from LP turbine exhaust
-        # For realistic PWR operation, steam enters condenser from LP turbine at ~0.007 MPa
+        # PHYSICS-BASED STEAM ENTHALPY CALCULATION USING ACTUAL STEAM QUALITY
+        # Calculate steam inlet enthalpy based on actual steam quality and pressure
         
-        if steam_pressure < 0.02:  # Low pressure condenser conditions (typical PWR)
-            # CRITICAL FIX: Use realistic PWR turbine exhaust enthalpy
-            # Steam enters condenser from LP turbine exhaust with significant energy content
-            
-            # For PWR LP turbine exhaust at 0.007 MPa:
-            # - Saturation temperature: ~39°C
-            # - Typical exhaust enthalpy: ~2300-2400 kJ/kg (wet steam)
-            # - Condensate enthalpy: ~163 kJ/kg (saturated liquid at 39°C)
-            # - Heat rejection per kg: ~2300 - 163 = ~2137 kJ/kg
-            
-            # Use realistic PWR turbine exhaust enthalpy
-            # This accounts for the expansion work done in the turbine
-            if steam_quality >= 0.85:  # Typical LP turbine exhaust quality
-                # Realistic PWR LP turbine exhaust enthalpy
-                h_steam_inlet = 2300.0 + (steam_quality - 0.85) * 200.0  # kJ/kg
-            else:
-                # Lower quality steam (unusual but possible)
-                h_steam_inlet = h_f + steam_quality * h_fg  # kJ/kg
-            
-            # Calculate heat rejection per kg
-            heat_per_kg = h_steam_inlet - h_condensate  # kJ/kg
-            
-            # ENERGY CONSERVATION: This gives realistic heat rejection
-            # For 1615 kg/s at 2137 kJ/kg = ~3450 MW thermal equivalent
-            # After turbine work extraction: ~2000 MW heat rejection (realistic)
-            
-        else:
-            # Use calculated enthalpy for higher pressures (non-condenser applications)
-            heat_per_kg = steam_quality * h_fg + (h_g - h_condensate)
+        # Validate steam quality input
+        steam_quality = np.clip(steam_quality, 0.0, 1.0)  # Ensure valid range
         
-        # Total heat duty available from steam condensation
-        heat_duty_steam = steam_flow * heat_per_kg * 1000  # Convert kJ/s to W
+        # Calculate steam enthalpy using actual quality (works for all pressures)
+        h_steam_inlet = h_f + steam_quality * h_fg  # kJ/kg
         
-        # ENERGY BALANCE VALIDATION: Ensure realistic heat rejection for PWR
-        # For 3000 MW thermal plant: expect ~1800 MW heat rejection (target middle ground)
-        # Remove verbose logging to clean up output
+        # Calculate heat available per kg of steam
+        heat_per_kg = h_steam_inlet - h_condensate  # kJ/kg
+        
+        # Validate heat per kg is reasonable (should be positive and realistic)
+        if heat_per_kg <= 0:
+            # This shouldn't happen with proper steam conditions
+            heat_per_kg = h_fg * steam_quality  # Fallback to latent heat portion
+        
+        # Total heat available from steam condensation (proper unit conversion)
+        heat_available_kjs = steam_flow * heat_per_kg  # kJ/s
+        heat_available_watts = heat_available_kjs * 1000  # Convert kJ/s to W
         
         # Cooling water heat capacity
         cp_water = 4180.0  # J/kg/K
         
-        # Estimate cooling water outlet temperature
-        temp_rise_estimate = heat_duty_steam / (cooling_water_flow * cp_water)
+        # Estimate cooling water outlet temperature based on available heat
+        temp_rise_estimate = heat_available_watts / (cooling_water_flow * cp_water)
         cooling_water_temp_out = cooling_water_temp_in + temp_rise_estimate
         
         # Log Mean Temperature Difference (LMTD)
@@ -894,33 +878,20 @@ class EnhancedCondenserPhysics(StateProviderMixin):
         effective_area = (self.config.heat_transfer_area * 
                          self.tube_degradation.effective_heat_transfer_area_factor)
         
-        # CORRECT PWR CONDENSER PHYSICS: 
-        # The condenser MUST reject the steam's energy content for proper energy balance
-        # Thermodynamic analysis shows this is feasible with realistic cooling water conditions
+        # PHYSICS-BASED HEAT TRANSFER CALCULATION
+        # Calculate what the heat exchanger can actually transfer based on its physical design
         
-        # Use steam energy content as the heat rejection requirement
-        heat_transfer_rate = heat_duty_steam
-        
-        # VALIDATION: Check if heat exchanger has adequate capacity
+        # Calculate theoretical heat transfer capacity: Q = U × A × LMTD
         theoretical_heat_transfer = overall_htc * effective_area * lmtd
         
-        # For realistic PWR operation, the condenser should have adequate capacity
-        # If theoretical capacity is insufficient, this indicates a design issue, not a physics constraint
-        if theoretical_heat_transfer < heat_duty_steam * 0.8:
-            # Log the capacity issue but don't limit heat rejection
-            # In reality, this would require condenser design modifications
-            condenser_capacity_limited = True
-            
-            # For energy balance, we must reject the required heat
-            # The LMTD or heat transfer area may need adjustment in design
-            heat_transfer_rate = heat_duty_steam
-        else:
-            # Adequate heat exchanger capacity
-            condenser_capacity_limited = False
-            heat_transfer_rate = heat_duty_steam
+        # The actual heat transfer is limited by either:
+        # 1. Available energy from steam condensation, or
+        # 2. Heat exchanger physical capacity
+        heat_transfer_rate = min(heat_available_watts, theoretical_heat_transfer)
         
-        # ENERGY CONSERVATION: The condenser must reject whatever energy the steam contains
-        # This is fundamental thermodynamics - energy cannot disappear
+        # For energy balance validation, ensure we don't exceed available energy
+        if heat_transfer_rate > heat_available_watts:
+            heat_transfer_rate = heat_available_watts
         
         # Recalculate cooling water outlet temperature
         actual_temp_rise = heat_transfer_rate / (cooling_water_flow * cp_water)
@@ -1203,6 +1174,61 @@ class EnhancedCondenserPhysics(StateProviderMixin):
         })
 
         return state_dict
+    
+    def get_heat_flows(self) -> Dict[str, float]:
+        """
+        Get current heat flows for this component (MW)
+        
+        Returns:
+            Dictionary with heat flow values in MW
+        """
+        return {
+            'steam_enthalpy_input': ThermodynamicProperties.enthalpy_flow_mw(
+                self.steam_inlet_flow,
+                ThermodynamicProperties.steam_enthalpy(
+                    self.steam_inlet_temperature,
+                    self.steam_inlet_pressure,
+                    self.steam_inlet_quality
+                )
+            ),
+            'heat_rejection_output': self.heat_rejection_rate / 1e6,  # Convert W to MW
+            'condensate_enthalpy_output': ThermodynamicProperties.enthalpy_flow_mw(
+                self.condensate_flow,
+                ThermodynamicProperties.liquid_enthalpy(self.condensate_temperature)
+            ),
+            'thermal_losses': (self.heat_rejection_rate * 0.01) / 1e6,  # 1% thermal losses in MW
+            'vacuum_steam_consumption': self.vacuum_system.get_state_dict().get('total_steam_consumption', 0.0) / 1000.0  # Convert kg/s to MW equivalent
+        }
+    
+    def get_enthalpy_flows(self) -> Dict[str, float]:
+        """
+        Get current enthalpy flows for this component (MW)
+        
+        Returns:
+            Dictionary with enthalpy flow values in MW
+        """
+        # Calculate steam inlet enthalpy flow
+        steam_enthalpy = ThermodynamicProperties.steam_enthalpy(
+            self.steam_inlet_temperature,
+            self.steam_inlet_pressure,
+            self.steam_inlet_quality
+        )
+        steam_enthalpy_flow = ThermodynamicProperties.enthalpy_flow_mw(
+            self.steam_inlet_flow, steam_enthalpy
+        )
+        
+        # Calculate condensate outlet enthalpy flow
+        condensate_enthalpy = ThermodynamicProperties.liquid_enthalpy(self.condensate_temperature)
+        condensate_enthalpy_flow = ThermodynamicProperties.enthalpy_flow_mw(
+            self.condensate_flow, condensate_enthalpy
+        )
+        
+        return {
+            'inlet_enthalpy_flow': steam_enthalpy_flow,
+            'outlet_enthalpy_flow': condensate_enthalpy_flow,
+            'enthalpy_removed': steam_enthalpy_flow - condensate_enthalpy_flow,
+            'heat_rejection_enthalpy': self.heat_rejection_rate / 1e6  # MW
+        }
     
     def reset(self) -> None:
         """Reset enhanced condenser to initial conditions"""
