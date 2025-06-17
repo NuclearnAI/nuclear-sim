@@ -206,10 +206,37 @@ class SecondaryReactorPhysics(StateProviderMixin):
         # First, check feedwater system availability (using previous state)
         feedwater_system_available = getattr(self.feedwater_system, 'system_availability', True)
         
-        # Update enhanced steam generator system
-        # Handle both old interface (inlet/outlet temps) and new simplified interface (thermal power)
-        if f'sg_1_thermal_power' in primary_conditions:
-            # NEW SIMPLIFIED INTERFACE: Calculate temperatures from thermal power
+        # SIMPLIFIED SINGLE-PASS COUPLING: Update steam generators first, then feedwater
+        # This maintains the temperature fix while restoring proper mass balance
+        
+        # Use previous time step feedwater temperature with smoothing to reduce oscillations
+        if not hasattr(self, '_previous_feedwater_temp'):
+            self._previous_feedwater_temp = self.feedwater_temperature
+        
+        # Calculate feedwater temperature estimate based on condenser + heating
+        # This provides a good estimate without needing feedwater system update first
+        estimated_condensate_temp = 40.0  # °C - typical condenser condensate temperature
+        estimated_heating = 187.0  # °C - typical feedwater heating (227°C - 40°C)
+        estimated_feedwater_temp = estimated_condensate_temp + estimated_heating
+        
+        # Smooth the feedwater temperature to reduce oscillations
+        alpha = 0.1  # Smoothing factor
+        actual_feedwater_temp = (alpha * estimated_feedwater_temp + 
+                               (1 - alpha) * self._previous_feedwater_temp)
+        self._previous_feedwater_temp = actual_feedwater_temp
+        
+        # Update enhanced steam generator system with calculated feedwater temperature
+        # CRITICAL FIX: Use the actual calculated temperatures from primary system
+        # Check if we have individual SG temperatures (new interface with temperature calculation)
+        if f'sg_1_inlet_temp' in primary_conditions:
+            # NEW INTERFACE: Use the actual calculated temperatures from main simulator
+            enhanced_primary_conditions = {
+                'inlet_temps': [primary_conditions.get(f'sg_{i+1}_inlet_temp', 327.0) for i in range(self.num_steam_generators)],
+                'outlet_temps': [primary_conditions.get(f'sg_{i+1}_outlet_temp', 293.0) for i in range(self.num_steam_generators)],
+                'flow_rates': [primary_conditions.get(f'sg_{i+1}_flow', 5700.0) for i in range(self.num_steam_generators)]
+            }
+        elif f'sg_1_thermal_power' in primary_conditions:
+            # FALLBACK: Calculate temperatures from thermal power (old method)
             enhanced_primary_conditions = self._calculate_temperatures_from_power(primary_conditions)
         else:
             # OLD INTERFACE: Use provided temperatures (backward compatibility)
@@ -231,8 +258,9 @@ class SecondaryReactorPhysics(StateProviderMixin):
             'steam_pressure': 6.895  # Target steam pressure
         }
         
+        # Use calculated feedwater temperature for steam generators
         enhanced_system_conditions = {
-            'feedwater_temperature': self.feedwater_temperature,
+            'feedwater_temperature': actual_feedwater_temp,  # Use calculated temperature
             'load_demand': self.load_demand / 100.0  # Convert to fraction
         }
         
@@ -269,21 +297,20 @@ class SecondaryReactorPhysics(StateProviderMixin):
         # Total steam flow to turbine
         total_steam_flow = sum(sg_result['steam_flow_rate'] for sg_result in sg_results)
         
-        # FIXED: Update feedwater system FIRST with correct steam flow demand
+        # NOW UPDATE FEEDWATER SYSTEM with actual steam generator results
+        # This ensures proper mass balance: feedwater flow = steam flow
+        
         # Prepare system conditions for feedwater pump system
-        # FIXED: Feedwater pumps operate on condensate at condenser temperature (~40°C),
-        # not the final feedwater temperature (227°C) which is after feedwater heaters
         condensate_temp = 40.0  # °C - typical condenser condensate temperature
         
         feedwater_system_conditions = {
             'sg_pressure': avg_steam_pressure,
-            'feedwater_temperature': condensate_temp,  # Use condensate temp, not final feedwater temp
+            'feedwater_temperature': condensate_temp,  # Use condensate temp for pump inlet
             'suction_pressure': 0.5,  # MPa - typical condensate pump discharge pressure
             'discharge_pressure': avg_steam_pressure + 0.5,  # Steam pressure + margin
         }
         
-        # Add individual steam generator levels, steam flows, steam quality, and void fractions for enhanced three-element control
-        # Get data from enhanced steam generator system results
+        # Get actual steam generator data for feedwater system
         sg_levels = sg_system_result.get('sg_levels', [12.5] * self.num_steam_generators)
         sg_steam_flows = sg_system_result.get('sg_steam_flows', [0.0] * self.num_steam_generators)
         sg_steam_qualities = sg_system_result.get('sg_steam_qualities', [0.99] * self.num_steam_generators)
@@ -301,8 +328,7 @@ class SecondaryReactorPhysics(StateProviderMixin):
             feedwater_system_conditions[f'{sg_key}_steam_quality'] = sg_steam_quality
             feedwater_system_conditions[f'{sg_key}_void_fraction'] = sg_void_fraction
         
-        # Update enhanced feedwater system with CORRECT steam flow demand
-        # Prepare SG conditions for enhanced feedwater system using enhanced system results
+        # Update SG conditions for enhanced feedwater system using actual results
         sg_conditions = {
             'levels': sg_system_result.get('sg_levels', [12.5] * self.num_steam_generators),
             'pressures': sg_system_result.get('sg_pressures', [6.895] * self.num_steam_generators),
@@ -310,17 +336,18 @@ class SecondaryReactorPhysics(StateProviderMixin):
             'steam_qualities': sg_system_result.get('sg_steam_qualities', [0.99] * self.num_steam_generators)
         }
         
-        # CRITICAL FIX: Use the calculated total_steam_flow, not the old value
+        # CRITICAL FIX: Ensure mass balance - feedwater flow must equal steam flow
         steam_generator_demands = {
-            'total_flow': total_steam_flow  # Now this has the correct value (1665 kg/s)
+            'total_flow': total_steam_flow  # Use actual steam flow from steam generators
         }
         
+        # Single feedwater system update with actual steam generator results
         feedwater_result = self.feedwater_system.update_state(
             sg_conditions=sg_conditions,
             steam_generator_demands=steam_generator_demands,
             system_conditions=feedwater_system_conditions,
             control_inputs=control_inputs,
-            dt=dt / 60.0  # Convert minutes to hours for enhanced feedwater
+            dt=dt / 60.0  # Convert seconds to minutes for enhanced feedwater
         )
         
         # Update turbine

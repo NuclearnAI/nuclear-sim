@@ -259,16 +259,16 @@ class NuclearPlantSimulator:
 
     def _calculate_primary_to_secondary_coupling(self) -> dict:
         """
-        Simplified primary-to-secondary coupling interface
+        Enhanced primary-to-secondary coupling with realistic temperature calculation
         
-        This method now provides only the essential reactor parameters to the secondary system.
-        The steam generator physics will calculate their own temperatures and heat transfer rates
-        based on these fundamental reactor conditions, eliminating duplicate physics calculations.
+        This method calculates actual primary coolant inlet and outlet temperatures
+        based on reactor physics and thermal power, providing the varying temperatures
+        needed for proper steam generator heat transfer calculations.
         
         Returns:
-            Dictionary with simplified coupling parameters for each steam generator
+            Dictionary with primary conditions including varying temperatures for each steam generator
         """
-        # Get primary reactor conditions - these are the fundamental inputs
+        # Get primary reactor conditions
         reactor_power_mw = self.state.power_level / 100.0 * 3000.0  # MW thermal power
         power_fraction = self.state.power_level / 100.0
         
@@ -278,8 +278,52 @@ class NuclearPlantSimulator:
         flow_fraction = max(0.3, power_fraction)  # Minimum 30% flow even at low power
         total_primary_flow = design_flow * flow_fraction
         
-        # Simplified coupling interface - let steam generators calculate their own physics
-        # This eliminates duplicate temperature and heat balance calculations
+        # Calculate realistic PWR primary temperatures based on reactor physics
+        # These temperatures should vary with power level and heat removal
+        
+        # Cold leg temperature (relatively stable, affected by steam generator heat removal)
+        # At 100% power: ~293°C, varies slightly with load
+        base_cold_leg_temp = 293.0  # °C
+        cold_leg_variation = 2.0 * (power_fraction - 1.0)  # ±2°C variation with power
+        cold_leg_temp = base_cold_leg_temp + cold_leg_variation
+        cold_leg_temp = np.clip(cold_leg_temp, 285.0, 300.0)  # Physical limits
+        
+        # Hot leg temperature calculation based on reactor thermal power
+        # Using heat balance: Q = m_dot * cp * (T_hot - T_cold)
+        # Therefore: T_hot = T_cold + Q / (m_dot * cp)
+        
+        cp_primary = 5.2  # kJ/kg/K at PWR conditions
+        
+        if total_primary_flow > 0:
+            # Calculate temperature rise across reactor core
+            delta_t_core = (reactor_power_mw * 1000.0) / (total_primary_flow * cp_primary)  # °C
+        else:
+            delta_t_core = 0.0
+        
+        # Hot leg temperature
+        hot_leg_temp = cold_leg_temp + delta_t_core
+        
+        # Apply realistic PWR operating constraints
+        # Typical PWR: Hot leg 315-330°C, Cold leg 290-295°C
+        hot_leg_temp = np.clip(hot_leg_temp, cold_leg_temp + 5.0, 350.0)  # Ensure hot > cold
+        
+        # For very low power, both temperatures approach cold leg value
+        if power_fraction < 0.1:
+            hot_leg_temp = cold_leg_temp + 5.0  # Minimum 5°C difference
+        
+        # Account for reactor coolant temperature feedback from secondary system
+        # If we have previous secondary system results, use them for feedback
+        if hasattr(self, '_last_heat_removal_factor'):
+            # Adjust cold leg temperature based on heat removal effectiveness
+            heat_removal_effect = (self._last_heat_removal_factor - 1.0) * 3.0  # Up to ±3°C
+            cold_leg_temp += heat_removal_effect
+            cold_leg_temp = np.clip(cold_leg_temp, 285.0, 300.0)
+            
+            # Recalculate hot leg with adjusted cold leg
+            hot_leg_temp = cold_leg_temp + delta_t_core
+            hot_leg_temp = np.clip(hot_leg_temp, cold_leg_temp + 5.0, 350.0)
+        
+        # Distribute conditions across steam generator loops
         primary_conditions = {}
         flow_per_loop = total_primary_flow / self.primary_loops
         thermal_power_per_loop = reactor_power_mw / self.primary_loops
@@ -287,10 +331,23 @@ class NuclearPlantSimulator:
         for i in range(self.primary_loops):
             sg_key = f'sg_{i+1}'
             
-            # Provide fundamental reactor parameters, not calculated temperatures
+            # Add small variations between loops (realistic for PWR)
+            loop_variation = np.sin(i * 2.0) * 1.0  # ±1°C variation between loops
+            loop_hot_leg = hot_leg_temp + loop_variation
+            loop_cold_leg = cold_leg_temp + loop_variation * 0.5  # Smaller cold leg variation
+            
+            # Ensure physical constraints
+            loop_hot_leg = np.clip(loop_hot_leg, loop_cold_leg + 5.0, 350.0)
+            loop_cold_leg = np.clip(loop_cold_leg, 285.0, 300.0)
+            
+            # Provide both new interface (thermal power) and old interface (temperatures)
             primary_conditions[f'{sg_key}_thermal_power'] = thermal_power_per_loop  # MW
             primary_conditions[f'{sg_key}_flow'] = flow_per_loop  # kg/s
             primary_conditions[f'{sg_key}_power_fraction'] = power_fraction  # 0-1
+            
+            # CRITICAL FIX: Provide actual varying inlet and outlet temperatures
+            primary_conditions[f'{sg_key}_inlet_temp'] = loop_hot_leg  # °C - varies with power
+            primary_conditions[f'{sg_key}_outlet_temp'] = loop_cold_leg  # °C - varies with heat removal
             
         return primary_conditions
     
