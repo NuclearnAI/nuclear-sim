@@ -26,6 +26,9 @@ import numpy as np
 # Import state management interfaces
 from simulator.state import StateProviderMixin
 
+# Import heat flow tracking
+from ..heat_flow_tracker import HeatFlowProvider, ThermodynamicProperties
+
 from .stage_system import TurbineStageSystem, TurbineStageSystemConfig
 from .rotor_dynamics import RotorDynamicsModel, RotorDynamicsConfig
 from .turbine_bearing_lubrication import TurbineBearingLubricationSystem, TurbineBearingLubricationConfig, integrate_lubrication_with_turbine
@@ -433,7 +436,7 @@ class TurbineProtectionSystem:
         self.emergency_actions = {key: False for key in self.emergency_actions}
 
 
-class EnhancedTurbinePhysics(StateProviderMixin):
+class EnhancedTurbinePhysics(StateProviderMixin, HeatFlowProvider):
     """
     Enhanced turbine physics model - analogous to EnhancedCondenserPhysics
     
@@ -714,6 +717,70 @@ class EnhancedTurbinePhysics(StateProviderMixin):
                 state_dict[new_key] = value
 
         return state_dict
+    
+    def get_heat_flows(self) -> Dict[str, float]:
+        """
+        Get current heat flows for this component (MW)
+        
+        Returns:
+            Dictionary with heat flow values in MW
+        """
+        # Get steam inlet conditions from last update
+        if not self.last_update_results:
+            return {
+                'steam_enthalpy_input': 0.0,
+                'mechanical_work_output': 0.0,
+                'exhaust_enthalpy_output': 0.0,
+                'extraction_enthalpy_output': 0.0,
+                'internal_losses': 0.0
+            }
+        
+        # Calculate steam inlet enthalpy flow
+        steam_flow = self.config.design_steam_flow * self.load_demand  # Estimate current steam flow
+        steam_enthalpy = self._steam_enthalpy(self.config.design_steam_temperature, self.config.design_steam_pressure)
+        steam_enthalpy_input = ThermodynamicProperties.enthalpy_flow_mw(steam_flow, steam_enthalpy)
+        
+        # Get mechanical work output
+        mechanical_work_output = self.last_update_results.get('mechanical_power', self.total_power_output / 0.985)
+        
+        # Calculate extraction enthalpy flow
+        total_extraction_flow = self.last_update_results.get('total_extraction_flow', 0.0)
+        extraction_enthalpy = ThermodynamicProperties.steam_enthalpy(200.0, 1.0)  # Typical extraction conditions
+        extraction_enthalpy_output = ThermodynamicProperties.enthalpy_flow_mw(total_extraction_flow, extraction_enthalpy)
+        
+        # Calculate exhaust enthalpy flow
+        effective_steam_flow = self.last_update_results.get('effective_steam_flow', steam_flow - total_extraction_flow)
+        condenser_pressure = self.last_update_results.get('condenser_pressure', 0.007)
+        exhaust_temperature = self._saturation_temperature(condenser_pressure)
+        exhaust_enthalpy = ThermodynamicProperties.steam_enthalpy(exhaust_temperature, condenser_pressure, 0.90)
+        exhaust_enthalpy_output = ThermodynamicProperties.enthalpy_flow_mw(effective_steam_flow, exhaust_enthalpy)
+        
+        # Calculate internal losses (approximately 5% of mechanical work)
+        internal_losses = mechanical_work_output * 0.05
+        
+        return {
+            'steam_enthalpy_input': steam_enthalpy_input,
+            'mechanical_work_output': mechanical_work_output,
+            'exhaust_enthalpy_output': exhaust_enthalpy_output,
+            'extraction_enthalpy_output': extraction_enthalpy_output,
+            'internal_losses': internal_losses
+        }
+    
+    def get_enthalpy_flows(self) -> Dict[str, float]:
+        """
+        Get current enthalpy flows for this component (MW)
+        
+        Returns:
+            Dictionary with enthalpy flow values in MW
+        """
+        heat_flows = self.get_heat_flows()
+        
+        return {
+            'inlet_enthalpy_flow': heat_flows['steam_enthalpy_input'],
+            'outlet_enthalpy_flow': heat_flows['exhaust_enthalpy_output'] + heat_flows['extraction_enthalpy_output'],
+            'work_extracted': heat_flows['mechanical_work_output'],
+            'enthalpy_converted_to_work': heat_flows['steam_enthalpy_input'] - heat_flows['exhaust_enthalpy_output'] - heat_flows['extraction_enthalpy_output']
+        }
     
     def reset(self) -> None:
         """Reset enhanced turbine to initial conditions"""

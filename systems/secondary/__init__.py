@@ -207,23 +207,27 @@ class SecondaryReactorPhysics(StateProviderMixin):
         feedwater_system_available = getattr(self.feedwater_system, 'system_availability', True)
         
         # Update enhanced steam generator system
-        # Prepare primary conditions for enhanced steam generator system
-        enhanced_primary_conditions = {
-            'inlet_temps': [primary_conditions.get(f'sg_{i+1}_inlet_temp', 327.0) for i in range(self.num_steam_generators)],
-            'outlet_temps': [primary_conditions.get(f'sg_{i+1}_outlet_temp', 293.0) for i in range(self.num_steam_generators)],
-            'flow_rates': [primary_conditions.get(f'sg_{i+1}_flow', 5700.0) for i in range(self.num_steam_generators)]
-        }
+        # Handle both old interface (inlet/outlet temps) and new simplified interface (thermal power)
+        if f'sg_1_thermal_power' in primary_conditions:
+            # NEW SIMPLIFIED INTERFACE: Calculate temperatures from thermal power
+            enhanced_primary_conditions = self._calculate_temperatures_from_power(primary_conditions)
+        else:
+            # OLD INTERFACE: Use provided temperatures (backward compatibility)
+            enhanced_primary_conditions = {
+                'inlet_temps': [primary_conditions.get(f'sg_{i+1}_inlet_temp', 327.0) for i in range(self.num_steam_generators)],
+                'outlet_temps': [primary_conditions.get(f'sg_{i+1}_outlet_temp', 293.0) for i in range(self.num_steam_generators)],
+                'flow_rates': [primary_conditions.get(f'sg_{i+1}_flow', 5700.0) for i in range(self.num_steam_generators)]
+            }
         
-        # Calculate total steam demand based on load
-        design_total_steam_flow = self.steam_generator_system.config.design_total_steam_flow
-        total_steam_demand = design_total_steam_flow * (self.load_demand / 100.0)
+        # Phase 3: Use new simplified interface - provide load demand fraction instead of steam flow
+        load_demand_fraction = self.load_demand / 100.0
         
-        # FIXED: Ensure minimum reasonable steam flow even with feedwater issues
+        # FIXED: Ensure minimum reasonable load demand even with feedwater issues
         if not feedwater_system_available:
-            total_steam_demand = max(total_steam_demand * 0.5, design_total_steam_flow * 0.3)
+            load_demand_fraction = max(load_demand_fraction * 0.5, 0.3)
         
         steam_demands = {
-            'total_steam_flow': total_steam_demand,
+            'load_demand_fraction': load_demand_fraction,
             'steam_pressure': 6.895  # Target steam pressure
         }
         
@@ -264,6 +268,60 @@ class SecondaryReactorPhysics(StateProviderMixin):
         
         # Total steam flow to turbine
         total_steam_flow = sum(sg_result['steam_flow_rate'] for sg_result in sg_results)
+        
+        # FIXED: Update feedwater system FIRST with correct steam flow demand
+        # Prepare system conditions for feedwater pump system
+        # FIXED: Feedwater pumps operate on condensate at condenser temperature (~40°C),
+        # not the final feedwater temperature (227°C) which is after feedwater heaters
+        condensate_temp = 40.0  # °C - typical condenser condensate temperature
+        
+        feedwater_system_conditions = {
+            'sg_pressure': avg_steam_pressure,
+            'feedwater_temperature': condensate_temp,  # Use condensate temp, not final feedwater temp
+            'suction_pressure': 0.5,  # MPa - typical condensate pump discharge pressure
+            'discharge_pressure': avg_steam_pressure + 0.5,  # Steam pressure + margin
+        }
+        
+        # Add individual steam generator levels, steam flows, steam quality, and void fractions for enhanced three-element control
+        # Get data from enhanced steam generator system results
+        sg_levels = sg_system_result.get('sg_levels', [12.5] * self.num_steam_generators)
+        sg_steam_flows = sg_system_result.get('sg_steam_flows', [0.0] * self.num_steam_generators)
+        sg_steam_qualities = sg_system_result.get('sg_steam_qualities', [0.99] * self.num_steam_generators)
+        
+        for i in range(self.num_steam_generators):
+            sg_key = f'sg_{i+1}'
+            sg_level = sg_levels[i] if i < len(sg_levels) else 12.5
+            sg_steam_flow = sg_steam_flows[i] if i < len(sg_steam_flows) else 0.0
+            sg_steam_quality = sg_steam_qualities[i] if i < len(sg_steam_qualities) else 0.99
+            # Void fraction can be calculated from steam quality if needed, or use default
+            sg_void_fraction = 0.45  # Default value, could be enhanced later
+            
+            feedwater_system_conditions[f'{sg_key}_level'] = sg_level
+            feedwater_system_conditions[f'{sg_key}_steam_flow'] = sg_steam_flow
+            feedwater_system_conditions[f'{sg_key}_steam_quality'] = sg_steam_quality
+            feedwater_system_conditions[f'{sg_key}_void_fraction'] = sg_void_fraction
+        
+        # Update enhanced feedwater system with CORRECT steam flow demand
+        # Prepare SG conditions for enhanced feedwater system using enhanced system results
+        sg_conditions = {
+            'levels': sg_system_result.get('sg_levels', [12.5] * self.num_steam_generators),
+            'pressures': sg_system_result.get('sg_pressures', [6.895] * self.num_steam_generators),
+            'steam_flows': sg_system_result.get('sg_steam_flows', [0.0] * self.num_steam_generators),
+            'steam_qualities': sg_system_result.get('sg_steam_qualities', [0.99] * self.num_steam_generators)
+        }
+        
+        # CRITICAL FIX: Use the calculated total_steam_flow, not the old value
+        steam_generator_demands = {
+            'total_flow': total_steam_flow  # Now this has the correct value (1665 kg/s)
+        }
+        
+        feedwater_result = self.feedwater_system.update_state(
+            sg_conditions=sg_conditions,
+            steam_generator_demands=steam_generator_demands,
+            system_conditions=feedwater_system_conditions,
+            control_inputs=control_inputs,
+            dt=dt / 60.0  # Convert minutes to hours for enhanced feedwater
+        )
         
         # Update turbine
         turbine_result = self.turbine.update_state(
@@ -327,57 +385,10 @@ class SecondaryReactorPhysics(StateProviderMixin):
             dt=dt / 3600.0  # Convert seconds to hours for enhanced condenser
         )
         
-        # Prepare system conditions for feedwater pump system
-        # FIXED: Feedwater pumps operate on condensate at condenser temperature (~40°C),
-        # not the final feedwater temperature (227°C) which is after feedwater heaters
+        # Update condenser system conditions now that we have condenser results
         condensate_temp = condenser_result.get('condensate_temperature', 40.0)  # °C
-        
-        feedwater_system_conditions = {
-            'sg_pressure': avg_steam_pressure,
-            'feedwater_temperature': condensate_temp,  # Use condensate temp, not final feedwater temp
-            'suction_pressure': condenser_result['condenser_pressure'] + 0.5,  # FIXED: Higher suction pressure from condensate pumps
-            'discharge_pressure': avg_steam_pressure + 0.5,  # Steam pressure + margin
-        }
-        
-        # Add individual steam generator levels, steam flows, steam quality, and void fractions for enhanced three-element control
-        # Get data from enhanced steam generator system results
-        sg_levels = sg_system_result.get('sg_levels', [12.5] * self.num_steam_generators)
-        sg_steam_flows = sg_system_result.get('sg_steam_flows', [0.0] * self.num_steam_generators)
-        sg_steam_qualities = sg_system_result.get('sg_steam_qualities', [0.99] * self.num_steam_generators)
-        
-        for i in range(self.num_steam_generators):
-            sg_key = f'sg_{i+1}'
-            sg_level = sg_levels[i] if i < len(sg_levels) else 12.5
-            sg_steam_flow = sg_steam_flows[i] if i < len(sg_steam_flows) else 0.0
-            sg_steam_quality = sg_steam_qualities[i] if i < len(sg_steam_qualities) else 0.99
-            # Void fraction can be calculated from steam quality if needed, or use default
-            sg_void_fraction = 0.45  # Default value, could be enhanced later
-            
-            feedwater_system_conditions[f'{sg_key}_level'] = sg_level
-            feedwater_system_conditions[f'{sg_key}_steam_flow'] = sg_steam_flow
-            feedwater_system_conditions[f'{sg_key}_steam_quality'] = sg_steam_quality
-            feedwater_system_conditions[f'{sg_key}_void_fraction'] = sg_void_fraction
-        
-        # Update enhanced feedwater system
-        # Prepare SG conditions for enhanced feedwater system using enhanced system results
-        sg_conditions = {
-            'levels': sg_system_result.get('sg_levels', [12.5] * self.num_steam_generators),
-            'pressures': sg_system_result.get('sg_pressures', [6.895] * self.num_steam_generators),
-            'steam_flows': sg_system_result.get('sg_steam_flows', [0.0] * self.num_steam_generators),
-            'steam_qualities': sg_system_result.get('sg_steam_qualities', [0.99] * self.num_steam_generators)
-        }
-        
-        steam_generator_demands = {
-            'total_flow': total_steam_flow
-        }
-        
-        feedwater_result = self.feedwater_system.update_state(
-            sg_conditions=sg_conditions,
-            steam_generator_demands=steam_generator_demands,
-            system_conditions=feedwater_system_conditions,
-            control_inputs=control_inputs,
-            dt=dt / 3600.0  # Convert seconds to hours for enhanced feedwater
-        )
+        feedwater_system_conditions['feedwater_temperature'] = condensate_temp
+        feedwater_system_conditions['suction_pressure'] = condenser_result['condenser_pressure'] + 0.5
         
         # Extract feedwater flow for mass balance
         self.total_feedwater_flow = feedwater_result['total_flow_rate']
@@ -463,19 +474,30 @@ class SecondaryReactorPhysics(StateProviderMixin):
         thermal_power_mw = total_heat_transfer / 1e6  # Convert to MW
         
         # Calculate primary thermal power from primary conditions
+        # FIXED: Support both new simplified interface (thermal_power) and old interface (inlet/outlet temps)
         primary_thermal_power = 0.0
-        for i in range(self.num_steam_generators):
-            sg_key = f'sg_{i+1}'
-            primary_inlet_temp = primary_conditions.get(f'{sg_key}_inlet_temp', 0.0)
-            primary_outlet_temp = primary_conditions.get(f'{sg_key}_outlet_temp', 0.0)
-            primary_flow = primary_conditions.get(f'{sg_key}_flow', 0.0)
-            
-            # Calculate thermal power for this loop: Q = m_dot * cp * delta_T
-            if primary_flow > 0 and primary_inlet_temp > primary_outlet_temp:
-                cp_primary = 5.2  # kJ/kg/K at PWR conditions
-                delta_t = primary_inlet_temp - primary_outlet_temp
-                loop_thermal_power = primary_flow * cp_primary * delta_t / 1000.0  # MW
+        
+        # Check if using new simplified interface (thermal power directly provided)
+        if f'sg_1_thermal_power' in primary_conditions:
+            # NEW INTERFACE: Use directly provided thermal power
+            for i in range(self.num_steam_generators):
+                sg_key = f'sg_{i+1}'
+                loop_thermal_power = primary_conditions.get(f'{sg_key}_thermal_power', 0.0)  # MW
                 primary_thermal_power += loop_thermal_power
+        else:
+            # OLD INTERFACE: Calculate from temperatures and flow
+            for i in range(self.num_steam_generators):
+                sg_key = f'sg_{i+1}'
+                primary_inlet_temp = primary_conditions.get(f'{sg_key}_inlet_temp', 327.0)  # Use realistic default
+                primary_outlet_temp = primary_conditions.get(f'{sg_key}_outlet_temp', 293.0)  # Use realistic default
+                primary_flow = primary_conditions.get(f'{sg_key}_flow', 5700.0)  # Use realistic default
+                
+                # Calculate thermal power for this loop: Q = m_dot * cp * delta_T
+                if primary_flow > 0 and primary_inlet_temp > primary_outlet_temp:
+                    cp_primary = 5.2  # kJ/kg/K at PWR conditions
+                    delta_t = primary_inlet_temp - primary_outlet_temp
+                    loop_thermal_power = primary_flow * cp_primary * delta_t / 1000.0  # MW
+                    primary_thermal_power += loop_thermal_power
         
         # ENERGY CONSERVATION APPROACH: Calculate total system heat rejection
         # Use the first law of thermodynamics: Energy In = Energy Out
@@ -571,14 +593,14 @@ class SecondaryReactorPhysics(StateProviderMixin):
         # Check other critical operating conditions only if feedwater is available
         if power_reduction_factor > 0.0:
             # Only apply severe reductions for safety-critical conditions
-            if total_steam_flow < MIN_STEAM_FLOW_KGS * 0.5:  # Very low steam flow
+            if total_steam_flow < (MIN_STEAM_FLOW_KGS * 0.5):  # Very low steam flow
                 power_reduction_factor *= 0.1  # 90% reduction for very low steam flow
             
-            if avg_steam_pressure < MIN_STEAM_PRESSURE_MPA * 0.5:  # Very low steam pressure
+            if avg_steam_pressure < (MIN_STEAM_PRESSURE_MPA * 0.5):  # Very low steam pressure
                 power_reduction_factor *= 0.1  # 90% reduction for very low steam pressure
             
             # Energy conservation check - this should rarely trigger if turbine physics is correct
-            if thermal_power_mw > primary_thermal_power * 1.1:  # Allow 10% margin
+            if thermal_power_mw > (primary_thermal_power * 1.1):  # Allow 10% margin
                 power_reduction_factor = 0.0  # Complete shutdown for major energy violation
         
         # Use turbine electrical power with safety reductions
@@ -748,18 +770,105 @@ class SecondaryReactorPhysics(StateProviderMixin):
         rated_thermal_power = 3000.0  # MW
         load_demand = min(100.0, (thermal_power_mw / rated_thermal_power) * 100.0)
         
-        # Calculate steam flow based on thermal power and steam conditions
-        # Typical PWR: ~1665 kg/s steam flow at 100% power
-        design_steam_flow = 1665.0  # kg/s at 100% power
-        steam_flow = design_steam_flow * (load_demand / 100.0)
+        # Calculate primary conditions that would produce this thermal power
+        # Distribute thermal power evenly across steam generators
+        thermal_power_per_sg = thermal_power_mw / self.num_steam_generators
         
-        # Steam conditions at equilibrium
-        steam_pressure = 6.895  # MPa typical PWR steam pressure
-        steam_temperature = self._saturation_temperature(steam_pressure)  # ~285°C
-        steam_quality = 0.99  # Typical steam quality
+        # Calculate realistic primary flow and temperatures for each SG
+        # Using typical PWR conditions scaled by power level
+        base_primary_flow = 5700.0  # kg/s per SG at 100% power
+        primary_flow_per_sg = base_primary_flow * (load_demand / 100.0)
+        
+        # Calculate temperature difference needed for thermal power
+        # Q = m_dot * cp * delta_T, so delta_T = Q / (m_dot * cp)
+        cp_primary = 5.2  # kJ/kg/K at PWR conditions
+        
+        if primary_flow_per_sg > 0:
+            delta_t = (thermal_power_per_sg * 1000.0) / (primary_flow_per_sg * cp_primary)  # °C
+        else:
+            delta_t = 0.0
+        
+        # Calculate realistic PWR temperatures
+        # Cold leg temperature stays relatively constant
+        cold_leg_temp = 293.0  # °C
+        hot_leg_temp = cold_leg_temp + delta_t
+        
+        # Ensure temperatures are within realistic PWR operating range
+        hot_leg_temp = np.clip(hot_leg_temp, 293.0, 350.0)
+        if hot_leg_temp <= cold_leg_temp:
+            hot_leg_temp = cold_leg_temp + 5.0  # Minimum 5°C difference
+        
+        # Create primary conditions that match the enhanced steam generator interface
+        primary_conditions = {}
+        for i in range(self.num_steam_generators):
+            sg_key = f'sg_{i+1}'
+            primary_conditions[f'{sg_key}_inlet_temp'] = hot_leg_temp
+            primary_conditions[f'{sg_key}_outlet_temp'] = cold_leg_temp
+            primary_conditions[f'{sg_key}_flow'] = primary_flow_per_sg
+            primary_conditions[f'{sg_key}_thermal_power'] = thermal_power_per_sg
+            primary_conditions[f'{sg_key}_power_fraction'] = load_demand / 100.0
+        
+        # Simulate the enhanced steam generator system to get realistic steam conditions
+        # Create temporary control inputs for equilibrium calculation
+        control_inputs = {
+            'load_demand': load_demand,
+            'feedwater_temp': 227.0,
+            'cooling_water_temp': 25.0,
+            'cooling_water_flow': 45000.0,
+            'vacuum_pump_operation': 1.0
+        }
+        
+        # Use the same logic as update_system to get steam conditions
+        if f'sg_1_thermal_power' in primary_conditions:
+            enhanced_primary_conditions = self._calculate_temperatures_from_power(primary_conditions)
+        else:
+            enhanced_primary_conditions = {
+                'inlet_temps': [primary_conditions.get(f'sg_{i+1}_inlet_temp', 327.0) for i in range(self.num_steam_generators)],
+                'outlet_temps': [primary_conditions.get(f'sg_{i+1}_outlet_temp', 293.0) for i in range(self.num_steam_generators)],
+                'flow_rates': [primary_conditions.get(f'sg_{i+1}_flow', 5700.0) for i in range(self.num_steam_generators)]
+            }
+        
+        load_demand_fraction = load_demand / 100.0
+        steam_demands = {
+            'load_demand_fraction': load_demand_fraction,
+            'steam_pressure': 6.895  # Target steam pressure
+        }
+        
+        enhanced_system_conditions = {
+            'feedwater_temperature': 227.0,
+            'load_demand': load_demand_fraction
+        }
+        
+        # Get steam conditions from enhanced steam generator system
+        try:
+            # Temporarily update the steam generator system to get equilibrium conditions
+            sg_system_result = self.steam_generator_system.update_system(
+                primary_conditions=enhanced_primary_conditions,
+                steam_demands=steam_demands,
+                system_conditions=enhanced_system_conditions,
+                control_inputs=control_inputs,
+                dt=1.0
+            )
+            
+            # Extract realistic steam conditions
+            total_steam_flow = sg_system_result['total_steam_flow']
+            steam_pressure = sg_system_result['average_steam_pressure']
+            steam_temperature = sg_system_result['average_steam_temperature']
+            steam_quality = sg_system_result['average_steam_quality']
+            sg_levels = sg_system_result.get('sg_levels', [12.5] * self.num_steam_generators)
+            
+        except Exception as e:
+            # Fallback to calculated values if steam generator system fails
+            print(f"Warning: Steam generator system failed during equilibrium calculation: {e}")
+            design_steam_flow = 1665.0  # kg/s at 100% power
+            total_steam_flow = design_steam_flow * load_demand_fraction
+            steam_pressure = 6.895  # MPa typical PWR steam pressure
+            steam_temperature = self._saturation_temperature(steam_pressure)  # ~285°C
+            steam_quality = 0.99  # Typical steam quality
+            sg_levels = [12.5] * self.num_steam_generators  # Normal operating level
         
         # Feedwater flow equals steam flow at steady state (mass balance)
-        feedwater_flow = steam_flow
+        feedwater_flow = total_steam_flow
         
         # Calculate electrical power based on realistic efficiency
         if load_demand >= 100.0:
@@ -773,14 +882,14 @@ class SecondaryReactorPhysics(StateProviderMixin):
         
         electrical_power = thermal_power_mw * thermal_efficiency
         
-        # Steam generator levels for steady-state operation
-        sg_levels = [12.5] * self.num_steam_generators  # Normal operating level
-        
         # Calculate pump speeds needed for feedwater flow
         # Each pump rated for 555 kg/s, so speed proportional to required flow
         pumps_needed = min(4, max(3, int(np.ceil(feedwater_flow / 555.0))))
-        flow_per_pump = feedwater_flow / pumps_needed
-        pump_speed = min(100.0, (flow_per_pump / 555.0) * 100.0)
+        if pumps_needed > 0:
+            flow_per_pump = feedwater_flow / pumps_needed
+            pump_speed = min(100.0, (flow_per_pump / 555.0) * 100.0)
+        else:
+            pump_speed = 0.0
         
         # Condenser conditions
         condenser_pressure = 0.007  # MPa typical condenser pressure
@@ -789,7 +898,7 @@ class SecondaryReactorPhysics(StateProviderMixin):
         return {
             'thermal_power': thermal_power_mw,
             'load_demand': load_demand,
-            'steam_flow': steam_flow,
+            'steam_flow': total_steam_flow,
             'steam_pressure': steam_pressure,
             'steam_temperature': steam_temperature,
             'steam_quality': steam_quality,
@@ -801,7 +910,8 @@ class SecondaryReactorPhysics(StateProviderMixin):
             'pumps_needed': pumps_needed,
             'pump_speed': pump_speed,
             'condenser_pressure': condenser_pressure,
-            'condenser_temperature': condenser_temperature
+            'condenser_temperature': condenser_temperature,
+            'primary_conditions': primary_conditions  # Include primary conditions for debugging
         }
     
     def _initialize_steam_generators_to_steady_state(self, equilibrium: Dict) -> None:
@@ -920,6 +1030,83 @@ class SecondaryReactorPhysics(StateProviderMixin):
         
         if hasattr(self.condenser, 'condenser_temperature'):
             self.condenser.condenser_temperature = equilibrium['condenser_temperature']
+    
+    def _calculate_temperatures_from_power(self, primary_conditions: dict) -> dict:
+        """
+        Calculate primary inlet/outlet temperatures from thermal power and flow
+        
+        This method implements the physics that was previously duplicated in sim.py.
+        Now the steam generator system owns the complete temperature calculation.
+        
+        Args:
+            primary_conditions: Dictionary with thermal power and flow for each SG
+                - 'sg_X_thermal_power': Thermal power for SG X (MW)
+                - 'sg_X_flow': Primary flow rate for SG X (kg/s)
+                - 'sg_X_power_fraction': Power fraction for SG X (0-1)
+                
+        Returns:
+            Dictionary with calculated temperatures for enhanced steam generator system
+        """
+        inlet_temps = []
+        outlet_temps = []
+        flow_rates = []
+        
+        for i in range(self.num_steam_generators):
+            sg_key = f'sg_{i+1}'
+            
+            # Get thermal power and flow for this SG
+            thermal_power_mw = primary_conditions.get(f'{sg_key}_thermal_power', 1000.0)
+            primary_flow = primary_conditions.get(f'{sg_key}_flow', 5700.0)
+            power_fraction = primary_conditions.get(f'{sg_key}_power_fraction', 1.0)
+            
+            # Calculate temperatures based on power and flow
+            # Using heat balance: Q = m_dot * cp * delta_T
+            cp_primary = 5.2  # kJ/kg/K at PWR conditions
+            
+            if primary_flow > 0:
+                # Calculate temperature difference from thermal power
+                delta_t = (thermal_power_mw * 1000.0) / (primary_flow * cp_primary)  # °C
+            else:
+                delta_t = 0.0
+            
+            # Calculate realistic PWR temperatures based on power fraction
+            # At 100% power: Hot leg = 327°C, Cold leg = 293°C
+            # At 0% power: Both approach cold leg temperature
+            cold_leg_temp = 293.0  # Cold leg stays relatively constant
+            hot_leg_temp = cold_leg_temp + (34.0 * power_fraction)  # 293°C to 327°C
+            
+            # Ensure calculated delta_T is consistent with realistic PWR operation
+            # If calculated delta_T is very different from realistic values, adjust
+            realistic_delta_t = hot_leg_temp - cold_leg_temp
+            if abs(delta_t - realistic_delta_t) > 10.0:  # More than 10°C difference
+                # Use realistic temperatures, but scale with actual thermal power
+                if thermal_power_mw > 0:
+                    scale_factor = min(1.0, thermal_power_mw / 1000.0)  # Scale based on 1000 MW reference
+                    delta_t = realistic_delta_t * scale_factor
+                else:
+                    delta_t = 0.0
+            
+            # Calculate final temperatures
+            outlet_temp = cold_leg_temp
+            inlet_temp = outlet_temp + delta_t
+            
+            # Ensure temperatures are within realistic PWR operating range
+            inlet_temp = np.clip(inlet_temp, 293.0, 350.0)
+            outlet_temp = np.clip(outlet_temp, 280.0, 300.0)
+            
+            # Ensure hot leg is always hotter than cold leg
+            if inlet_temp <= outlet_temp:
+                inlet_temp = outlet_temp + 5.0  # Minimum 5°C difference
+            
+            inlet_temps.append(inlet_temp)
+            outlet_temps.append(outlet_temp)
+            flow_rates.append(primary_flow)
+        
+        return {
+            'inlet_temps': inlet_temps,
+            'outlet_temps': outlet_temps,
+            'flow_rates': flow_rates
+        }
     
     def _saturation_temperature(self, pressure_mpa: float) -> float:
         """

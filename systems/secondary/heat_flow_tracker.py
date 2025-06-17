@@ -211,13 +211,30 @@ class HeatFlowTracker:
     and provides comprehensive energy balance analysis.
     """
     
-    def __init__(self):
-        """Initialize heat flow tracker"""
+    def __init__(self, heat_flow_providers: Optional[Dict[str, HeatFlowProvider]] = None):
+        """
+        Initialize heat flow tracker
+        
+        Args:
+            heat_flow_providers: Dictionary of component name -> HeatFlowProvider instances
+        """
         self.heat_flow_state = HeatFlowState()
         self.component_flows = {}  # Store individual component flows
         self.flow_history = []     # Store historical flow data
         self.validation_tolerance = 0.01  # 1% tolerance for energy balance
         
+        # Store heat flow providers for automatic updates
+        self.heat_flow_providers = heat_flow_providers or {}
+        
+    def update_from_providers(self) -> None:
+        """Update component flows from all registered heat flow providers"""
+        for component_name, provider in self.heat_flow_providers.items():
+            try:
+                flows = provider.get_heat_flows()
+                self.update_component_flows(component_name, flows)
+            except Exception as e:
+                print(f"Warning: Failed to get heat flows from {component_name}: {e}")
+    
     def update_component_flows(self, component_name: str, flows: Dict[str, float]) -> None:
         """
         Update heat flows for a specific component
@@ -460,6 +477,29 @@ class HeatFlowTracker:
         # Limit history size
         if len(self.flow_history) > 1000:
             self.flow_history = self.flow_history[-1000:]
+    
+    def get_state_dict(self) -> Dict[str, float]:
+        """Get current state as dictionary for logging/monitoring"""
+        state = self.heat_flow_state
+        
+        return {
+            # Energy balance tracking
+            'heat_flow_total_energy_input': state.total_energy_input,
+            'heat_flow_total_energy_output': state.total_energy_output,
+            'heat_flow_energy_balance_error': state.energy_balance_error,
+            'heat_flow_energy_balance_percent': state.energy_balance_percent_error,
+            
+            # Major energy flows
+            'heat_flow_sg_heat_input': state.sg_heat_input,
+            'heat_flow_turbine_work_output': state.turbine_work_output,
+            'heat_flow_condenser_heat_rejection': state.condenser_heat_rejection,
+            'heat_flow_net_electrical_output': state.net_electrical_output,
+            
+            # Performance metrics
+            'heat_flow_overall_efficiency': state.overall_thermal_efficiency,
+            'heat_flow_steam_cycle_efficiency': state.steam_cycle_efficiency,
+            'heat_flow_heat_rate': state.heat_rate
+        }
     
     def reset(self) -> None:
         """Reset heat flow tracker to initial state"""

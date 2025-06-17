@@ -27,6 +27,9 @@ import numpy as np
 # Import state management interfaces
 from simulator.state import StateProvider, StateVariable, StateCategory, make_state_name, StateProviderMixin
 
+# Import heat flow tracking
+from ..heat_flow_tracker import HeatFlowProvider, ThermodynamicProperties
+
 from .pump_system import FeedwaterPumpSystem, FeedwaterPumpSystemConfig
 from .level_control import ThreeElementControl, ThreeElementConfig
 from .water_chemistry import WaterQualityModel, WaterQualityConfig
@@ -76,7 +79,7 @@ class EnhancedFeedwaterConfig:
     predictive_maintenance: bool = True                  # Enable predictive maintenance
 
 
-class EnhancedFeedwaterPhysics(StateProviderMixin):
+class EnhancedFeedwaterPhysics(StateProviderMixin, HeatFlowProvider):
     """
     Enhanced feedwater physics model - analogous to EnhancedCondenserPhysics
     
@@ -444,6 +447,60 @@ class EnhancedFeedwaterPhysics(StateProviderMixin):
         
         prefixed = {f"feedwater.{key}": value for key, value in state_dict.items()}
         return prefixed
+    
+    def get_heat_flows(self) -> Dict[str, float]:
+        """
+        Get current heat flows for this component (MW)
+        
+        Returns:
+            Dictionary with heat flow values in MW
+        """
+        # Calculate feedwater enthalpy flows
+        feedwater_temp = self.config.design_feedwater_temperature
+        feedwater_enthalpy = ThermodynamicProperties.liquid_enthalpy(feedwater_temp)
+        
+        # Input: Condensate from condenser (lower temperature)
+        condensate_temp = 39.0  # Typical condenser outlet temperature
+        condensate_enthalpy = ThermodynamicProperties.liquid_enthalpy(condensate_temp)
+        condensate_enthalpy_input = ThermodynamicProperties.enthalpy_flow_mw(self.total_flow_rate, condensate_enthalpy)
+        
+        # Output: Heated feedwater to steam generators
+        feedwater_enthalpy_output = ThermodynamicProperties.enthalpy_flow_mw(self.total_flow_rate, feedwater_enthalpy)
+        
+        # Pump work input (mechanical energy converted to fluid energy)
+        pump_work_input = self.total_power_consumption  # MW
+        
+        # Extraction heating from turbine extractions
+        extraction_heating = feedwater_enthalpy_output - condensate_enthalpy_input - pump_work_input
+        extraction_heating = max(0.0, extraction_heating)  # Ensure positive
+        
+        # Internal losses (approximately 2% of pump work)
+        internal_losses = pump_work_input * 0.02
+        
+        return {
+            'condensate_enthalpy_input': condensate_enthalpy_input,
+            'feedwater_enthalpy_output': feedwater_enthalpy_output,
+            'pump_work_input': pump_work_input,
+            'extraction_heating': extraction_heating,
+            'internal_losses': internal_losses
+        }
+    
+    def get_enthalpy_flows(self) -> Dict[str, float]:
+        """
+        Get current enthalpy flows for this component (MW)
+        
+        Returns:
+            Dictionary with enthalpy flow values in MW
+        """
+        heat_flows = self.get_heat_flows()
+        
+        return {
+            'inlet_enthalpy_flow': heat_flows['condensate_enthalpy_input'],
+            'outlet_enthalpy_flow': heat_flows['feedwater_enthalpy_output'],
+            'enthalpy_added': heat_flows['feedwater_enthalpy_output'] - heat_flows['condensate_enthalpy_input'],
+            'work_input': heat_flows['pump_work_input'],
+            'extraction_heating': heat_flows['extraction_heating']
+        }
     
     def reset(self) -> None:
         """Reset enhanced feedwater system to initial conditions"""

@@ -257,84 +257,38 @@ class NuclearPlantSimulator:
 
     def _calculate_primary_to_secondary_coupling(self) -> dict:
         """
-        Calculate the coupling between primary and secondary systems
+        Simplified primary-to-secondary coupling interface
         
-        This is the key integration point where:
-        1. Primary thermal power is transferred to secondary via steam generators
-        2. Primary coolant temperatures are calculated based on heat removal
-        3. Secondary steam conditions are determined by primary heat input
-        4. Feedwater pump status affects heat transfer capability
+        This method now provides only the essential reactor parameters to the secondary system.
+        The steam generator physics will calculate their own temperatures and heat transfer rates
+        based on these fundamental reactor conditions, eliminating duplicate physics calculations.
         
         Returns:
-            Dictionary with coupling parameters for each steam generator
+            Dictionary with simplified coupling parameters for each steam generator
         """
-        # Get primary thermal power from reactor physics
-        primary_thermal_power = self.state.power_level / 100.0 * 3000.0  # MW
-        
-        # FIXED: Calculate realistic PWR hot leg and cold leg temperatures
-        # Based on power level and realistic PWR operating conditions
+        # Get primary reactor conditions - these are the fundamental inputs
+        reactor_power_mw = self.state.power_level / 100.0 * 3000.0  # MW thermal power
         power_fraction = self.state.power_level / 100.0
         
-        # Realistic PWR temperatures based on power level
-        # At 100% power: Hot leg = 327°C, Cold leg = 293°C
-        # At 0% power: Both approach cold leg temperature
-        primary_hot_leg_temp = 293.0 + (34.0 * power_fraction)  # 293°C to 327°C
-        primary_cold_leg_temp = 293.0  # Cold leg stays relatively constant
-        
-        # NOTE: Feedwater pump effects on primary temperatures are now handled
-        # through the physically accurate steam generator level mechanism.
-        # The steam generator heat transfer area is reduced when water level drops
-        # due to feedwater pump failures, which naturally leads to higher primary
-        # temperatures through reduced heat removal capability.
-        
-        # Ensure temperatures are within realistic PWR operating range
-        primary_hot_leg_temp = np.clip(primary_hot_leg_temp, 293.0, 350.0)
-        primary_cold_leg_temp = np.clip(primary_cold_leg_temp, 280.0, 300.0)
-        
-        # Ensure hot leg is always hotter than cold leg
-        if primary_hot_leg_temp <= primary_cold_leg_temp:
-            primary_hot_leg_temp = primary_cold_leg_temp + 5.0  # Minimum 5°C difference
-        
-        # Calculate realistic primary flow based on power level
+        # Calculate primary flow based on power level (reactor coolant pumps)
         # Typical PWR: 17,100 kg/s total flow at 100% power
         design_flow = 17100.0  # kg/s
-        # Flow varies with power level (reactor coolant pumps may be load-following)
         flow_fraction = max(0.3, power_fraction)  # Minimum 30% flow even at low power
         total_primary_flow = design_flow * flow_fraction
         
-        # NOTE: Primary flow is no longer directly affected by feedwater pump status.
-        # The effect now occurs naturally through steam generator level changes
-        # affecting heat transfer area and thus heat removal capability.
-        
-        # Validate heat balance: Q = m_dot * cp * delta_T
-        cp_primary = 5.2  # kJ/kg/K at PWR conditions
-        calculated_thermal_power = (total_primary_flow * cp_primary * 
-                                   (primary_hot_leg_temp - primary_cold_leg_temp)) / 1000.0  # MW
-        
-        # Debug output for troubleshooting
-        '''
-        print(f"DEBUG: Primary-Secondary Coupling:")
-        print(f"  Power Level: {self.state.power_level:.1f}%")
-        print(f"  Hot Leg Temp: {primary_hot_leg_temp:.1f}°C")
-        print(f"  Cold Leg Temp: {primary_cold_leg_temp:.1f}°C")
-        print(f"  Temperature Delta: {primary_hot_leg_temp - primary_cold_leg_temp:.1f}°C")
-        print(f"  Primary Flow: {total_primary_flow:.0f} kg/s")
-        print(f"  Calculated Thermal Power: {calculated_thermal_power:.1f} MW")
-        print(f"  Target Thermal Power: {primary_thermal_power:.1f} MW")
-        print(f"  Feedwater System Available: {feedwater_system_available}")
-        print(f"  Feedwater Pumps Running: {feedwater_num_pumps}")
-        '''
-        # Calculate conditions for each steam generator loop
+        # Simplified coupling interface - let steam generators calculate their own physics
+        # This eliminates duplicate temperature and heat balance calculations
         primary_conditions = {}
         flow_per_loop = total_primary_flow / self.primary_loops
+        thermal_power_per_loop = reactor_power_mw / self.primary_loops
         
         for i in range(self.primary_loops):
             sg_key = f'sg_{i+1}'
             
-            # Each steam generator sees the same inlet conditions
-            primary_conditions[f'{sg_key}_inlet_temp'] = primary_hot_leg_temp
-            primary_conditions[f'{sg_key}_outlet_temp'] = primary_cold_leg_temp
-            primary_conditions[f'{sg_key}_flow'] = flow_per_loop
+            # Provide fundamental reactor parameters, not calculated temperatures
+            primary_conditions[f'{sg_key}_thermal_power'] = thermal_power_per_loop  # MW
+            primary_conditions[f'{sg_key}_flow'] = flow_per_loop  # kg/s
+            primary_conditions[f'{sg_key}_power_fraction'] = power_fraction  # 0-1
             
         return primary_conditions
     

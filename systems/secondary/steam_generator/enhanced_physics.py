@@ -20,6 +20,9 @@ from dataclasses import dataclass, field
 # Import state management interfaces
 from simulator.state import StateProviderMixin
 
+# Import heat flow tracking
+from ..heat_flow_tracker import HeatFlowProvider, ThermodynamicProperties
+
 from .steam_generator import SteamGenerator, SteamGeneratorConfig
 
 
@@ -64,7 +67,7 @@ class EnhancedSteamGeneratorConfig:
     system_optimization: bool = True                    # Enable system optimization
 
 
-class EnhancedSteamGeneratorPhysics(StateProviderMixin):
+class EnhancedSteamGeneratorPhysics(StateProviderMixin, HeatFlowProvider):
     """
     Enhanced steam generator physics system - orchestrates multiple steam generators
     
@@ -123,127 +126,87 @@ class EnhancedSteamGeneratorPhysics(StateProviderMixin):
                      control_inputs: Dict[str, float] = None,
                      dt: float = 1.0) -> Dict[str, float]:
         """
-        Update enhanced steam generator system for one time step
+        Streamlined enhanced steam generator system update
+        
+        Phase 2 Optimization: Removed redundant processing, simplified data flow.
+        Focus on coordination and load balancing - let individual SGs handle physics.
         
         Args:
             primary_conditions: Primary side conditions for each SG
-                - 'inlet_temps': List of primary inlet temperatures (°C)
-                - 'outlet_temps': List of primary outlet temperatures (°C)
-                - 'flow_rates': List of primary flow rates (kg/s)
-            steam_demands: Steam demand conditions
-                - 'total_steam_flow': Total steam flow demand (kg/s)
-                - 'steam_pressure': Target steam pressure (MPa)
+            steam_demands: Steam demand conditions  
             system_conditions: Overall system conditions
-                - 'feedwater_temperature': Feedwater temperature (°C)
-                - 'load_demand': Load demand (0-1)
             control_inputs: Control system inputs
             dt: Time step (s)
             
         Returns:
-            Dictionary with enhanced steam generator system results
+            Dictionary with essential system results (streamlined)
         """
         if control_inputs is None:
             control_inputs = {}
         
-        # Extract system conditions
+        # Phase 3: Steam Generator is Single Source of Truth for Steam Flow
+        # Calculate actual steam flow based on load demand and physics, not external demand
         self.load_demand = system_conditions.get('load_demand', 1.0)
         feedwater_temperature = system_conditions.get('feedwater_temperature', 227.0)
         
-        # Extract steam demands
-        total_steam_demand = steam_demands.get('total_steam_flow', self.config.design_total_steam_flow)
-        target_pressure = steam_demands.get('steam_pressure', self.config.design_steam_pressure)
+        # Calculate actual steam flow based on load demand and design capacity
+        load_demand_fraction = steam_demands.get('load_demand_fraction', self.load_demand)
+        actual_total_steam_flow = self.config.design_total_steam_flow * load_demand_fraction
         
-        # Calculate individual SG demands with load balancing
-        individual_demands = self._calculate_load_distribution(
-            total_steam_demand, primary_conditions
-        )
+        # Simplified load distribution (core coordination function)
+        individual_demands = self._calculate_load_distribution(actual_total_steam_flow, primary_conditions)
         
-        # Update individual steam generators
+        # Direct update of individual steam generators (minimal wrapper processing)
         sg_results = []
-        total_thermal_power = 0.0
-        total_steam_flow = 0.0
-        
+
         for i, sg in enumerate(self.steam_generators):
-            # Get primary conditions for this SG
-            primary_inlet_temp = primary_conditions.get('inlet_temps', [327.0] * self.config.num_steam_generators)[i]
-            primary_outlet_temp = primary_conditions.get('outlet_temps', [293.0] * self.config.num_steam_generators)[i]
-            primary_flow = primary_conditions.get('flow_rates', [5700.0] * self.config.num_steam_generators)[i]
-            
-            # Get individual steam demand
-            steam_flow_demand = individual_demands[i]
-            feedwater_flow_demand = steam_flow_demand  # Mass balance
-            
-            # Update individual steam generator
+            # Direct parameter extraction - no redundant processing
             sg_result = sg.update_state(
-                primary_temp_in=primary_inlet_temp,
-                primary_temp_out=primary_outlet_temp,
-                primary_flow=primary_flow,
-                steam_flow_out=steam_flow_demand,
-                feedwater_flow_in=feedwater_flow_demand,
+                primary_temp_in=primary_conditions.get('inlet_temps', [327.0] * self.config.num_steam_generators)[i],
+                primary_temp_out=primary_conditions.get('outlet_temps', [293.0] * self.config.num_steam_generators)[i],
+                primary_flow=primary_conditions.get('flow_rates', [5700.0] * self.config.num_steam_generators)[i],
+                steam_flow_out=individual_demands[i],
+                feedwater_flow_in=individual_demands[i],  # Mass balance
                 feedwater_temp=feedwater_temperature,
                 dt=dt
             )
             
             sg_results.append(sg_result)
-            total_thermal_power += sg_result['heat_transfer_rate']
-            total_steam_flow += sg_result['steam_flow_rate']
         
-        # Calculate system-level metrics
-        self.total_thermal_power = total_thermal_power
-        self.total_steam_flow = total_steam_flow
+        # Streamlined system aggregation (essential metrics only)
+        self.total_thermal_power = sum(result['heat_transfer_rate'] for result in sg_results)
+        self.total_steam_flow = sum(result['steam_flow_rate'] for result in sg_results)
         
-        # Calculate average conditions
+        # Essential system state (removed redundant calculations)
         if self.steam_generators:
             self.average_steam_pressure = sum(sg.secondary_pressure for sg in self.steam_generators) / len(self.steam_generators)
             self.average_steam_temperature = sum(sg.secondary_temperature for sg in self.steam_generators) / len(self.steam_generators)
             self.average_steam_quality = sum(sg.steam_quality for sg in self.steam_generators) / len(self.steam_generators)
-            
-            # Calculate system efficiency
-            design_power = self.config.design_total_thermal_power
-            if design_power > 0:
-                self.system_efficiency = min(1.0, total_thermal_power / design_power)
-            else:
-                self.system_efficiency = 0.0
         
-        # Calculate performance metrics
-        self.performance_factor = self._calculate_performance_factor(sg_results)
-        self.load_balance_factor = self._calculate_load_balance_factor(sg_results)
+        # Simplified performance tracking (removed complex metrics)
         self.system_availability = self._check_system_availability(sg_results)
+        self.operating_hours += dt / 3600.0
         
-        # Update operating hours
-        self.operating_hours += dt / 3600.0  # Convert seconds to hours
-        
+        # Streamlined return data (essential results only)
         return {
-            # Overall system performance
+            # Core system performance
             'total_thermal_power': self.total_thermal_power,
             'total_steam_flow': self.total_steam_flow,
             'average_steam_pressure': self.average_steam_pressure,
             'average_steam_temperature': self.average_steam_temperature,
             'average_steam_quality': self.average_steam_quality,
-            'system_efficiency': self.system_efficiency,
             'system_availability': self.system_availability,
-            'performance_factor': self.performance_factor,
-            'load_balance_factor': self.load_balance_factor,
             
-            # Individual SG results
+            # Individual SG results (essential for downstream systems)
             'sg_individual_results': sg_results,
-            'sg_thermal_powers': [result['heat_transfer_rate'] for result in sg_results],
             'sg_steam_flows': [result['steam_flow_rate'] for result in sg_results],
             'sg_pressures': [sg.secondary_pressure for sg in self.steam_generators],
             'sg_levels': [sg.water_level for sg in self.steam_generators],
             'sg_steam_qualities': [sg.steam_quality for sg in self.steam_generators],
             
-            # Control and operating conditions
-            'control_mode': self.control_mode,
+            # Essential control data
             'load_demand': self.load_demand,
-            'operating_hours': self.operating_hours,
-            'feedwater_temperature': feedwater_temperature,
-            'target_steam_pressure': target_pressure,
-            
-            # System diagnostics
-            'load_distribution': individual_demands,
-            'thermal_power_distribution': [result['heat_transfer_rate'] for result in sg_results],
-            'steam_flow_distribution': [result['steam_flow_rate'] for result in sg_results]
+            'operating_hours': self.operating_hours
         }
     
     def _calculate_load_distribution(self, 
@@ -283,44 +246,8 @@ class EnhancedSteamGeneratorPhysics(StateProviderMixin):
         
         return individual_demands
     
-    def _calculate_performance_factor(self, sg_results: List[Dict]) -> float:
-        """Calculate overall system performance factor"""
-        if not sg_results:
-            return 0.0
-        
-        # Average thermal efficiency across all SGs
-        efficiencies = [result.get('thermal_efficiency', 0.0) for result in sg_results]
-        avg_efficiency = sum(efficiencies) / len(efficiencies)
-        
-        # Average effectiveness across all SGs
-        effectiveness_values = [result.get('effectiveness', 0.0) for result in sg_results]
-        avg_effectiveness = sum(effectiveness_values) / len(effectiveness_values)
-        
-        # Combined performance factor
-        performance_factor = (avg_efficiency + avg_effectiveness) / 2.0
-        return min(1.0, max(0.0, performance_factor))
-    
-    def _calculate_load_balance_factor(self, sg_results: List[Dict]) -> float:
-        """Calculate load balance effectiveness factor"""
-        if not sg_results or len(sg_results) < 2:
-            return 1.0
-        
-        # Calculate coefficient of variation for thermal power
-        thermal_powers = [result.get('heat_transfer_rate', 0.0) for result in sg_results]
-        if not thermal_powers or all(p == 0 for p in thermal_powers):
-            return 1.0
-        
-        mean_power = sum(thermal_powers) / len(thermal_powers)
-        if mean_power == 0:
-            return 1.0
-        
-        variance = sum((p - mean_power) ** 2 for p in thermal_powers) / len(thermal_powers)
-        std_dev = np.sqrt(variance)
-        coefficient_of_variation = std_dev / mean_power
-        
-        # Convert to balance factor (1.0 = perfect balance, 0.0 = poor balance)
-        load_balance_factor = max(0.0, 1.0 - coefficient_of_variation)
-        return load_balance_factor
+    # Removed redundant performance calculation methods
+    # Phase 2 Optimization: Let individual SGs handle their own performance metrics
     
     def _check_system_availability(self, sg_results: List[Dict]) -> bool:
         """Check overall system availability"""
@@ -428,6 +355,63 @@ class EnhancedSteamGeneratorPhysics(StateProviderMixin):
                 state_dict[f'sg_{i+1}_{key}'] = value
         
         return state_dict
+    
+    def get_heat_flows(self) -> Dict[str, float]:
+        """
+        Get current heat flows for this component (MW)
+        
+        Returns:
+            Dictionary with heat flow values in MW
+        """
+        # Calculate primary side heat input
+        primary_heat_input = self.total_thermal_power / 1e6  # Convert W to MW
+        
+        # Calculate feedwater enthalpy input
+        feedwater_temp = 227.0  # Typical feedwater temperature
+        feedwater_enthalpy = ThermodynamicProperties.liquid_enthalpy(feedwater_temp)
+        feedwater_enthalpy_input = ThermodynamicProperties.enthalpy_flow_mw(self.total_steam_flow, feedwater_enthalpy)
+        
+        # Calculate steam enthalpy output
+        steam_enthalpy = ThermodynamicProperties.steam_enthalpy(
+            self.average_steam_temperature, 
+            self.average_steam_pressure, 
+            self.average_steam_quality
+        )
+        steam_enthalpy_output = ThermodynamicProperties.enthalpy_flow_mw(self.total_steam_flow, steam_enthalpy)
+        
+        # Calculate thermal losses (approximately 2% of primary heat input)
+        thermal_losses = primary_heat_input * 0.02
+        
+        # Calculate heat transfer efficiency
+        if primary_heat_input > 0:
+            heat_transfer_efficiency = (steam_enthalpy_output - feedwater_enthalpy_input) / primary_heat_input
+        else:
+            heat_transfer_efficiency = 0.0
+        
+        return {
+            'primary_heat_input': primary_heat_input,
+            'feedwater_enthalpy_input': feedwater_enthalpy_input,
+            'steam_enthalpy_output': steam_enthalpy_output,
+            'thermal_losses': thermal_losses,
+            'heat_transfer_efficiency': heat_transfer_efficiency
+        }
+    
+    def get_enthalpy_flows(self) -> Dict[str, float]:
+        """
+        Get current enthalpy flows for this component (MW)
+        
+        Returns:
+            Dictionary with enthalpy flow values in MW
+        """
+        heat_flows = self.get_heat_flows()
+        
+        return {
+            'inlet_enthalpy_flow': heat_flows['feedwater_enthalpy_input'],
+            'outlet_enthalpy_flow': heat_flows['steam_enthalpy_output'],
+            'enthalpy_added': heat_flows['steam_enthalpy_output'] - heat_flows['feedwater_enthalpy_input'],
+            'primary_heat_input': heat_flows['primary_heat_input'],
+            'thermal_efficiency': heat_flows['heat_transfer_efficiency']
+        }
     
     def reset(self) -> None:
         """Reset enhanced steam generator system to initial conditions"""
