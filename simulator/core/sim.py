@@ -104,6 +104,8 @@ class NuclearPlantSimulator:
             # Calculate primary-to-secondary coupling
             primary_conditions = self._calculate_primary_to_secondary_coupling()
             
+            self.load_demand = self.state.power_level
+
             # Prepare secondary control inputs
             secondary_control_inputs = {
                 'load_demand': self.load_demand,

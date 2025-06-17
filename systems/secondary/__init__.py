@@ -585,23 +585,59 @@ class SecondaryReactorPhysics(StateProviderMixin):
         
         # Apply only critical safety validation checks that would shut down the plant
         power_reduction_factor = 1.0
+        power_reduction_reasons = []
         
         # CRITICAL: Check feedwater flow first - no feedwater = no power
         if actual_feedwater_flow < MIN_FEEDWATER_FLOW_KGS:
             power_reduction_factor = 0.0  # Complete shutdown for no feedwater
+            power_reduction_reasons.append(f"FEEDWATER_FLOW_TOO_LOW: {actual_feedwater_flow:.1f} kg/s < {MIN_FEEDWATER_FLOW_KGS} kg/s")
+            print(f"[SECONDARY DEBUG] ELECTRICAL POWER REDUCTION: Complete shutdown due to insufficient feedwater flow")
+            print(f"[SECONDARY DEBUG]   Actual feedwater flow: {actual_feedwater_flow:.1f} kg/s")
+            print(f"[SECONDARY DEBUG]   Minimum required: {MIN_FEEDWATER_FLOW_KGS} kg/s")
         
         # Check other critical operating conditions only if feedwater is available
         if power_reduction_factor > 0.0:
             # Only apply severe reductions for safety-critical conditions
             if total_steam_flow < (MIN_STEAM_FLOW_KGS * 0.5):  # Very low steam flow
+                old_factor = power_reduction_factor
                 power_reduction_factor *= 0.1  # 90% reduction for very low steam flow
+                power_reduction_reasons.append(f"STEAM_FLOW_TOO_LOW: {total_steam_flow:.1f} kg/s < {MIN_STEAM_FLOW_KGS * 0.5:.1f} kg/s")
+                print(f"[SECONDARY DEBUG] ELECTRICAL POWER REDUCTION: Steam flow too low")
+                print(f"[SECONDARY DEBUG]   Actual steam flow: {total_steam_flow:.1f} kg/s")
+                print(f"[SECONDARY DEBUG]   Minimum required: {MIN_STEAM_FLOW_KGS * 0.5:.1f} kg/s")
+                print(f"[SECONDARY DEBUG]   Power reduction factor: {old_factor:.3f} -> {power_reduction_factor:.3f}")
             
             if avg_steam_pressure < (MIN_STEAM_PRESSURE_MPA * 0.5):  # Very low steam pressure
+                old_factor = power_reduction_factor
                 power_reduction_factor *= 0.1  # 90% reduction for very low steam pressure
+                power_reduction_reasons.append(f"STEAM_PRESSURE_TOO_LOW: {avg_steam_pressure:.3f} MPa < {MIN_STEAM_PRESSURE_MPA * 0.5:.3f} MPa")
+                print(f"[SECONDARY DEBUG] ELECTRICAL POWER REDUCTION: Steam pressure too low")
+                print(f"[SECONDARY DEBUG]   Actual steam pressure: {avg_steam_pressure:.3f} MPa")
+                print(f"[SECONDARY DEBUG]   Minimum required: {MIN_STEAM_PRESSURE_MPA * 0.5:.3f} MPa")
+                print(f"[SECONDARY DEBUG]   Power reduction factor: {old_factor:.3f} -> {power_reduction_factor:.3f}")
             
             # Energy conservation check - this should rarely trigger if turbine physics is correct
             if thermal_power_mw > (primary_thermal_power * 1.1):  # Allow 10% margin
                 power_reduction_factor = 0.0  # Complete shutdown for major energy violation
+                power_reduction_reasons.append(f"ENERGY_CONSERVATION_VIOLATION: Secondary {thermal_power_mw:.1f} MW > Primary {primary_thermal_power:.1f} MW * 1.1")
+                print(f"[SECONDARY DEBUG] ELECTRICAL POWER REDUCTION: Energy conservation violation")
+                print(f"[SECONDARY DEBUG]   Secondary thermal power: {thermal_power_mw:.1f} MW")
+                print(f"[SECONDARY DEBUG]   Primary thermal power: {primary_thermal_power:.1f} MW")
+                print(f"[SECONDARY DEBUG]   Maximum allowed: {primary_thermal_power * 1.1:.1f} MW")
+                print(f"[SECONDARY DEBUG]   Complete shutdown triggered")
+        
+        # Debug output for power reduction summary
+        if power_reduction_factor < 1.0:
+            print(f"[SECONDARY DEBUG] ELECTRICAL POWER REDUCTION SUMMARY:")
+            print(f"[SECONDARY DEBUG]   Original turbine power: {turbine_electrical_power:.2f} MW")
+            print(f"[SECONDARY DEBUG]   Power reduction factor: {power_reduction_factor:.3f}")
+            print(f"[SECONDARY DEBUG]   Final electrical power: {turbine_electrical_power * power_reduction_factor:.2f} MW")
+            print(f"[SECONDARY DEBUG]   Power reduction: {(1.0 - power_reduction_factor) * 100:.1f}%")
+            print(f"[SECONDARY DEBUG]   Reduction reasons: {', '.join(power_reduction_reasons)}")
+        elif len(validation_failures) > 0:
+            print(f"[SECONDARY DEBUG] VALIDATION WARNINGS (no power reduction applied):")
+            for failure in validation_failures:
+                print(f"[SECONDARY DEBUG]   - {failure}")
         
         # Use turbine electrical power with safety reductions
         self.electrical_power_output = turbine_electrical_power * power_reduction_factor

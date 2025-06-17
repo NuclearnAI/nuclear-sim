@@ -227,18 +227,50 @@ class TurbineStage:
                           self.fouling_factor * 
                           self.blade_wear_factor)
         
-        # Enthalpy drop calculation
+        # Enthalpy drop calculation with validation
         isentropic_enthalpy_drop = self.inlet_enthalpy - outlet_enthalpy_isentropic
+        
+        # Critical Fix: Ensure isentropic enthalpy drop is positive (expansion should reduce enthalpy)
+        if isentropic_enthalpy_drop <= 0:
+            # Log the issue and apply corrective action
+            print(f"WARNING: Stage {self.config.stage_id} - Negative isentropic enthalpy drop: {isentropic_enthalpy_drop:.2f} kJ/kg")
+            print(f"  Inlet: P={inlet_pressure:.3f} MPa, T={inlet_temperature:.1f}°C, h={self.inlet_enthalpy:.1f} kJ/kg")
+            print(f"  Outlet: P={outlet_pressure:.3f} MPa, T={outlet_temp_isentropic:.1f}°C, h={outlet_enthalpy_isentropic:.1f} kJ/kg")
+            
+            # Force a minimum positive enthalpy drop based on pressure ratio
+            pressure_ratio = outlet_pressure / inlet_pressure
+            if pressure_ratio < 1.0:  # Valid expansion
+                # Estimate minimum enthalpy drop based on pressure drop
+                min_enthalpy_drop = 50.0 * (1.0 - pressure_ratio)  # Approximate 50 kJ/kg per unit pressure ratio
+                isentropic_enthalpy_drop = max(min_enthalpy_drop, 10.0)  # Minimum 10 kJ/kg
+            else:
+                # Invalid pressure ratio - force small positive drop
+                isentropic_enthalpy_drop = 10.0
+            
+            print(f"  Corrected to: {isentropic_enthalpy_drop:.2f} kJ/kg")
+        
         actual_enthalpy_drop = total_efficiency * isentropic_enthalpy_drop
+        
+        # Ensure actual enthalpy drop is also positive
+        if actual_enthalpy_drop <= 0:
+            print(f"WARNING: Stage {self.config.stage_id} - Negative actual enthalpy drop: {actual_enthalpy_drop:.2f} kJ/kg")
+            actual_enthalpy_drop = max(1.0, isentropic_enthalpy_drop * 0.5)  # At least 50% of isentropic
+            print(f"  Corrected to: {actual_enthalpy_drop:.2f} kJ/kg")
+        
         self.enthalpy_drop = actual_enthalpy_drop
         
         # Actual outlet conditions
         self.outlet_enthalpy = self.inlet_enthalpy - actual_enthalpy_drop
         self.outlet_temperature = self._enthalpy_to_temperature(self.outlet_enthalpy, outlet_pressure)
         
-        # Power calculation
+        # Power calculation with validation
         # Power from main steam flow
         main_power = self.outlet_flow * actual_enthalpy_drop / 1000.0  # MW
+        
+        # Ensure power is positive
+        if main_power < 0:
+            print(f"WARNING: Stage {self.config.stage_id} - Negative main power: {main_power:.2f} MW")
+            main_power = 0.0
         
         # Power from extraction flow (partial expansion)
         if self.extraction_flow > 0:
@@ -392,14 +424,31 @@ class TurbineStage:
     
     # Thermodynamic property methods (simplified)
     def _steam_enthalpy(self, temp_c: float, pressure_mpa: float) -> float:
-        """Calculate steam enthalpy (kJ/kg)"""
+        """Calculate steam enthalpy (kJ/kg) with improved accuracy"""
+        # Validate inputs
+        pressure_mpa = max(0.001, min(pressure_mpa, 22.0))  # Limit to reasonable range
+        temp_c = max(0.0, min(temp_c, 800.0))  # Limit to reasonable range
+        
         sat_temp = self._saturation_temperature(pressure_mpa)
+        
         if temp_c <= sat_temp:
+            # Saturated steam
             return self._saturation_enthalpy_vapor(pressure_mpa)
         else:
+            # Superheated steam - improved calculation
             h_g = self._saturation_enthalpy_vapor(pressure_mpa)
             superheat = temp_c - sat_temp
-            return h_g + 2.1 * superheat
+            
+            # More accurate specific heat for superheated steam
+            # Varies with pressure and temperature
+            if pressure_mpa > 10.0:
+                cp_superheat = 2.5  # kJ/kg/K at high pressure
+            elif pressure_mpa > 1.0:
+                cp_superheat = 2.2  # kJ/kg/K at medium pressure
+            else:
+                cp_superheat = 2.0  # kJ/kg/K at low pressure
+            
+            return h_g + cp_superheat * superheat
     
     def _steam_entropy(self, temp_c: float, pressure_mpa: float) -> float:
         """Calculate steam entropy (kJ/kg/K)"""
