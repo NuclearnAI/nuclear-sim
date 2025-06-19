@@ -2,20 +2,13 @@
 # coding: utf-8
 
 # # Nuclear Plant Simulation with Constant Heat Source
+# This notebook demonstrates the capabilities of our nuclear plant simulator. We implement the physics for:
 # 
-# This notebook demonstrates running the nuclear plant simulator with a constant heat source instead of complex reactor physics. This is perfect for:
-# 
-# - Testing secondary side systems
-# - Development and debugging
-# - Understanding plant dynamics without reactor complexity
-# - Educational purposes
-# 
-# ## Key Features
-# 
-# ✅ **Instant Response**: Heat source responds immediately to power commands  
-# ✅ **Predictable Behavior**: No complex reactor physics or dynamics  
-# ✅ **Easy Control**: Simple power setpoint control  
-# ✅ **Full Plant Model**: Complete thermal hydraulics and steam cycle  
+# - Reactors
+# - Feedwater Pump Systems
+# - Steam Generation Systems
+# - Turbine Systems
+# - Condenser Systems
 
 # ## Setup and Imports
 
@@ -55,13 +48,13 @@ print(f"📅 Notebook started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 
 # ## Create Constant Heat Source Simulator
 # 
-# Let's create a nuclear plant simulator using a constant heat source instead of reactor physics.
+# Let's create a nuclear plant simulator using a `ConstantHeatSource` instead of using the `ReactorHeatSource`. This will allow us to easily change the state of the reactor without having to worry about individual control actions such as boration of coolant, control rod positioning, etc. You'll notice that all state management is handled automatically, with different types of physics models being registered independently.
 
 # In[2]:
 
 
 # Create constant heat source
-heat_source = ConstantHeatSource(rated_power_mw=3000.0)
+heat_source = ConstantHeatSource(rated_power_mw=3000.0, noise_enabled=True, noise_std_percent=11.5, noise_seed=42)
 
 # Create simulator with constant heat source
 simulator = NuclearPlantSimulator(heat_source=heat_source, dt=1.0, enable_secondary=True)
@@ -82,7 +75,7 @@ print(f"   Initial Control Rod Position: {simulator.state.control_rod_position:.
 
 # ## Basic Simulation Run
 # 
-# Let's run a basic simulation to see how the reactor heat source behaves. Notice here, we create an equilibrium state, which sets all of our control parameters and reactor poisons to the correct levels to maintain criticality. If we tell it to auto balance, it will aim to stay critical at all times by adjusting the boron concentration. If we tell it not to auto balance, we should see the reactor become subcritical if we do nothing.
+# Let's run a basic simulation to see how the system responds to changes in demand. Here, we aim to slowly change the thermal power level of the system
 
 # In[3]:
 
@@ -92,28 +85,28 @@ def run_basic_simulation(duration_seconds: int = 300) -> pd.DataFrame:
     Run a basic simulation and return results as DataFrame
     """
     # Reset simulator
-    simulator.reset()
+    simulator.reset(True)
     #simulator.primary_physics.state = create_equilibrium_state()
     # Data collection
     data = []
 
     print(f"🚀 Running basic simulation for {duration_seconds} seconds...")
-    print(f"{'Time (s)':<8} {'Power (%)':<10} {'Fuel T (°C)':<12} {'Coolant T (°C)':<14} {'Heat Rejection Rate':<20} {'Electrical Power':<20} \
-          {'Feedwater flow':<15}{'Status':<10}")
+    print(f"{'Time (s)':<8} {'Power (MW)':<10} {'Electrical Power':<12}")
     print("-" * 70)
     power_level = simulator.state.power_level
-    power_levels = [100., 94., 90., 84., 70., 65., 73., 82., 90., 100.,]
+    power_levels = [77., 75., 78., 73., 75., 80., 77., 81., 83., 72.]
 
     for t in range(duration_seconds):
         # Step simulation
-
-        if t % 60 == 0:
+        if t % 180 == 0:
             previous_power_level = power_level
-            target_power_level = power_levels[t // 60]
+            target_power_level = power_levels[t // 180]
 
-        power_level += (target_power_level - previous_power_level) / 60
+        power_level += (target_power_level - previous_power_level) / 180
         heat_source.set_power_setpoint(power_level)
+
         result = simulator.step(ControlAction.NO_ACTION, .01, load_demand=power_level)
+
         # Collect data
         data.append({
             'time': simulator.time,
@@ -125,9 +118,9 @@ def run_basic_simulation(duration_seconds: int = 300) -> pd.DataFrame:
             'steam_flow_rate': simulator.state.steam_flow_rate,
             'steam_pressure': simulator.state.steam_pressure,
             'thermal_power_mw': result['info']['thermal_power'],
-            'scram_status': simulator.state.scram_status,
+            'scram_status': simulator.secondary_physics.feedwater_system.pump_system.pumps['FWP-1'].state.status,
             'feedwater_flow_rate': simulator.secondary_physics.total_feedwater_flow,
-            'heat_rejection_rate': result['info'].get('condenser_heat_rejection', 0.0)  # Use energy-balance-corrected value
+            'heat_rejection_rate': simulator.secondary_physics.total_system_heat_rejection,  # Use energy-balance-corrected value
         })
 
         # Print status every 60 seconds
@@ -135,13 +128,8 @@ def run_basic_simulation(duration_seconds: int = 300) -> pd.DataFrame:
             status = "SCRAM" if simulator.state.scram_status else "Normal"
             # Use energy-balance-corrected heat rejection value
             heat_rejection_corrected = result['info'].get('condenser_heat_rejection', 0.0) / 1e6  # Convert to MW
-            print(f"{simulator.time:<8.0f} {simulator.state.power_level:<10.1f} "
-                  f"{simulator.state.fuel_temperature:<12.0f} "
-                  f"{simulator.state.coolant_temperature:<14.1f}"
-                  f"{heat_rejection_corrected:<20.2f}" 
-                  f"{simulator.secondary_physics.electrical_power_output:<20.2f}"
-                  f"{simulator.secondary_physics.total_feedwater_flow:<15.2f}",
-                  f"{status:<10}",
+            print(f"{simulator.time:<8.0f} {simulator.primary_physics.thermal_power_mw:<10.1f} "
+                  f"{simulator.secondary_physics.turbine.total_power_output:<12.0f} "
                 )
 
         # Check for early termination
@@ -156,7 +144,7 @@ def run_basic_simulation(duration_seconds: int = 300) -> pd.DataFrame:
 
     return pd.DataFrame(data)
 # Run the simulation
-basic_data = run_basic_simulation(600)
+basic_data = run_basic_simulation(500)
 
 
 # ## Plot Basic Results
@@ -221,7 +209,28 @@ def plot_simulation_results(data: pd.DataFrame, title: str = "Nuclear Plant Simu
     plt.show()
 
 # Plot the basic results
-plot_simulation_results(basic_data, "Basic Reactor Heat Source Simulation")
+
+# ## State Management
+# 
+# Now, we can individually access many states of our simulator. You can see that we keep track of over 550 states.
+
+# In[5]:
+
+
+print(simulator.state_manager.get_data_info())
+
+
+# In[6]:
+
 
 print(simulator.state_manager.get_available_variables())
+
+print(simulator.state_manager.get_components_by_system("secondary"))
+
+
+# ## Plotting
+# We can plot any of the states using the name stored within the state manager.
+
+# %%
+print(simulator.state_manager.data[['secondary.steam_generator.system_average_steam_pressure', 'primary.reactor.thermal_power_mw']])
 # %%
