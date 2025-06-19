@@ -21,6 +21,7 @@ Physical Basis:
 import warnings
 from dataclasses import dataclass
 from typing import Dict, Optional, Tuple
+from simulator.state import auto_register
 
 import numpy as np
 
@@ -42,6 +43,7 @@ class SteamGeneratorConfig:
     """
     
     # Physical dimensions (Westinghouse Model F basis)
+    generator_id : str = "SG-1"
     heat_transfer_area: float = 5100.0  # m² (AP1000: ~5100 m² per SG)
     tube_count: int = 3388  # Number of U-tubes (AP1000 actual count)
     tube_inner_diameter: float = 0.0191  # m (3/4" tubes, 19.1mm ID)
@@ -79,6 +81,7 @@ class SteamGeneratorConfig:
     steam_pressure_control_gain: float = 0.05  # Proportional gain for pressure control
 
 
+@auto_register("SECONDARY", "steam_generator", id_source="config.generator_id")
 class SteamGenerator:
     """
     Individual steam generator physics model for PWR
@@ -344,32 +347,44 @@ class SteamGenerator:
         if feedwater_flow_in < 0.1:  # Less than 0.1 kg/s (essentially zero)
             steam_generation_rate = 0.0
         
-        # FIXED PRESSURE DYNAMICS - Based on steam demand and inventory, NOT energy balance
-        # Pressure responds to steam flow demand vs steam generation capability
-        steam_demand_factor = steam_flow_out / self.config.secondary_design_flow  # Normalized demand
-        steam_supply_factor = steam_generation_rate / self.config.secondary_design_flow  # Normalized supply
+        # IMPROVED PRESSURE DYNAMICS - Based on thermal equilibrium and steam generation capability
+        # Pressure should stabilize based on heat input and steam generation, not drift linearly
         
-        # Pressure change based on supply-demand imbalance
-        supply_demand_imbalance = steam_supply_factor - steam_demand_factor
+        # Calculate equilibrium pressure based on current heat input and steam demand
+        design_heat_input = self.config.design_thermal_power / 1000.0  # kJ/s
+        heat_input_factor = heat_input_kj / design_heat_input if design_heat_input > 0 else 0.0
         
-        # Pressure dynamics: higher demand -> lower pressure, higher supply -> higher pressure
-        base_pressure_change_rate = -supply_demand_imbalance * 0.01  # MPa/s (tuned for realistic response)
+        # Equilibrium pressure scales with heat input capability
+        # Higher heat input -> higher equilibrium pressure
+        equilibrium_pressure = self.config.design_pressure_secondary * (0.7 + 0.3 * heat_input_factor)
+        equilibrium_pressure = np.clip(equilibrium_pressure, 3.0, 8.5)  # Reasonable operating range
         
-        # Additional pressure effects
-        # 1. Inventory depletion effect
-        if feedwater_flow_in < 0.1 and steam_flow_out > 0.1:
+        # Steam demand effect on equilibrium pressure
+        steam_demand_factor = steam_flow_out / self.config.secondary_design_flow if self.config.secondary_design_flow > 0 else 0.0
+        demand_pressure_effect = -steam_demand_factor * 0.5  # Higher demand -> lower equilibrium pressure
+        equilibrium_pressure += demand_pressure_effect
+        equilibrium_pressure = np.clip(equilibrium_pressure, 3.0, 8.5)
+        
+        # Pressure change rate toward equilibrium (first-order response)
+        pressure_time_constant = 60.0  # seconds (realistic for steam generator pressure response)
+        pressure_error = equilibrium_pressure - self.secondary_pressure
+        base_pressure_change_rate = pressure_error / pressure_time_constant
+        
+        # Additional pressure effects for transient conditions
+        # 1. Inventory depletion effect (only for severe conditions)
+        if feedwater_flow_in < 0.1 and steam_flow_out > 100.0:
             # Rapid pressure drop when steam is extracted without feedwater replacement
             inventory_depletion_rate = -steam_flow_out / self.config.secondary_water_mass  # 1/s
-            pressure_drop_rate = inventory_depletion_rate * self.secondary_pressure * 5.0
+            pressure_drop_rate = inventory_depletion_rate * self.secondary_pressure * 2.0
             base_pressure_change_rate += pressure_drop_rate
         
-        # 2. Heat input effect (secondary effect on pressure)
-        design_heat_input = self.config.design_thermal_power / 1000.0  # kJ/s
-        heat_input_factor = heat_input_kj / design_heat_input
-        heat_pressure_effect = (heat_input_factor - 1.0) * 0.002  # Small effect: 0.2% per 100% heat change
+        # 2. Steam generation vs demand imbalance (short-term effect)
+        steam_supply_factor = steam_generation_rate / self.config.secondary_design_flow if self.config.secondary_design_flow > 0 else 0.0
+        supply_demand_imbalance = steam_supply_factor - steam_demand_factor
+        imbalance_effect = supply_demand_imbalance * 0.005  # Small short-term effect
         
-        pressure_change_rate = base_pressure_change_rate + heat_pressure_effect
-        pressure_change_rate = np.clip(pressure_change_rate, -0.05, 0.05)  # Limit rate of change
+        pressure_change_rate = base_pressure_change_rate + imbalance_effect
+        pressure_change_rate = np.clip(pressure_change_rate, -0.02, 0.02)  # Limit rate of change
         
         new_pressure = self.secondary_pressure + pressure_change_rate * dt
         new_pressure = np.clip(new_pressure, 0.1, 8.5)  # Physical limits

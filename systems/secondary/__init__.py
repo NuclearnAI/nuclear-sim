@@ -11,7 +11,7 @@ from typing import Dict, Any, Optional
 import pandas as pd
 
 # Import state management interfaces
-from simulator.state import StateProviderMixin
+from simulator.state import auto_register
 
 # Import heat flow tracking
 from .heat_flow_tracker import HeatFlowTracker, HeatFlowProvider, ThermodynamicProperties
@@ -100,7 +100,8 @@ __all__ = [
 
 
 
-class SecondaryReactorPhysics(StateProviderMixin):
+@auto_register("SECONDARY", "reactor", "SRP", allow_no_id=True)
+class SecondaryReactorPhysics:
     """
     Integrated secondary reactor physics system with state management integration
     

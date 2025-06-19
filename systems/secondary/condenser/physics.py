@@ -27,7 +27,7 @@ from typing import Dict, Optional, Tuple, Any
 import numpy as np
 
 # Import state management interfaces
-from simulator.state import StateProviderMixin
+from simulator.state import auto_register
 
 # Import heat flow tracking
 from ..heat_flow_tracker import HeatFlowProvider, ThermodynamicProperties
@@ -694,7 +694,8 @@ class EnhancedCondenserConfig:
     vacuum_system_config: VacuumSystemConfig = None
 
 
-class EnhancedCondenserPhysics(StateProviderMixin, HeatFlowProvider):
+@auto_register("SECONDARY", "condenser", allow_no_id=True)
+class EnhancedCondenserPhysics(HeatFlowProvider):
     """
     Enhanced condenser physics model with advanced degradation states
     
@@ -1146,7 +1147,7 @@ class EnhancedCondenserPhysics(StateProviderMixin, HeatFlowProvider):
         }
         
         # Add sub-model states
-        state_dict.update(self.vacuum_system.get_state_dict())
+        #state_dict.update(self.vacuum_system.get_state_dict())
         
         # Add tube degradation state
         state_dict.update({

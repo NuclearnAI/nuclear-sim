@@ -24,6 +24,7 @@ import warnings
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 import numpy as np
+from simulator.state import auto_register
 
 from ..turbine.lubrication_base import BaseLubricationSystem, BaseLubricationConfig, LubricationComponent
 
@@ -64,6 +65,7 @@ class FeedwaterPumpLubricationConfig(BaseLubricationConfig):
     oil_analysis_interval: float = 500.0        # hours (3 weeks)
 
 
+@auto_register("SECONDARY", "feedwater", id_source="config.system_id")
 class FeedwaterPumpLubricationSystem(BaseLubricationSystem):
     """
     Feedwater pump-specific lubrication system implementation
@@ -353,7 +355,7 @@ class FeedwaterPumpLubricationSystem(BaseLubricationSystem):
         total_bearing_wear = motor_bearing_wear + pump_bearing_wear + thrust_bearing_wear
         self.vibration_increase = total_bearing_wear * 0.1  # mm/s per % wear
     
-    def get_pump_lubrication_state(self) -> Dict[str, float]:
+    def get_state_dict(self) -> Dict[str, float]:
         """Get pump-specific lubrication state for integration with pump models"""
         return {
             # Oil system state (replaces individual pump oil tracking)
@@ -479,7 +481,7 @@ def integrate_lubrication_with_pump(pump, lubrication_system: FeedwaterPumpLubri
             )
             
             # Get lubrication state for pump integration
-            lubrication_state = lubrication_system.get_pump_lubrication_state()
+            lubrication_state = lubrication_system.get_state_dict()
             
             # Update pump state with lubrication effects
             pump.state.oil_level = lubrication_state['oil_level']

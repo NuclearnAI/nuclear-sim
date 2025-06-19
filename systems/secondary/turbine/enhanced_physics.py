@@ -24,7 +24,7 @@ from typing import Dict, List, Optional, Tuple, Any
 import numpy as np
 
 # Import state management interfaces
-from simulator.state import StateProviderMixin
+from simulator.state import auto_register 
 
 # Import heat flow tracking
 from ..heat_flow_tracker import HeatFlowProvider, ThermodynamicProperties
@@ -113,7 +113,7 @@ class EnhancedTurbineConfig:
     """
     
     # System configuration
-    system_id: str = "ETC-001"               # Enhanced turbine system identifier
+    system_id: str = "T-001"               # Enhanced turbine system identifier
     
     # Subsystem configurations
     stage_system_config: TurbineStageSystemConfig = field(default_factory=TurbineStageSystemConfig)
@@ -435,8 +435,8 @@ class TurbineProtectionSystem:
         self.trip_timers = {key: 0.0 for key in self.trip_timers}
         self.emergency_actions = {key: False for key in self.emergency_actions}
 
-
-class EnhancedTurbinePhysics(StateProviderMixin, HeatFlowProvider):
+@auto_register("SECONDARY", "turbine", allow_no_id=True)
+class EnhancedTurbinePhysics(HeatFlowProvider):
     """
     Enhanced turbine physics model - analogous to EnhancedCondenserPhysics
     

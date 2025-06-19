@@ -21,6 +21,7 @@ import warnings
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 import numpy as np
+from simulator.state import auto_register
 
 from .vacuum_pump import SteamJetEjector, SteamEjectorConfig
 
@@ -263,6 +264,7 @@ class VacuumControlLogic:
         return commands
 
 
+@auto_register("SECONDARY", "condenser", id_source="config.system_id")
 class VacuumSystem:
     """
     Complete vacuum system model for PWR condenser
@@ -284,6 +286,7 @@ class VacuumSystem:
     
     def __init__(self, config: Optional[VacuumSystemConfig] = None):
         """Initialize vacuum system model"""
+
         if config is None:
             # Create default configuration with two ejectors
             ejector_configs = [
@@ -582,10 +585,11 @@ class VacuumSystem:
             'vacuum_system_operating_hours': self.operating_hours
         }
         
+        '''
         # Add individual ejector states
         for ejector in self.ejectors.values():
             state_dict.update(ejector.get_state_dict())
-        
+        '''
         return state_dict
     
     def reset(self) -> None:

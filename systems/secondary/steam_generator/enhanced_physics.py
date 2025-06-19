@@ -18,7 +18,7 @@ from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, field
 
 # Import state management interfaces
-from simulator.state import StateProviderMixin
+from simulator.state import auto_register
 
 # Import heat flow tracking
 from ..heat_flow_tracker import HeatFlowProvider, ThermodynamicProperties
@@ -67,7 +67,8 @@ class EnhancedSteamGeneratorConfig:
     system_optimization: bool = True                    # Enable system optimization
 
 
-class EnhancedSteamGeneratorPhysics(StateProviderMixin, HeatFlowProvider):
+@auto_register("SECONDARY", "steam_generator", allow_no_id=True)
+class EnhancedSteamGeneratorPhysics(HeatFlowProvider):
     """
     Enhanced steam generator physics system - orchestrates multiple steam generators
     
@@ -84,11 +85,11 @@ class EnhancedSteamGeneratorPhysics(StateProviderMixin, HeatFlowProvider):
     - Performance optimization
     - System-level protection logic
     
-    Implements StateProviderMixin for automatic state collection with proper naming.
+    Uses @auto_register decorator for automatic state collection with proper naming.
     """
     
     def __init__(self, config: Optional[EnhancedSteamGeneratorConfig] = None):
-        """Initialize enhanced steam generator physics system"""
+        """Initialize enhanced steam generator physics model"""
         if config is None:
             config = EnhancedSteamGeneratorConfig()
         
@@ -98,6 +99,7 @@ class EnhancedSteamGeneratorPhysics(StateProviderMixin, HeatFlowProvider):
         self.steam_generators = []
         for i in range(config.num_steam_generators):
             sg_config = config.sg_system_config.sg_config
+            sg_config.generator_id = f"SG-{i}"
             sg = SteamGenerator(sg_config)
             self.steam_generators.append(sg)
         
@@ -347,12 +349,6 @@ class EnhancedSteamGeneratorPhysics(StateProviderMixin, HeatFlowProvider):
             'system_load_demand': self.load_demand,
             'system_num_steam_generators': self.config.num_steam_generators
         }
-        
-        # Add individual SG states
-        for i, sg in enumerate(self.steam_generators):
-            sg_state = sg.get_state_dict()
-            for key, value in sg_state.items():
-                state_dict[f'sg_{i+1}_{key}'] = value
         
         return state_dict
     

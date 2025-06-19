@@ -19,7 +19,7 @@ from systems.secondary import SecondaryReactorPhysics
 from systems.primary.reactor.reactivity_model import create_equilibrium_state
 
 # Import the enhanced state management system
-from simulator.state import StateManager, StateProviderMixin, StateProvider, StateVariable, StateCategory
+from simulator.state import StateManager, StateProvider, StateVariable, StateCategory
 
 warnings.filterwarnings("ignore")
 
@@ -46,17 +46,13 @@ class NuclearPlantSimulator:
         else:
             self.secondary_physics = None
         
-        # Initialize state management system with auto-discovery
+        # Initialize state management system with component discovery
         if self.enable_state_management:
             self.state_manager = StateManager(max_rows=max_state_rows, auto_manage_memory=True)
             
-            # Automatically discover and register all StateProvider components
-            root_systems = [self.primary_physics]
-            if self.enable_secondary and self.secondary_physics is not None:
-                root_systems.append(self.secondary_physics)
-            
-            self.state_manager.auto_discover_providers(root_systems)
-            print(f"State management initialized with auto-discovery: {self.state_manager}")
+            # Discover and register components that used @auto_register decorator
+            self.state_manager.discover_registered_components()
+            print(f"State management initialized with component discovery: {self.state_manager}")
         else:
             self.state_manager = None
         

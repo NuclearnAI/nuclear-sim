@@ -19,7 +19,7 @@ from typing import Dict, List, Optional, Tuple, Any
 import numpy as np
 
 # Import state management interfaces
-from simulator.state import StateProviderMixin
+from simulator.state import auto_register 
 
 warnings.filterwarnings("ignore")
 
@@ -116,7 +116,8 @@ __all__ = [
 ]
 
 
-class PrimaryReactorPhysics(StateProviderMixin):
+@auto_register("PRIMARY", "reactor", allow_no_id=True)
+class PrimaryReactorPhysics:
     """
     Integrated primary reactor physics system
     

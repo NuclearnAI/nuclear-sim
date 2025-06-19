@@ -22,6 +22,7 @@ import warnings
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 import numpy as np
+from simulator.state import auto_register
 
 warnings.filterwarnings("ignore")
 
@@ -112,6 +113,7 @@ class TurbineStageSystemConfig:
     max_extraction_variation: float = 0.1    # Maximum extraction flow variation
 
 
+@auto_register("SECONDARY", "turbine", id_source="config.stage_id")
 class TurbineStage:
     """
     Individual turbine stage model - analogous to individual SteamJetEjector
@@ -189,7 +191,70 @@ class TurbineStage:
         self.inlet_pressure = inlet_pressure
         self.inlet_temperature = inlet_temperature
         self.inlet_flow = inlet_flow
-        self.outlet_pressure = outlet_pressure
+        
+        # OPTION A: SMART PRESSURE MANAGEMENT WITH OPERATING CONDITION RESPONSIVENESS
+        # Calculate design pressure ratio for this stage
+        design_pressure_ratio = self.config.design_outlet_pressure / self.config.design_inlet_pressure
+        
+        # Calculate operating condition factors
+        load_factor = self.inlet_flow / self.config.design_steam_flow if self.config.design_steam_flow > 0 else 1.0
+        load_factor = np.clip(load_factor, 0.3, 1.5)  # Reasonable operating range
+        
+        # Calculate steam condition factors
+        design_temp = 285.8  # °C typical PWR steam temperature
+        temp_factor = (inlet_temperature + 273.15) / (design_temp + 273.15)
+        temp_factor = np.clip(temp_factor, 0.8, 1.2)  # Reasonable temperature range
+        
+        # Adjust pressure ratio based on operating conditions
+        # Higher load = more pressure drop (more work extraction)
+        # Higher temperature = more efficient expansion (more pressure drop)
+        load_adjustment = 0.9 + 0.2 * load_factor  # Range: 0.96 to 1.2
+        temp_adjustment = 0.95 + 0.1 * (temp_factor - 1.0)  # Range: 0.93 to 1.07
+        
+        # Calculate adjusted pressure ratio (more expansion at higher loads/temps)
+        adjusted_pressure_ratio = design_pressure_ratio * load_adjustment * temp_adjustment
+        adjusted_pressure_ratio = np.clip(adjusted_pressure_ratio, 
+                                        design_pressure_ratio * 0.85,  # Minimum: 15% more expansion
+                                        design_pressure_ratio * 1.15)  # Maximum: 15% less expansion
+        
+        # Calculate physics-based outlet pressure
+        physics_based_outlet_pressure = inlet_pressure * adjusted_pressure_ratio
+        
+        # CRITICAL VALIDATION: Ensure outlet pressure is always less than inlet pressure
+        if outlet_pressure >= inlet_pressure:
+            print(f"WARNING: Stage {self.config.stage_id} - Invalid pressure ratio detected!")
+            print(f"  Requested: Inlet {inlet_pressure:.3f} MPa → Outlet {outlet_pressure:.3f} MPa (ratio: {outlet_pressure/inlet_pressure:.4f})")
+            print(f"  Using physics-based: Inlet {inlet_pressure:.3f} MPa → Outlet {physics_based_outlet_pressure:.3f} MPa (ratio: {adjusted_pressure_ratio:.4f})")
+            print(f"  Operating conditions: Load factor {load_factor:.3f}, Temp factor {temp_factor:.3f}")
+            
+            # Use physics-based pressure
+            self.outlet_pressure = physics_based_outlet_pressure
+        else:
+            # Requested outlet pressure is valid, but ensure it's within reasonable bounds
+            # Allow some flexibility but prevent extreme deviations from design
+            
+            # Special handling for final LP stage (LP-6) which must reach condenser vacuum
+            if self.config.stage_id == "LP-6":
+                # LP-6 must be able to reach condenser pressure (0.007 MPa target)
+                # Based on condenser/vacuum system design: alarm at 0.010 MPa, trip at 0.012 MPa
+                min_allowed_pressure = 0.002  # Deep vacuum capability
+                max_allowed_pressure = 0.009  # Below condenser alarm threshold
+            else:
+                # Normal pressure validation for other stages
+                min_allowed_pressure = inlet_pressure * (design_pressure_ratio * 0.7)  # 30% more expansion than design
+                max_allowed_pressure = inlet_pressure * (design_pressure_ratio * 1.3)  # 30% less expansion than design
+            
+            if outlet_pressure < min_allowed_pressure:
+                print(f"INFO: Stage {self.config.stage_id} - Outlet pressure too low, limiting to reasonable range")
+                print(f"  Requested: {outlet_pressure:.3f} MPa, Limited to: {min_allowed_pressure:.3f} MPa")
+                self.outlet_pressure = min_allowed_pressure
+            elif outlet_pressure > max_allowed_pressure:
+                print(f"INFO: Stage {self.config.stage_id} - Outlet pressure too high, limiting to reasonable range")
+                print(f"  Requested: {outlet_pressure:.3f} MPa, Limited to: {max_allowed_pressure:.3f} MPa")
+                self.outlet_pressure = max_allowed_pressure
+            else:
+                # Requested pressure is reasonable, use it
+                self.outlet_pressure = outlet_pressure
         
         # Calculate inlet properties
         self.inlet_enthalpy = self._steam_enthalpy(inlet_temperature, inlet_pressure)
@@ -215,11 +280,11 @@ class TurbineStage:
         # Flow through stage after extraction
         self.outlet_flow = self.inlet_flow - self.extraction_flow
         
-        # Isentropic expansion calculation
+        # Isentropic expansion calculation using the CORRECTED outlet pressure
         outlet_temp_isentropic = self._isentropic_expansion_temperature(
-            inlet_temperature, inlet_pressure, outlet_pressure
+            inlet_temperature, inlet_pressure, self.outlet_pressure
         )
-        outlet_enthalpy_isentropic = self._steam_enthalpy(outlet_temp_isentropic, outlet_pressure)
+        outlet_enthalpy_isentropic = self._steam_enthalpy(outlet_temp_isentropic, self.outlet_pressure)
         
         # Actual expansion with efficiency losses and degradation effects
         total_efficiency = (self.actual_efficiency * 
@@ -230,24 +295,19 @@ class TurbineStage:
         # Enthalpy drop calculation with validation
         isentropic_enthalpy_drop = self.inlet_enthalpy - outlet_enthalpy_isentropic
         
-        # Critical Fix: Ensure isentropic enthalpy drop is positive (expansion should reduce enthalpy)
+        # Since we've already corrected the pressure, enthalpy drop should be positive
+        # But add a safety check just in case
         if isentropic_enthalpy_drop <= 0:
-            # Log the issue and apply corrective action
-            print(f"WARNING: Stage {self.config.stage_id} - Negative isentropic enthalpy drop: {isentropic_enthalpy_drop:.2f} kJ/kg")
-            print(f"  Inlet: P={inlet_pressure:.3f} MPa, T={inlet_temperature:.1f}°C, h={self.inlet_enthalpy:.1f} kJ/kg")
-            print(f"  Outlet: P={outlet_pressure:.3f} MPa, T={outlet_temp_isentropic:.1f}°C, h={outlet_enthalpy_isentropic:.1f} kJ/kg")
+            # This should rarely happen now that pressure is corrected
+            print(f"INFO: Stage {self.config.stage_id} - Enthalpy drop still negative after pressure correction: {isentropic_enthalpy_drop:.2f} kJ/kg")
+            print(f"  Using corrected pressures: Inlet {inlet_pressure:.3f} MPa → Outlet {self.outlet_pressure:.3f} MPa")
             
-            # Force a minimum positive enthalpy drop based on pressure ratio
-            pressure_ratio = outlet_pressure / inlet_pressure
-            if pressure_ratio < 1.0:  # Valid expansion
-                # Estimate minimum enthalpy drop based on pressure drop
-                min_enthalpy_drop = 50.0 * (1.0 - pressure_ratio)  # Approximate 50 kJ/kg per unit pressure ratio
-                isentropic_enthalpy_drop = max(min_enthalpy_drop, 10.0)  # Minimum 10 kJ/kg
-            else:
-                # Invalid pressure ratio - force small positive drop
-                isentropic_enthalpy_drop = 10.0
+            # Force a minimum positive enthalpy drop based on corrected pressure ratio
+            pressure_ratio = self.outlet_pressure / inlet_pressure
+            min_enthalpy_drop = 50.0 * (1.0 - pressure_ratio)  # Approximate 50 kJ/kg per unit pressure ratio
+            isentropic_enthalpy_drop = max(min_enthalpy_drop, 10.0)  # Minimum 10 kJ/kg
             
-            print(f"  Corrected to: {isentropic_enthalpy_drop:.2f} kJ/kg")
+            print(f"  Corrected enthalpy drop to: {isentropic_enthalpy_drop:.2f} kJ/kg")
         
         actual_enthalpy_drop = total_efficiency * isentropic_enthalpy_drop
         
@@ -387,17 +447,17 @@ class TurbineStage:
     def get_state_dict(self) -> Dict[str, float]:
         """Get stage state for monitoring"""
         return {
-            f'{self.config.stage_id}_inlet_pressure': self.inlet_pressure,
-            f'{self.config.stage_id}_outlet_pressure': self.outlet_pressure,
-            f'{self.config.stage_id}_inlet_temperature': self.inlet_temperature,
-            f'{self.config.stage_id}_outlet_temperature': self.outlet_temperature,
-            f'{self.config.stage_id}_power_output': self.power_output,
-            f'{self.config.stage_id}_efficiency': self.actual_efficiency,
-            f'{self.config.stage_id}_extraction_flow': self.extraction_flow,
-            f'{self.config.stage_id}_loading_factor': self.loading_factor,
-            f'{self.config.stage_id}_blade_condition': self.blade_condition_factor,
-            f'{self.config.stage_id}_deposit_thickness': self.deposit_thickness,
-            f'{self.config.stage_id}_operating_hours': self.operating_hours
+            f'inlet_pressure': self.inlet_pressure,
+            f'outlet_pressure': self.outlet_pressure,
+            f'inlet_temperature': self.inlet_temperature,
+            f'outlet_temperature': self.outlet_temperature,
+            f'power_output': self.power_output,
+            f'efficiency': self.actual_efficiency,
+            f'extraction_flow': self.extraction_flow,
+            f'loading_factor': self.loading_factor,
+            f'blade_condition': self.blade_condition_factor,
+            f'deposit_thickness': self.deposit_thickness,
+            f'operating_hours': self.operating_hours
         }
     
     def reset(self) -> None:
@@ -628,6 +688,7 @@ class TurbineStageControlLogic:
         return commands
 
 
+@auto_register("SECONDARY", "turbine", id_source="config.system_id")
 class TurbineStageSystem:
     """
     Multi-stage turbine system - analogous to VacuumSystem
@@ -707,7 +768,7 @@ class TurbineStageSystem:
                                          inlet_flow: float,
                                          extraction_demands: Dict[str, float]) -> Dict[str, float]:
         """
-        Calculate steam expansion through all stages
+        Calculate steam expansion through all stages using realistic turbine design principles
         
         Args:
             inlet_pressure: Turbine inlet pressure (MPa)
@@ -734,9 +795,93 @@ class TurbineStageSystem:
         current_temperature = inlet_temperature
         current_flow = inlet_flow
         
-        for stage_id, stage in sorted_stages:
-            # Determine outlet pressure for this stage
-            outlet_pressure = stage.config.design_outlet_pressure
+        # Calculate dynamic pressure ratios based on actual steam conditions
+        def get_dynamic_pressure_ratio(stage_id: str, stage_position: int, total_stages: int, 
+                                     current_pressure: float, inlet_pressure: float, 
+                                     inlet_flow: float) -> float:
+            """
+            Calculate dynamic pressure ratio that responds to actual steam conditions:
+            - Higher steam flow = more pressure drop (more work extraction)
+            - Maintains proper pressure progression through turbine
+            - Responds to changes in inlet conditions from steam generators
+            """
+            # Get the stage object to access design parameters
+            stage = self.stages[stage_id]
+            design_pressure_ratio = stage.config.design_outlet_pressure / stage.config.design_inlet_pressure
+            
+            # Calculate load factor based on actual vs design steam flow
+            design_flow = stage.config.design_steam_flow
+            load_factor = inlet_flow / design_flow if design_flow > 0 else 1.0
+            load_factor = np.clip(load_factor, 0.3, 1.5)  # Reasonable operating range
+            
+            # Calculate pressure factor based on actual vs design inlet pressure
+            design_inlet_pressure = stage.config.design_inlet_pressure
+            pressure_factor = current_pressure / design_inlet_pressure if design_inlet_pressure > 0 else 1.0
+            pressure_factor = np.clip(pressure_factor, 0.5, 1.5)  # Reasonable pressure range
+            
+            # Adjust pressure ratio based on operating conditions
+            # Higher load = more pressure drop (more work extraction)
+            # Higher pressure = more potential for expansion
+            load_adjustment = 0.85 + 0.3 * (load_factor - 1.0)  # Range: 0.64 to 1.0
+            pressure_adjustment = 0.9 + 0.2 * (pressure_factor - 1.0)  # Range: 0.8 to 1.1
+            
+            # Calculate dynamic pressure ratio
+            dynamic_ratio = design_pressure_ratio * load_adjustment * pressure_adjustment
+            
+            # Apply stage-specific limits based on turbine design
+            if stage_id.startswith('HP'):
+                # HP stages: limit pressure ratio range
+                min_ratio = 0.65  # Maximum expansion
+                max_ratio = 0.95  # Minimum expansion
+            elif stage_id.startswith('LP'):
+                # LP stages: more aggressive expansion allowed
+                min_ratio = 0.35  # Very aggressive expansion for LP stages
+                max_ratio = 0.85  # Moderate expansion
+            else:
+                min_ratio = 0.60
+                max_ratio = 0.90
+            
+            # Ensure final stage reaches condenser pressure
+            if stage_id == "LP-6":
+                # LP-6 must reach condenser vacuum regardless of other factors
+                target_outlet = 0.007  # MPa condenser pressure
+                calculated_ratio = target_outlet / current_pressure
+                dynamic_ratio = max(calculated_ratio, 0.001)  # Minimum ratio to prevent division issues
+            else:
+                dynamic_ratio = np.clip(dynamic_ratio, min_ratio, max_ratio)
+            
+            return dynamic_ratio
+        
+        final_pressure = 0.007  # MPa - typical condenser pressure
+        
+        for i, (stage_id, stage) in enumerate(sorted_stages):
+            # Get dynamic pressure ratio that responds to steam conditions
+            pressure_ratio = get_dynamic_pressure_ratio(stage_id, i, len(sorted_stages), 
+                                                      current_pressure, inlet_pressure, inlet_flow)
+            
+            # Calculate outlet pressure
+            outlet_pressure = current_pressure * pressure_ratio
+            
+            # Ensure we don't go below condenser pressure
+            outlet_pressure = max(outlet_pressure, final_pressure)
+            
+            # For final stages, ensure we actually reach condenser pressure
+            remaining_stages = len(sorted_stages) - i - 1
+            if remaining_stages == 0:
+                # Last stage must reach condenser pressure
+                outlet_pressure = final_pressure
+            elif remaining_stages == 1:
+                # Second to last stage: leave room for final stage
+                min_final_ratio = 0.5  # Minimum ratio for final stage
+                max_pressure_for_next = final_pressure / min_final_ratio
+                outlet_pressure = max(outlet_pressure, max_pressure_for_next)
+            
+            # Validate pressure drop
+            if outlet_pressure >= current_pressure:
+                print(f"WARNING: Stage {stage_id} - No pressure drop! Inlet: {current_pressure:.3f} MPa, Calculated outlet: {outlet_pressure:.3f} MPa")
+                # Force a minimum 5% pressure drop
+                outlet_pressure = current_pressure * 0.95
+                outlet_pressure = max(outlet_pressure, final_pressure)
             
             # Get extraction demand for this stage
             extraction_demand = extraction_demands.get(stage_id, 0.0)

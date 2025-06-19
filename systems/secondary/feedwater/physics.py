@@ -25,7 +25,7 @@ from typing import Dict, List, Optional, Tuple, Any
 import numpy as np
 
 # Import state management interfaces
-from simulator.state import StateProvider, StateVariable, StateCategory, make_state_name, StateProviderMixin
+from simulator.state import StateProvider, StateVariable, StateCategory, make_state_name, auto_register
 
 # Import heat flow tracking
 from ..heat_flow_tracker import HeatFlowProvider, ThermodynamicProperties
@@ -79,7 +79,8 @@ class EnhancedFeedwaterConfig:
     predictive_maintenance: bool = True                  # Enable predictive maintenance
 
 
-class EnhancedFeedwaterPhysics(StateProviderMixin, HeatFlowProvider):
+@auto_register("SECONDARY", "feedwater", allow_no_id=True)
+class EnhancedFeedwaterPhysics(HeatFlowProvider):
     """
     Enhanced feedwater physics model - analogous to EnhancedCondenserPhysics
     
@@ -99,7 +100,7 @@ class EnhancedFeedwaterPhysics(StateProviderMixin, HeatFlowProvider):
     - Mechanical wear tracking and prediction
     - Protection logic with emergency response
     
-    Implements StateProviderMixin for automatic state collection with proper naming.
+    Uses @auto_register decorator for automatic state collection with proper naming.
     """
     
     def __init__(self, config: Optional[EnhancedFeedwaterConfig] = None):
@@ -439,14 +440,12 @@ class EnhancedFeedwaterPhysics(StateProviderMixin, HeatFlowProvider):
         }
         
         # Add subsystem states
-        state_dict.update(self.pump_system.get_state_dict())
         state_dict.update(self.level_control.get_state_dict())
         state_dict.update(self.water_quality.get_state_dict())
         state_dict.update(self.diagnostics.get_state_dict())
         state_dict.update(self.protection_system.get_state_dict())
         
-        prefixed = {f"feedwater.{key}": value for key, value in state_dict.items()}
-        return prefixed
+        return state_dict 
     
     def get_heat_flows(self) -> Dict[str, float]:
         """

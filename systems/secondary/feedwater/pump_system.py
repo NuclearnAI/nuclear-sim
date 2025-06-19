@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 import warnings
 import time
+from simulator.state import auto_register
 
 # Import base classes from primary pump models
 from systems.primary.coolant.pump_models import (
@@ -93,6 +94,7 @@ class FeedwaterPumpState(BasePumpState):
     head_degradation_factor: float = 1.0        # Head capacity multiplier
 
 
+@auto_register("SECONDARY", "feedwater", id_source="config.pump_id")
 class FeedwaterPump(BasePump):
     """
     Enhanced feedwater pump model
@@ -108,8 +110,7 @@ class FeedwaterPump(BasePump):
     def __init__(self, config: FeedwaterPumpConfig):
         """Initialize feedwater pump with configuration"""
         # Initialize base pump with feedwater-specific parameters
-        super().__init__(config.pump_id, "feedwater", config.rated_flow, FeedwaterPumpState)
-        
+        BasePump.__init__(self, config.pump_id, "feedwater", config.rated_flow, FeedwaterPumpState)
         self.config = config
         
         # Feedwater-specific performance parameters
@@ -252,7 +253,7 @@ class FeedwaterPump(BasePump):
     def _check_protection_systems(self, system_conditions: Dict):
         """Check feedwater pump protection systems"""
         # Call base class protection first
-        super()._check_protection_systems(system_conditions)
+        BasePump._check_protection_systems(self, system_conditions)
         
         # If already tripped by base class, don't check further
         if self.state.trip_active:
@@ -406,7 +407,7 @@ class FeedwaterPump(BasePump):
             control_inputs = {}
         
         # Call base class update first
-        result = super().update_pump(dt, system_conditions, control_inputs)
+        result = BasePump.update_pump(self, dt, system_conditions, control_inputs)
         
         # Run enhanced simulations
         self._simulate_cavitation(dt, system_conditions)
@@ -645,6 +646,21 @@ class FeedwaterPump(BasePump):
         self.flow_demand = self.config.rated_flow
         self.auto_level_control = True
 
+    def get_state_dict(self):
+        state_dict = {
+            f'flow_rate': self.state.flow_rate,
+            f'power_consumption': self.state.power_consumption,
+            f'speed_percent': self.state.speed_percent,
+            f'status': self.state.status.value,
+            f'available': float(self.state.available),
+            f'trip_active': float(self.state.trip_active),
+            f'npsh_available': self.state.npsh_available,
+            f'cavitation_intensity': self.state.cavitation_intensity,
+            f'impeller_wear': self.state.impeller_wear,
+            f'bearing_wear': self.state.bearing_wear,
+            f'vibration_level': self.state.vibration_level
+        }
+        return state_dict
 
 @dataclass
 class FeedwaterPumpSystemConfig:
@@ -661,6 +677,7 @@ class FeedwaterPumpSystemConfig:
     max_running_pumps: int = 4                         # Maximum pumps allowed
 
 
+@auto_register("SECONDARY", "feedwater", allow_no_id=True)
 class FeedwaterPumpSystem:
     """
     Complete feedwater pump system for PWR steam generators
@@ -915,31 +932,6 @@ class FeedwaterPumpSystem:
             'pump_system_num_running': len(self.running_pumps),
             'pump_system_available': float(self.system_available)
         }
-        
-        # Add individual pump states
-        for pump_id, pump in self.pumps.items():
-            prefix = f'{pump_id}_'
-            state_dict.update({
-                f'{prefix}flow_rate': pump.state.flow_rate,
-                f'{prefix}power_consumption': pump.state.power_consumption,
-                f'{prefix}speed_percent': pump.state.speed_percent,
-                f'{prefix}status': pump.state.status.value,
-                f'{prefix}available': float(pump.state.available),
-                f'{prefix}trip_active': float(pump.state.trip_active),
-                f'{prefix}npsh_available': pump.state.npsh_available,
-                f'{prefix}cavitation_intensity': pump.state.cavitation_intensity,
-                f'{prefix}impeller_wear': pump.state.impeller_wear,
-                f'{prefix}bearing_wear': pump.state.bearing_wear,
-                f'{prefix}vibration_level': pump.state.vibration_level
-            })
-        
-        # Add lubrication system states
-        for pump_id, lubrication_system in self.pump_lubrication_systems.items():
-            lubrication_state = lubrication_system.get_state_dict()
-            for key, value in lubrication_state.items():
-                # Replace the system ID with pump-specific prefix
-                new_key = key.replace(lubrication_system.config.system_id.lower(), f'pump_{pump_id.lower()}_lubrication')
-                state_dict[new_key] = value
         
         return state_dict
     
