@@ -144,7 +144,7 @@ def run_basic_simulation(duration_seconds: int = 300) -> pd.DataFrame:
 
     return pd.DataFrame(data)
 # Run the simulation
-basic_data = run_basic_simulation(500)
+basic_data = run_basic_simulation(1000)
 
 
 # ## Plot Basic Results
@@ -223,9 +223,9 @@ print(simulator.state_manager.get_data_info())
 # In[6]:
 
 
-print(simulator.state_manager.get_available_variables())
+#print(simulator.state_manager.get_available_variables())
 
-print(simulator.state_manager.get_components_by_system("secondary"))
+#print(simulator.state_manager.get_components_by_system("secondary"))
 
 
 # ## Plotting
