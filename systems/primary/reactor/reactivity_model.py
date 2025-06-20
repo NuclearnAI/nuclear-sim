@@ -12,6 +12,8 @@ from typing import Dict, Optional, Tuple
 
 import numpy as np
 
+from ..component_descriptions import REACTOR_PHYSICS_COMPONENT_DESCRIPTIONS
+
 warnings.filterwarnings("ignore")
 
 

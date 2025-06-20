@@ -21,9 +21,7 @@ from .physics import (
     TubeDegradationModel,
     TubeDegradationConfig,
     AdvancedFoulingModel,
-    FoulingConfig,
-    WaterQualityModel,
-    WaterQualityConfig
+    FoulingConfig
 )
 
 # Import vacuum system components
@@ -51,10 +49,6 @@ __all__ = [
     # Fouling models
     'AdvancedFoulingModel',
     'FoulingConfig',
-    
-    # Water quality
-    'WaterQualityModel',
-    'WaterQualityConfig',
     
     # Vacuum system
     'VacuumSystem',

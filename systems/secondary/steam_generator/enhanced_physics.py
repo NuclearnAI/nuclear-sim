@@ -23,8 +23,12 @@ from simulator.state import auto_register
 # Import heat flow tracking
 from ..heat_flow_tracker import HeatFlowProvider, ThermodynamicProperties
 
-from .steam_generator import SteamGenerator, SteamGeneratorConfig
+# Import chemistry flow tracking
+from ..chemistry_flow_tracker import ChemistryFlowProvider, ChemicalSpecies
 
+from .steam_generator import SteamGenerator, SteamGeneratorConfig
+from ..water_chemistry import WaterChemistry, WaterChemistryConfig
+from ..component_descriptions import STEAM_GENERATOR_COMPONENT_DESCRIPTIONS
 
 @dataclass
 class SteamGeneratorSystemConfig:
@@ -67,8 +71,9 @@ class EnhancedSteamGeneratorConfig:
     system_optimization: bool = True                    # Enable system optimization
 
 
-@auto_register("SECONDARY", "steam_generator", allow_no_id=True)
-class EnhancedSteamGeneratorPhysics(HeatFlowProvider):
+@auto_register("SECONDARY", "steam_generator", allow_no_id=True,
+               description=STEAM_GENERATOR_COMPONENT_DESCRIPTIONS['enhanced_steam_generator_physics'])
+class EnhancedSteamGeneratorPhysics(HeatFlowProvider, ChemistryFlowProvider):
     """
     Enhanced steam generator physics system - orchestrates multiple steam generators
     
@@ -88,19 +93,26 @@ class EnhancedSteamGeneratorPhysics(HeatFlowProvider):
     Uses @auto_register decorator for automatic state collection with proper naming.
     """
     
-    def __init__(self, config: Optional[EnhancedSteamGeneratorConfig] = None):
+    def __init__(self, config: Optional[EnhancedSteamGeneratorConfig] = None, water_chemistry: Optional[WaterChemistry] = None):
         """Initialize enhanced steam generator physics model"""
         if config is None:
             config = EnhancedSteamGeneratorConfig()
         
         self.config = config
         
-        # Initialize individual steam generators
+        # Initialize or use provided unified water chemistry system
+        if water_chemistry is not None:
+            self.water_chemistry = water_chemistry
+        else:
+            # Create own instance if not provided (for standalone use)
+            self.water_chemistry = WaterChemistry(WaterChemistryConfig())
+        
+        # Initialize individual steam generators with shared water chemistry
         self.steam_generators = []
         for i in range(config.num_steam_generators):
             sg_config = config.sg_system_config.sg_config
             sg_config.generator_id = f"SG-{i}"
-            sg = SteamGenerator(sg_config)
+            sg = SteamGenerator(sg_config, water_chemistry=self.water_chemistry)
             self.steam_generators.append(sg)
         
         # System state variables
@@ -158,10 +170,24 @@ class EnhancedSteamGeneratorPhysics(HeatFlowProvider):
         # Simplified load distribution (core coordination function)
         individual_demands = self._calculate_load_distribution(actual_total_steam_flow, primary_conditions)
         
+        # Update unified water chemistry system if conditions provided
+        if 'water_chemistry_update' in system_conditions:
+            self.water_chemistry.update_chemistry(
+                system_conditions['water_chemistry_update'],
+                dt / 60.0  # Convert seconds to hours
+            )
+        
         # Direct update of individual steam generators (minimal wrapper processing)
         sg_results = []
 
         for i, sg in enumerate(self.steam_generators):
+            # Prepare system conditions for individual SG (include water chemistry update if provided)
+            sg_system_conditions = None
+            if 'water_chemistry_update' in system_conditions:
+                sg_system_conditions = {
+                    'water_chemistry_update': system_conditions['water_chemistry_update']
+                }
+            
             # Direct parameter extraction - no redundant processing
             sg_result = sg.update_state(
                 primary_temp_in=primary_conditions.get('inlet_temps', [327.0] * self.config.num_steam_generators)[i],
@@ -170,7 +196,8 @@ class EnhancedSteamGeneratorPhysics(HeatFlowProvider):
                 steam_flow_out=individual_demands[i],
                 feedwater_flow_in=individual_demands[i],  # Mass balance
                 feedwater_temp=feedwater_temperature,
-                dt=dt
+                dt=dt,
+                system_conditions=sg_system_conditions
             )
             
             sg_results.append(sg_result)
@@ -354,10 +381,10 @@ class EnhancedSteamGeneratorPhysics(HeatFlowProvider):
     
     def get_heat_flows(self) -> Dict[str, float]:
         """
-        Get current heat flows for this component (MW)
+        Get current heat flows for this component (MW) with chemistry fouling effects
         
         Returns:
-            Dictionary with heat flow values in MW
+            Dictionary with heat flow values in MW including fouling losses
         """
         # Calculate primary side heat input
         primary_heat_input = self.total_thermal_power / 1e6  # Convert W to MW
@@ -375,22 +402,93 @@ class EnhancedSteamGeneratorPhysics(HeatFlowProvider):
         )
         steam_enthalpy_output = ThermodynamicProperties.enthalpy_flow_mw(self.total_steam_flow, steam_enthalpy)
         
-        # Calculate thermal losses (approximately 2% of primary heat input)
-        thermal_losses = primary_heat_input * 0.02
+        # ENHANCED: Calculate chemistry fouling effects on heat transfer
+        fouling_efficiency_factor = self._calculate_fouling_efficiency_factor()
         
-        # Calculate heat transfer efficiency
+        # Apply fouling effects to steam generation
+        fouled_steam_enthalpy_output = steam_enthalpy_output * fouling_efficiency_factor
+        
+        # Calculate fouling losses (energy lost due to reduced heat transfer efficiency)
+        fouling_losses = steam_enthalpy_output - fouled_steam_enthalpy_output
+        
+        # Calculate thermal losses (base losses + fouling losses)
+        base_thermal_losses = primary_heat_input * 0.02
+        total_thermal_losses = base_thermal_losses + fouling_losses
+        
+        # Calculate heat transfer efficiency with fouling effects
         if primary_heat_input > 0:
-            heat_transfer_efficiency = (steam_enthalpy_output - feedwater_enthalpy_input) / primary_heat_input
+            heat_transfer_efficiency = (fouled_steam_enthalpy_output - feedwater_enthalpy_input) / primary_heat_input
         else:
             heat_transfer_efficiency = 0.0
         
         return {
             'primary_heat_input': primary_heat_input,
             'feedwater_enthalpy_input': feedwater_enthalpy_input,
-            'steam_enthalpy_output': steam_enthalpy_output,
-            'thermal_losses': thermal_losses,
-            'heat_transfer_efficiency': heat_transfer_efficiency
+            'steam_enthalpy_output': fouled_steam_enthalpy_output,  # Reduced by fouling
+            'thermal_losses': total_thermal_losses,  # Includes fouling losses
+            'fouling_losses': fouling_losses,  # NEW: Chemistry-based losses
+            'heat_transfer_efficiency': heat_transfer_efficiency,  # Reduced by fouling
+            'fouling_efficiency_factor': fouling_efficiency_factor,  # NEW: Fouling impact
+            'clean_steam_enthalpy_output': steam_enthalpy_output  # NEW: What it would be without fouling
         }
+    
+    def _calculate_fouling_efficiency_factor(self) -> float:
+        """
+        Calculate efficiency reduction factor due to TSP fouling and chemistry effects
+        
+        Returns:
+            Efficiency factor (0.0-1.0) where 1.0 = no fouling, lower = more fouling
+        """
+        # Get TSP fouling parameters from water chemistry system
+        tsp_params = self.water_chemistry.get_tsp_fouling_parameters()
+        
+        # Calculate fouling resistance accumulation over operating time
+        # Using realistic TSP fouling rates from chemistry system
+        
+        # Iron fouling (magnetite formation)
+        iron_concentration = tsp_params['iron_concentration']  # ppm
+        iron_fouling_rate = iron_concentration * 1.5 * 0.001  # kg/m²/year (from config)
+        
+        # Copper fouling (copper deposits)
+        copper_concentration = tsp_params['copper_concentration']  # ppm
+        copper_fouling_rate = copper_concentration * 2.0 * 0.001  # kg/m²/year
+        
+        # Silica fouling (silica scale)
+        silica_concentration = tsp_params['silica_concentration']  # ppm
+        silica_fouling_rate = silica_concentration * 1.8 * 0.001  # kg/m²/year
+        
+        # Total fouling rate
+        total_fouling_rate = iron_fouling_rate + copper_fouling_rate + silica_fouling_rate
+        
+        # Convert fouling rate to thermal resistance accumulation
+        # Typical fouling thermal resistance: 0.0001 m²K/W per kg/m²
+        fouling_resistance_rate = total_fouling_rate * 0.0001  # m²K/W per year
+        
+        # Accumulate fouling resistance over operating time
+        operating_years = self.operating_hours / 8760.0  # Convert hours to years
+        accumulated_fouling_resistance = fouling_resistance_rate * operating_years
+        
+        # Apply temperature effects (Arrhenius relationship)
+        temperature_factor = np.exp((self.average_steam_temperature - 280.0) / 50.0)
+        accumulated_fouling_resistance *= temperature_factor
+        
+        # Apply pH effects (optimal pH around 9.2)
+        ph = tsp_params['ph']
+        ph_factor = 1.0 + 0.5 * abs(ph - 9.2)
+        accumulated_fouling_resistance *= ph_factor
+        
+        # Convert fouling resistance to efficiency factor
+        # Typical clean heat transfer coefficient: 3000 W/m²K
+        clean_htc = 3000.0  # W/m²K
+        fouled_htc = 1.0 / (1.0/clean_htc + accumulated_fouling_resistance)
+        
+        # Efficiency factor is ratio of fouled to clean heat transfer coefficient
+        efficiency_factor = fouled_htc / clean_htc
+        
+        # Ensure reasonable bounds (minimum 70% efficiency, maximum 100%)
+        efficiency_factor = np.clip(efficiency_factor, 0.7, 1.0)
+        
+        return efficiency_factor
     
     def get_enthalpy_flows(self) -> Dict[str, float]:
         """
@@ -408,6 +506,77 @@ class EnhancedSteamGeneratorPhysics(HeatFlowProvider):
             'primary_heat_input': heat_flows['primary_heat_input'],
             'thermal_efficiency': heat_flows['heat_transfer_efficiency']
         }
+    
+    def get_chemistry_flows(self) -> Dict[str, Dict[str, float]]:
+        """
+        Get chemistry flows for chemistry flow tracker integration
+        
+        Returns:
+            Dictionary with chemistry flow data
+        """
+        # Get water chemistry flows from the integrated water quality system
+        water_chemistry_flows = self.water_chemistry.get_chemistry_flows()
+        
+        # Add steam generator-specific chemistry flows
+        sg_flows = {
+            'sg_liquid_chemistry': {
+                ChemicalSpecies.PH.value: self.water_chemistry.ph,
+                ChemicalSpecies.IRON.value: self.water_chemistry.iron_concentration,
+                ChemicalSpecies.COPPER.value: self.water_chemistry.copper_concentration,
+                ChemicalSpecies.SILICA.value: self.water_chemistry.silica_concentration,
+                ChemicalSpecies.DISSOLVED_OXYGEN.value: self.water_chemistry.dissolved_oxygen,
+                ChemicalSpecies.HARDNESS.value: self.water_chemistry.hardness,
+                ChemicalSpecies.CHLORIDE.value: self.water_chemistry.chloride,
+                ChemicalSpecies.TDS.value: self.water_chemistry.total_dissolved_solids
+            },
+            'sg_steam_carryover': {
+                # Calculate steam carryover for each species
+                ChemicalSpecies.IRON.value: self.water_chemistry.iron_concentration * 0.001,  # Very low carryover
+                ChemicalSpecies.COPPER.value: self.water_chemistry.copper_concentration * 0.001,
+                ChemicalSpecies.SILICA.value: self.water_chemistry.silica_concentration * 0.02,  # Higher carryover
+                ChemicalSpecies.AMMONIA.value: self.water_chemistry.antiscalant_concentration * 0.8  # High volatility
+            }
+        }
+        
+        # Combine flows
+        combined_flows = {}
+        combined_flows.update(water_chemistry_flows)
+        combined_flows.update(sg_flows)
+        
+        return combined_flows
+    
+    def get_chemistry_state(self) -> Dict[str, float]:
+        """
+        Get current chemistry state for chemistry flow tracker
+        
+        Returns:
+            Dictionary with current chemistry concentrations
+        """
+        return self.water_chemistry.get_chemistry_state()
+    
+    def update_chemistry_effects(self, chemistry_state: Dict[str, float]) -> None:
+        """
+        Update steam generator system based on chemistry state feedback
+        
+        Args:
+            chemistry_state: Chemistry state from external systems
+        """
+        # Pass chemistry effects to the water quality system
+        self.water_chemistry.update_chemistry_effects(chemistry_state)
+        
+        # Apply chemistry effects to steam generator performance if needed
+        if 'water_aggressiveness' in chemistry_state:
+            aggressiveness = chemistry_state['water_aggressiveness']
+            # Reduce performance factor based on water aggressiveness (fouling effects)
+            chemistry_performance_factor = max(0.7, 1.0 - (aggressiveness - 1.0) * 0.05)
+            self.performance_factor *= chemistry_performance_factor
+        
+        # Apply TSP fouling effects if available
+        if 'tsp_fouling_rate' in chemistry_state:
+            fouling_rate = chemistry_state['tsp_fouling_rate']
+            # Reduce efficiency based on fouling rate
+            fouling_efficiency_factor = max(0.8, 1.0 - fouling_rate * 0.1)
+            self.system_efficiency *= fouling_efficiency_factor
     
     def reset(self) -> None:
         """Reset enhanced steam generator system to initial conditions"""
@@ -439,12 +608,25 @@ if __name__ == "__main__":
     print("Enhanced Steam Generator Physics System - Integration Test")
     print("=" * 70)
     
-    # Create enhanced steam generator system
-    enhanced_sg = EnhancedSteamGeneratorPhysics()
+    # Create unified water chemistry system
+    water_chemistry = WaterChemistry(WaterChemistryConfig())
+    
+    # Create enhanced steam generator system with unified water chemistry
+    enhanced_sg = EnhancedSteamGeneratorPhysics(water_chemistry=water_chemistry)
     
     print(f"Created system with {enhanced_sg.config.num_steam_generators} steam generators")
     print(f"Design total thermal power: {enhanced_sg.config.design_total_thermal_power/1e6:.0f} MW")
     print(f"Design total steam flow: {enhanced_sg.config.design_total_steam_flow:.0f} kg/s")
+    print()
+    
+    # Display water chemistry parameters
+    tsp_params = water_chemistry.get_tsp_fouling_parameters()
+    print(f"Unified Water Chemistry Parameters:")
+    print(f"  Iron: {tsp_params['iron_concentration']:.3f} ppm")
+    print(f"  Copper: {tsp_params['copper_concentration']:.3f} ppm")
+    print(f"  Silica: {tsp_params['silica_concentration']:.1f} ppm")
+    print(f"  pH: {tsp_params['ph']:.2f}")
+    print(f"  Dissolved Oxygen: {tsp_params['dissolved_oxygen']:.3f} ppm")
     print()
     
     # Test normal operation

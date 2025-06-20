@@ -20,8 +20,14 @@ Physical Basis:
 
 import warnings
 from dataclasses import dataclass
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple, List, Any
 from simulator.state import auto_register
+from ..component_descriptions import STEAM_GENERATOR_COMPONENT_DESCRIPTIONS
+from .tsp_fouling_model import TSPFoulingModel, TSPFoulingConfig
+from ..water_chemistry import WaterChemistry, WaterChemistryConfig
+
+# Import chemistry flow interfaces
+from ..chemistry_flow_tracker import ChemistryFlowProvider, ChemicalSpecies
 
 import numpy as np
 
@@ -81,8 +87,9 @@ class SteamGeneratorConfig:
     steam_pressure_control_gain: float = 0.05  # Proportional gain for pressure control
 
 
-@auto_register("SECONDARY", "steam_generator", id_source="config.generator_id")
-class SteamGenerator:
+@auto_register("SECONDARY", "steam_generator", id_source="config.generator_id",
+               description=STEAM_GENERATOR_COMPONENT_DESCRIPTIONS['steam_generator'])
+class SteamGenerator(ChemistryFlowProvider):
     """
     Individual steam generator physics model for PWR
     
@@ -103,9 +110,26 @@ class SteamGenerator:
     Does not inherit from StateProviderMixin to prevent duplicate registration.
     """
     
-    def __init__(self, config: Optional[SteamGeneratorConfig] = None):
+    def __init__(self, config: Optional[SteamGeneratorConfig] = None, tsp_fouling_config: Optional[TSPFoulingConfig] = None, water_chemistry: Optional[WaterChemistry] = None):
         """Initialize steam generator physics model"""
         self.config = config if config is not None else SteamGeneratorConfig()
+        
+        # Initialize or use provided unified water chemistry system
+        if water_chemistry is not None:
+            self.water_chemistry = water_chemistry
+        else:
+            # Create own instance if not provided (for standalone use)
+            self.water_chemistry = WaterChemistry(WaterChemistryConfig())
+        
+        # Initialize TSP fouling model with unique ID based on generator ID
+        if tsp_fouling_config is None:
+            tsp_fouling_config = TSPFoulingConfig()
+        
+        # Set unique TSP fouling ID based on generator ID
+        tsp_fouling_config.fouling_model_id = f"TSP-{self.config.generator_id}"
+        
+        # Initialize TSP fouling model with unified water chemistry
+        self.tsp_fouling = TSPFoulingModel(tsp_fouling_config, self.water_chemistry)
         
         # Initialize state variables to typical PWR operating conditions
         # Primary side (hot leg inlet, cold leg outlet)
@@ -231,11 +255,15 @@ class SteamGenerator:
         # Overall heat transfer coefficient
         overall_htc = 1.0 / (r_primary + r_wall + r_secondary)
         
+        # Apply TSP fouling degradation to heat transfer coefficient
+        tsp_degradation_factor = 1.0 - self.tsp_fouling.heat_transfer_degradation
+        overall_htc_with_fouling = overall_htc * tsp_degradation_factor
+        
         # Calculate effective heat transfer area based on current water level
         effective_area = self.calculate_effective_heat_transfer_area(self.water_level)
         
-        # Heat transfer rate using effective area (level-dependent)
-        heat_transfer_rate = overall_htc * effective_area * lmtd
+        # Heat transfer rate using effective area (level-dependent) and TSP fouling effects
+        heat_transfer_rate = overall_htc_with_fouling * effective_area * lmtd
         
         # ENHANCED PHYSICAL CONSTRAINTS: cannot exceed energy available from primary coolant
         # Q_max = m_dot * cp * (T_in - T_out)
@@ -490,7 +518,8 @@ class SteamGenerator:
                     steam_flow_out: float,
                     feedwater_flow_in: float,
                     feedwater_temp: float,
-                    dt: float) -> Dict[str, float]:
+                    dt: float,
+                    system_conditions: Optional[Dict[str, Any]] = None) -> Dict[str, float]:
         """
         Update steam generator state for one time step
         
@@ -533,6 +562,27 @@ class SteamGenerator:
         
         # Update secondary temperature (saturation temperature at current pressure)
         self.secondary_temperature = self._saturation_temperature(self.secondary_pressure)
+        
+        # Update unified water chemistry system if conditions provided
+        if system_conditions is not None and 'water_chemistry_update' in system_conditions:
+            self.water_chemistry.update_chemistry(
+                system_conditions['water_chemistry_update'],
+                dt / 60.0  # Convert minutes to hours
+            )
+        
+        # Calculate average flow velocity in steam generator
+        # Simplified calculation based on tube bundle geometry
+        tube_cross_section = np.pi * (self.config.tube_inner_diameter / 2.0) ** 2
+        total_flow_area = self.config.tube_count * tube_cross_section
+        avg_velocity = primary_flow / (1000.0 * total_flow_area)  # m/s (assuming water density ~1000 kg/m³)
+        
+        # Update TSP fouling state using unified water chemistry
+        # Note: dt is passed in minutes from the simulation system
+        tsp_result = self.tsp_fouling.update_fouling_state(
+            temperature=self.secondary_temperature,
+            flow_velocity=avg_velocity,
+            dt_hours=dt / 60.0  # Convert minutes to hours
+        )
         
         # Calculate performance metrics
         thermal_efficiency = heat_transfer / self.config.design_thermal_power
@@ -579,7 +629,17 @@ class SteamGenerator:
             'h_primary': ht_details['h_primary'],
             'h_secondary': ht_details['h_secondary'],
             'flow_factor': ht_details['flow_factor'],
-            'pressure_factor': ht_details['pressure_factor']
+            'pressure_factor': ht_details['pressure_factor'],
+            
+            # TSP fouling results
+            'tsp_fouling_fraction': tsp_result['fouling_fraction'],
+            'tsp_fouling_stage': tsp_result['fouling_stage'],
+            'tsp_heat_transfer_degradation': tsp_result['heat_transfer_degradation'],
+            'tsp_pressure_drop_ratio': tsp_result['pressure_drop_ratio'],
+            'tsp_operating_years': tsp_result['operating_years'],
+            'tsp_shutdown_required': tsp_result['shutdown_required'],
+            'tsp_replacement_recommended': tsp_result['replacement_recommended'],
+            'tsp_cleaning_cycles': tsp_result['cleaning_cycles']
         }
     
     # Thermodynamic property correlations
@@ -694,6 +754,32 @@ class SteamGenerator:
             'heat_flux': self.heat_flux
         }
     
+    def perform_tsp_cleaning(self, cleaning_type: str = "chemical") -> Dict[str, float]:
+        """
+        Perform TSP cleaning operation
+        
+        Args:
+            cleaning_type: Type of cleaning ("chemical" or "mechanical")
+            
+        Returns:
+            Dictionary with cleaning results
+        """
+        return self.tsp_fouling.perform_cleaning(cleaning_type)
+    
+    def check_shutdown_required(self) -> Tuple[bool, List[str]]:
+        """
+        Check if steam generator shutdown is required due to TSP fouling
+        
+        Returns:
+            Tuple of (shutdown_required, shutdown_reasons)
+        """
+        shutdown_required, shutdown_reasons = self.tsp_fouling.evaluate_shutdown_conditions()
+        return shutdown_required, [reason.value for reason in shutdown_reasons]
+    
+    def get_tsp_state(self) -> Dict[str, float]:
+        """Get current TSP fouling state"""
+        return self.tsp_fouling.get_state_dict()
+    
     def reset(self) -> None:
         """Reset to initial steady-state conditions"""
         self.primary_inlet_temp = 327.0
@@ -710,16 +796,232 @@ class SteamGenerator:
         self.heat_transfer_rate = 1085.0e6
         self.overall_htc = 0.0
         self.heat_flux = 0.0
+        
+        # Reset TSP fouling model
+        self.tsp_fouling.reset()
+    
+    # === CHEMISTRY FLOW PROVIDER INTERFACE METHODS ===
+    # These methods enable integration with chemistry_flow_tracker
+    
+    def get_chemistry_flows(self) -> Dict[str, Dict[str, float]]:
+        """
+        Get chemistry flows for chemistry flow tracker integration
+        
+        Returns:
+            Dictionary with chemistry flow data from steam generator perspective
+        """
+        # Steam generator affects chemistry through steam carryover and blowdown
+        return {
+            'steam_generator_flows': {
+                ChemicalSpecies.PH.value: self.water_chemistry.ph,
+                ChemicalSpecies.IRON.value: self.water_chemistry.iron_concentration,
+                ChemicalSpecies.COPPER.value: self.water_chemistry.copper_concentration,
+                ChemicalSpecies.SILICA.value: self.water_chemistry.silica_concentration,
+                'steam_carryover_rate': self._calculate_steam_carryover_rate(),
+                'blowdown_chemistry_removal': self._calculate_blowdown_removal_rate()
+            },
+            'steam_quality_effects': {
+                'moisture_carryover': (1.0 - self.steam_quality) * self.steam_flow_rate,
+                'steam_purity': self.steam_quality,
+                'separator_efficiency': self._calculate_separator_efficiency(),
+                'heat_transfer_chemistry_impact': self.tsp_fouling.heat_transfer_degradation
+            },
+            'tube_chemistry_effects': {
+                'tube_wall_temperature': self.tube_wall_temp,
+                'corrosion_rate': self._calculate_tube_corrosion_rate(),
+                'scale_formation_rate': self._calculate_scale_formation_rate(),
+                'chemistry_induced_stress': self._calculate_chemistry_stress_factor()
+            }
+        }
+    
+    def get_chemistry_state(self) -> Dict[str, float]:
+        """
+        Get current chemistry state from steam generator perspective
+        
+        Returns:
+            Dictionary with steam generator chemistry state
+        """
+        return {
+            'steam_generator_secondary_pressure': self.secondary_pressure,
+            'steam_generator_secondary_temperature': self.secondary_temperature,
+            'steam_generator_water_level': self.water_level,
+            'steam_generator_steam_quality': self.steam_quality,
+            'steam_generator_heat_transfer_rate': self.heat_transfer_rate,
+            'steam_generator_tube_wall_temp': self.tube_wall_temp,
+            'steam_generator_steam_flow_rate': self.steam_flow_rate,
+            'steam_generator_feedwater_flow_rate': self.feedwater_flow_rate,
+            'steam_generator_feedwater_temperature': self.feedwater_temperature,
+            'steam_generator_tsp_fouling_fraction': self.tsp_fouling.fouling_fraction,
+            'steam_generator_chemistry_impact_factor': self._calculate_chemistry_impact_factor()
+        }
+    
+    def update_chemistry_effects(self, chemistry_state: Dict[str, float]) -> None:
+        """
+        Update steam generator based on external chemistry effects
+        
+        This method allows the chemistry flow tracker to influence steam generator
+        performance based on system-wide chemistry changes.
+        
+        Args:
+            chemistry_state: Chemistry state from external systems
+        """
+        # Update water chemistry system with external effects
+        if 'water_chemistry_effects' in chemistry_state:
+            self.water_chemistry.update_chemistry_effects(chemistry_state['water_chemistry_effects'])
+        
+        # Update TSP fouling with chemistry effects
+        if 'tsp_fouling_effects' in chemistry_state:
+            self.tsp_fouling.update_chemistry_effects(chemistry_state['tsp_fouling_effects'])
+        
+        # Apply pH control effects to steam generator operation
+        if 'ph_control_effects' in chemistry_state:
+            ph_effects = chemistry_state['ph_control_effects']
+            
+            # pH control can affect steam quality through chemistry changes
+            if 'ph_stability' in ph_effects:
+                stability = ph_effects['ph_stability']
+                if stability > 0.9:  # Very stable pH
+                    # Stable pH improves steam quality by reducing carryover
+                    quality_improvement = (stability - 0.9) * 0.01  # Up to 1% improvement
+                    target_quality = min(0.999, self.steam_quality + quality_improvement)
+                    
+                    # Gradual improvement
+                    self.steam_quality += (target_quality - self.steam_quality) * 0.1
+            
+            # Chemical dosing effects on steam generator chemistry
+            if 'chemical_dosing_rate' in ph_effects:
+                dosing_rate = ph_effects['chemical_dosing_rate']
+                if dosing_rate > 0:
+                    # Chemical dosing can affect secondary side chemistry
+                    # Update water chemistry with dosing effects
+                    dosing_effects = {
+                        'chemical_additions': {
+                            ChemicalSpecies.AMMONIA.value: dosing_rate * 0.1,  # Simplified
+                            ChemicalSpecies.MORPHOLINE.value: dosing_rate * 0.05
+                        }
+                    }
+                    self.water_chemistry.update_chemistry_effects(dosing_effects)
+        
+        # Apply feedwater chemistry effects
+        if 'feedwater_chemistry_effects' in chemistry_state:
+            fw_effects = chemistry_state['feedwater_chemistry_effects']
+            
+            # Feedwater chemistry affects steam generator performance
+            if 'iron_concentration' in fw_effects:
+                iron_level = fw_effects['iron_concentration']
+                if iron_level > 0.2:  # High iron concentration
+                    # High iron can affect heat transfer through fouling
+                    fouling_increase = (iron_level - 0.2) * 0.01
+                    # Apply to TSP fouling model
+                    tsp_effects = {'iron_fouling_acceleration': fouling_increase}
+                    self.tsp_fouling.update_chemistry_effects(tsp_effects)
+            
+            # Oxygen effects on corrosion
+            if 'dissolved_oxygen' in fw_effects:
+                oxygen_level = fw_effects['dissolved_oxygen']
+                if oxygen_level > 0.01:  # High oxygen
+                    # Accelerated corrosion at high oxygen levels
+                    corrosion_factor = 1.0 + (oxygen_level - 0.01) * 10.0
+                    # This would affect tube integrity over time
+                    # For now, just track the effect
+                    self._oxygen_corrosion_factor = corrosion_factor
+        
+        # Apply system-wide chemistry balance effects
+        if 'system_chemistry_balance' in chemistry_state:
+            balance = chemistry_state['system_chemistry_balance']
+            
+            # Poor chemistry balance can affect steam generator efficiency
+            if 'balance_error' in balance:
+                error = abs(balance['balance_error'])
+                if error > 5.0:  # More than 5% error
+                    # Reduce heat transfer efficiency due to chemistry imbalance
+                    efficiency_penalty = min(0.05, error * 0.001)  # Up to 5% penalty
+                    # Apply penalty to heat transfer coefficient
+                    if hasattr(self, '_chemistry_efficiency_penalty'):
+                        self._chemistry_efficiency_penalty = efficiency_penalty
+                    else:
+                        self._chemistry_efficiency_penalty = 0.0
+    
+    def _calculate_steam_carryover_rate(self) -> float:
+        """Calculate rate of chemical carryover in steam"""
+        # Steam carryover depends on steam quality and flow rate
+        moisture_fraction = 1.0 - self.steam_quality
+        carryover_rate = moisture_fraction * self.steam_flow_rate * 0.001  # kg/s of chemicals
+        return carryover_rate
+    
+    def _calculate_blowdown_removal_rate(self) -> float:
+        """Calculate rate of chemistry removal through blowdown"""
+        # Simplified blowdown calculation
+        blowdown_rate = self.feedwater_flow_rate * 0.02  # 2% blowdown rate
+        chemistry_concentration = (self.water_chemistry.iron_concentration + 
+                                 self.water_chemistry.copper_concentration) / 1000.0  # kg/kg
+        removal_rate = blowdown_rate * chemistry_concentration  # kg/s
+        return removal_rate
+    
+    def _calculate_separator_efficiency(self) -> float:
+        """Calculate moisture separator efficiency"""
+        # Efficiency depends on water level and flow conditions
+        level_factor = min(1.0, self.water_level / 12.5)  # Normalized to normal level
+        flow_factor = min(1.0, self.config.secondary_design_flow / self.steam_flow_rate)
+        efficiency = 0.95 * level_factor * flow_factor  # Base 95% efficiency
+        return max(0.8, efficiency)  # Minimum 80% efficiency
+    
+    def _calculate_tube_corrosion_rate(self) -> float:
+        """Calculate tube corrosion rate based on chemistry"""
+        # Corrosion rate depends on temperature, pH, and oxygen
+        temp_factor = (self.tube_wall_temp - 250.0) / 100.0  # Normalized temperature effect
+        ph_factor = abs(self.water_chemistry.ph - 9.2) * 0.1  # pH deviation effect
+        oxygen_factor = self.water_chemistry.dissolved_oxygen * 100.0  # Oxygen effect
+        
+        base_corrosion_rate = 0.001  # mm/year base rate
+        corrosion_rate = base_corrosion_rate * (1.0 + temp_factor + ph_factor + oxygen_factor)
+        return max(0.0, corrosion_rate)
+    
+    def _calculate_scale_formation_rate(self) -> float:
+        """Calculate scale formation rate on tubes"""
+        # Scale formation depends on hardness, temperature, and pH
+        hardness_factor = self.water_chemistry.hardness / 150.0  # Normalized hardness
+        temp_factor = (self.tube_wall_temp - 200.0) / 100.0  # Temperature effect
+        ph_factor = max(0.0, self.water_chemistry.ph - 8.0) * 0.2  # High pH promotes scaling
+        
+        base_scale_rate = 0.01  # mm/year base rate
+        scale_rate = base_scale_rate * hardness_factor * (1.0 + temp_factor + ph_factor)
+        return max(0.0, scale_rate)
+    
+    def _calculate_chemistry_stress_factor(self) -> float:
+        """Calculate chemistry-induced stress factor on tubes"""
+        # Chemistry can cause stress through corrosion and thermal effects
+        corrosion_stress = self._calculate_tube_corrosion_rate() * 10.0
+        thermal_stress = abs(self.tube_wall_temp - 300.0) / 100.0  # Deviation from nominal
+        chemistry_stress = (corrosion_stress + thermal_stress) * 0.1
+        return min(1.0, chemistry_stress)  # Normalized stress factor
+    
+    def _calculate_chemistry_impact_factor(self) -> float:
+        """Calculate overall chemistry impact factor for steam generator"""
+        # Combine various chemistry effects
+        tsp_impact = self.tsp_fouling.heat_transfer_degradation
+        corrosion_impact = self._calculate_tube_corrosion_rate() * 0.1
+        scale_impact = self._calculate_scale_formation_rate() * 0.05
+        
+        # Overall impact (higher is worse)
+        total_impact = tsp_impact + corrosion_impact + scale_impact
+        
+        # Convert to impact factor (lower is worse performance)
+        impact_factor = max(0.5, 1.0 - total_impact)
+        return impact_factor
 
 
 # Example usage and testing
 if __name__ == "__main__":
-    # Create steam generator model
-    sg = SteamGenerator()
+    # Create unified water chemistry system
+    water_chemistry = WaterChemistry(WaterChemistryConfig())
+    
+    # Create steam generator model with unified water chemistry
+    sg = SteamGenerator(water_chemistry=water_chemistry)
     
     print("Steam Generator Physics Model - Parameter Validation")
     print("=" * 60)
-    print("Based on Westinghouse AP1000 Design")
+    print("Based on Westinghouse AP1000 Design with Unified Water Chemistry")
     print()
     
     # Display key parameters and their sources
@@ -730,6 +1032,16 @@ if __name__ == "__main__":
     print(f"  Design Power: {config.design_thermal_power/1e6:.0f} MW per SG")
     print(f"  Primary Flow: {config.primary_design_flow:.0f} kg/s per SG")
     print(f"  Secondary Flow: {config.secondary_design_flow:.0f} kg/s per SG")
+    print()
+    
+    # Display water chemistry parameters
+    tsp_params = water_chemistry.get_tsp_fouling_parameters()
+    print(f"Unified Water Chemistry Parameters:")
+    print(f"  Iron: {tsp_params['iron_concentration']:.3f} ppm")
+    print(f"  Copper: {tsp_params['copper_concentration']:.3f} ppm")
+    print(f"  Silica: {tsp_params['silica_concentration']:.1f} ppm")
+    print(f"  pH: {tsp_params['ph']:.2f}")
+    print(f"  Dissolved Oxygen: {tsp_params['dissolved_oxygen']:.3f} ppm")
     print()
     
     # Test steady-state operation

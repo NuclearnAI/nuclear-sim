@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from typing import Dict, Optional, Tuple
 import numpy as np
 from simulator.state import auto_register
+from ..component_descriptions import CONDENSER_COMPONENT_DESCRIPTIONS
 
 warnings.filterwarnings("ignore")
 
@@ -77,7 +78,8 @@ class SteamEjectorConfig:
     erosion_rate: float = 0.000001         # Nozzle erosion rate per hour
 
 
-@auto_register("SECONDARY", "condenser", id_source="config.ejector_id")
+@auto_register("SECONDARY", "condenser", id_source="config.ejector_id",
+               description=CONDENSER_COMPONENT_DESCRIPTIONS['steam_ejector'])
 class SteamJetEjector:
     """
     Steam jet ejector physics model for vacuum service

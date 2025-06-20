@@ -32,6 +32,7 @@ from ..heat_flow_tracker import HeatFlowProvider, ThermodynamicProperties
 from .stage_system import TurbineStageSystem, TurbineStageSystemConfig
 from .rotor_dynamics import RotorDynamicsModel, RotorDynamicsConfig
 from .turbine_bearing_lubrication import TurbineBearingLubricationSystem, TurbineBearingLubricationConfig, integrate_lubrication_with_turbine
+from ..component_descriptions import TURBINE_COMPONENT_DESCRIPTIONS
 
 warnings.filterwarnings("ignore")
 
@@ -435,7 +436,8 @@ class TurbineProtectionSystem:
         self.trip_timers = {key: 0.0 for key in self.trip_timers}
         self.emergency_actions = {key: False for key in self.emergency_actions}
 
-@auto_register("SECONDARY", "turbine", allow_no_id=True)
+@auto_register("SECONDARY", "turbine", allow_no_id=True,
+               description=TURBINE_COMPONENT_DESCRIPTIONS['enhanced_turbine_physics'])
 class EnhancedTurbinePhysics(HeatFlowProvider):
     """
     Enhanced turbine physics model - analogous to EnhancedCondenserPhysics
@@ -707,15 +709,6 @@ class EnhancedTurbinePhysics(HeatFlowProvider):
         state_dict.update(self.stage_system.get_state_dict())
         state_dict.update(self.rotor_dynamics.get_state_dict())
         
-        # Add lubrication system state
-        if hasattr(self, 'bearing_lubrication_system'):
-            lubrication_state = self.bearing_lubrication_system.get_state_dict()
-            # Add lubrication state with turbine-specific prefix
-            for key, value in lubrication_state.items():
-                # Replace the system ID with turbine-specific prefix
-                new_key = key.replace(self.bearing_lubrication_system.config.system_id.lower(), 'turbine_lubrication')
-                state_dict[new_key] = value
-
         return state_dict
     
     def get_heat_flows(self) -> Dict[str, float]:

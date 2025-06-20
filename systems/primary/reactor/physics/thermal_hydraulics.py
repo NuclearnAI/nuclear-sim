@@ -8,7 +8,6 @@ including heat transfer, temperature dynamics, and pressure calculations.
 import numpy as np
 from typing import Dict
 
-
 class ThermalHydraulicsModel:
     """
     Thermal hydraulics model for nuclear reactor heat transfer calculations

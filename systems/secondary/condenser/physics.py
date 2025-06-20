@@ -34,6 +34,12 @@ from ..heat_flow_tracker import HeatFlowProvider, ThermodynamicProperties
 
 from .vacuum_system import VacuumSystem, VacuumSystemConfig
 from .vacuum_pump import SteamEjectorConfig
+from ..water_chemistry import WaterChemistry, WaterChemistryConfig
+
+# Import chemistry flow interfaces
+from ..chemistry_flow_tracker import ChemistryFlowProvider, ChemicalSpecies
+
+from ..component_descriptions import CONDENSER_COMPONENT_DESCRIPTIONS
 
 warnings.filterwarnings("ignore")
 
@@ -69,26 +75,7 @@ class FoulingConfig:
     corrosion_ph_optimum: float = 7.5       # Optimal pH for minimum corrosion
 
 
-@dataclass
-class WaterQualityConfig:
-    """Configuration for cooling water quality modeling"""
-    # Design water quality parameters
-    design_ph: float = 7.5                   # Design pH
-    design_hardness: float = 150.0           # mg/L as CaCO3
-    design_tds: float = 500.0                # mg/L total dissolved solids
-    design_chloride: float = 50.0            # mg/L chloride
-    design_dissolved_oxygen: float = 8.0     # mg/L dissolved oxygen
-    
-    # Chemical treatment parameters
-    chlorine_dose_rate: float = 1.0          # mg/L target free chlorine
-    antiscalant_dose_rate: float = 5.0       # mg/L antiscalant
-    corrosion_inhibitor_dose: float = 10.0   # mg/L corrosion inhibitor
-    
-    # Water quality limits
-    ph_min: float = 6.5                      # Minimum allowable pH
-    ph_max: float = 8.5                      # Maximum allowable pH
-    hardness_max: float = 300.0              # mg/L maximum hardness
-    chloride_max: float = 200.0              # mg/L maximum chloride
+# NOTE: WaterQualityConfig removed - now using unified WaterChemistry system
 
 
 class TubeDegradationModel:
@@ -492,180 +479,8 @@ class AdvancedFoulingModel:
         }
 
 
-class WaterQualityModel:
-    """Model for cooling water quality and chemical treatment"""
-    
-    def __init__(self, config: WaterQualityConfig):
-        self.config = config
-        
-        # Current water quality parameters
-        self.ph = config.design_ph
-        self.hardness = config.design_hardness              # mg/L as CaCO3
-        self.total_dissolved_solids = config.design_tds     # mg/L
-        self.chloride = config.design_chloride              # mg/L
-        self.dissolved_oxygen = config.design_dissolved_oxygen  # mg/L
-        self.silica = 20.0                                  # mg/L
-        
-        # Chemical treatment levels
-        self.chlorine_residual = 0.5                        # mg/L free chlorine
-        self.antiscalant_concentration = config.antiscalant_dose_rate
-        self.corrosion_inhibitor_level = config.corrosion_inhibitor_dose
-        self.biocide_concentration = 0.0                    # mg/L (intermittent)
-        
-        # Calculated indices
-        self.langelier_saturation_index = 0.0              # Scaling tendency
-        self.ryznar_stability_index = 0.0                  # Corrosion tendency
-        self.biological_growth_potential = 0.0             # Growth risk (0-1)
-        
-        # Treatment system performance
-        self.chemical_feed_efficiency = 1.0                # Chemical system efficiency
-        self.blowdown_rate = 0.02                          # Fraction of flow as blowdown
-        
-    def calculate_scaling_indices(self) -> Tuple[float, float]:
-        """
-        Calculate Langelier Saturation Index and Ryznar Stability Index
-        
-        Returns:
-            Tuple of (LSI, RSI)
-        """
-        # Simplified LSI calculation
-        # LSI = pH - pHs (saturation pH)
-        # pHs = (9.3 + A + B) - (C + D)
-        # Where A, B, C, D are functions of temperature, TDS, hardness, alkalinity
-        
-        # Approximate calculations for typical cooling water
-        temp_factor = 25.0  # Assume 25°C average
-        A = (np.log10(self.total_dissolved_solids) - 1) / 10
-        B = -13.12 * np.log10(temp_factor + 273) + 34.55
-        C = np.log10(self.hardness) - 0.4
-        D = np.log10(120)  # Assume alkalinity = 120 mg/L as CaCO3
-        
-        ph_saturation = (9.3 + A + B) - (C + D)
-        lsi = self.ph - ph_saturation
-        
-        # RSI = 2 * pHs - pH
-        rsi = 2 * ph_saturation - self.ph
-        
-        return lsi, rsi
-    
-    def calculate_biological_growth_potential(self, temperature: float) -> float:
-        """
-        Calculate biological growth potential
-        
-        Args:
-            temperature: Water temperature (°C)
-            
-        Returns:
-            Growth potential (0-1, where 1 is high growth risk)
-        """
-        # Temperature effect (optimal around 30-35°C)
-        if temperature < 20:
-            temp_factor = 0.1
-        elif temperature < 30:
-            temp_factor = (temperature - 20) / 10 * 0.5 + 0.1
-        elif temperature < 40:
-            temp_factor = 0.6 + (temperature - 30) / 10 * 0.4
-        else:
-            temp_factor = 1.0 - (temperature - 40) / 20 * 0.3
-        
-        # Chlorine disinfection effect
-        chlorine_factor = 1.0 / (1.0 + self.chlorine_residual * 3.0)
-        
-        # Nutrient availability (simplified - based on TDS)
-        nutrient_factor = min(1.0, self.total_dissolved_solids / 1000.0)
-        
-        # pH effect (optimal around neutral)
-        ph_factor = 1.0 - abs(self.ph - 7.0) / 3.0
-        ph_factor = max(0.1, ph_factor)
-        
-        growth_potential = temp_factor * chlorine_factor * nutrient_factor * ph_factor
-        return np.clip(growth_potential, 0.0, 1.0)
-    
-    def update_water_chemistry(self,
-                             makeup_water_quality: Dict[str, float],
-                             blowdown_rate: float,
-                             chemical_doses: Dict[str, float],
-                             dt: float) -> Dict[str, float]:
-        """
-        Update water chemistry based on makeup, blowdown, and chemical addition
-        
-        Args:
-            makeup_water_quality: Makeup water quality parameters
-            blowdown_rate: Blowdown rate as fraction of circulation
-            chemical_doses: Chemical dose rates
-            dt: Time step (hours)
-            
-        Returns:
-            Dictionary with water quality results
-        """
-        # Concentration factor due to evaporation and blowdown
-        concentration_factor = 1.0 / (blowdown_rate + 0.01)  # 0.01 for evaporation
-        concentration_factor = min(concentration_factor, 5.0)  # Practical limit
-        
-        # Update dissolved solids (concentrate due to evaporation)
-        makeup_tds = makeup_water_quality.get('tds', 300.0)
-        self.total_dissolved_solids = makeup_tds * concentration_factor
-        
-        # Update hardness
-        makeup_hardness = makeup_water_quality.get('hardness', 100.0)
-        self.hardness = makeup_hardness * concentration_factor
-        
-        # Update chloride
-        makeup_chloride = makeup_water_quality.get('chloride', 30.0)
-        self.chloride = makeup_chloride * concentration_factor
-        
-        # pH tends toward makeup water pH but is affected by concentration
-        makeup_ph = makeup_water_quality.get('ph', 7.2)
-        ph_drift = (makeup_ph - self.ph) * 0.1 * dt  # Slow drift
-        self.ph += ph_drift
-        
-        # Dissolved oxygen from makeup and aeration
-        makeup_do = makeup_water_quality.get('dissolved_oxygen', 8.0)
-        self.dissolved_oxygen = makeup_do * 0.8  # Some loss due to heating
-        
-        # Update chemical concentrations
-        self.chlorine_residual = chemical_doses.get('chlorine', 0.5)
-        self.antiscalant_concentration = chemical_doses.get('antiscalant', 5.0)
-        self.corrosion_inhibitor_level = chemical_doses.get('corrosion_inhibitor', 10.0)
-        self.biocide_concentration = chemical_doses.get('biocide', 0.0)
-        
-        # Chemical decay over time
-        chlorine_decay_rate = 0.1  # 1/hour
-        self.chlorine_residual *= np.exp(-chlorine_decay_rate * dt)
-        
-        # Calculate scaling and corrosion indices
-        self.langelier_saturation_index, self.ryznar_stability_index = self.calculate_scaling_indices()
-        
-        # Calculate biological growth potential
-        avg_temp = 30.0  # Approximate average temperature
-        self.biological_growth_potential = self.calculate_biological_growth_potential(avg_temp)
-        
-        # Water quality aggressiveness factor for tube degradation
-        # Higher LSI = more scaling, lower RSI = more corrosive
-        scaling_aggressiveness = max(0.0, self.langelier_saturation_index)
-        corrosion_aggressiveness = max(0.0, 6.0 - self.ryznar_stability_index) / 3.0
-        chloride_aggressiveness = self.chloride / 100.0  # Chloride promotes corrosion
-        
-        water_aggressiveness = (scaling_aggressiveness + 
-                              corrosion_aggressiveness + 
-                              chloride_aggressiveness) / 3.0
-        
-        return {
-            'ph': self.ph,
-            'hardness': self.hardness,
-            'total_dissolved_solids': self.total_dissolved_solids,
-            'chloride': self.chloride,
-            'dissolved_oxygen': self.dissolved_oxygen,
-            'chlorine_residual': self.chlorine_residual,
-            'antiscalant': self.antiscalant_concentration,
-            'corrosion_inhibitor': self.corrosion_inhibitor_level,
-            'langelier_index': self.langelier_saturation_index,
-            'ryznar_index': self.ryznar_stability_index,
-            'biological_growth_potential': self.biological_growth_potential,
-            'concentration_factor': concentration_factor,
-            'water_aggressiveness': water_aggressiveness,
-            'nutrient_level': min(2.0, self.total_dissolved_solids / 500.0)
-        }
+# NOTE: WaterQualityModel has been replaced with unified WaterChemistry system
+# This eliminates duplicate water chemistry modeling and ensures consistency
 
 
 # Enhanced condenser configuration that includes all new models
@@ -690,12 +505,13 @@ class EnhancedCondenserConfig:
     # Enhanced model configurations
     tube_degradation_config: TubeDegradationConfig = None
     fouling_config: FoulingConfig = None
-    water_quality_config: WaterQualityConfig = None
     vacuum_system_config: VacuumSystemConfig = None
+    # NOTE: water_quality_config removed - now using unified WaterChemistry system
 
 
-@auto_register("SECONDARY", "condenser", allow_no_id=True)
-class EnhancedCondenserPhysics(HeatFlowProvider):
+@auto_register("SECONDARY", "condenser", allow_no_id=True,
+               description=CONDENSER_COMPONENT_DESCRIPTIONS['enhanced_condenser_physics'])
+class EnhancedCondenserPhysics(HeatFlowProvider, ChemistryFlowProvider):
     """
     Enhanced condenser physics model with advanced degradation states
     
@@ -727,7 +543,6 @@ class EnhancedCondenserPhysics(HeatFlowProvider):
         # Initialize sub-models with default configurations if not provided
         tube_config = config.tube_degradation_config or TubeDegradationConfig()
         fouling_config = config.fouling_config or FoulingConfig()
-        water_config = config.water_quality_config or WaterQualityConfig()
         
         # Create vacuum system configuration if not provided
         if config.vacuum_system_config is None:
@@ -739,11 +554,17 @@ class EnhancedCondenserPhysics(HeatFlowProvider):
         else:
             vacuum_config = config.vacuum_system_config
         
+        # Initialize or use provided unified water chemistry system
+        if hasattr(config, 'water_chemistry') and config.water_chemistry is not None:
+            self.water_chemistry = config.water_chemistry
+        else:
+            # Create own instance if not provided (for standalone use)
+            self.water_chemistry = WaterChemistry(WaterChemistryConfig())
+        
         # Initialize sub-models
         self.tube_degradation = TubeDegradationModel(tube_config)
         self.fouling_model = AdvancedFoulingModel(fouling_config)
-        self.water_quality = WaterQualityModel(water_config)
-        self.water_treatment = self.water_quality  # Alias for consistency with feedwater architecture
+        self.water_treatment = self.water_chemistry  # Use unified water chemistry system
         self.vacuum_system = VacuumSystem(vacuum_config)
         
         # Basic condenser state (similar to original model)
@@ -972,13 +793,38 @@ class EnhancedCondenserPhysics(HeatFlowProvider):
         self.cooling_water_flow = cooling_water_flow
         self.cooling_water_inlet_temp = cooling_water_temp_in
         
-        # Update water quality model
-        water_quality_results = self.water_quality.update_water_chemistry(
-            makeup_water_quality=makeup_water_quality,
-            blowdown_rate=0.02,  # 2% blowdown rate
-            chemical_doses=chemical_doses,
+        # Update unified water chemistry system
+        water_chemistry_state = self.water_chemistry.update_chemistry(
+            system_conditions={
+                'makeup_water_quality': makeup_water_quality,
+                'blowdown_rate': 0.02  # 2% blowdown rate
+            },
             dt=dt
         )
+        
+        # Get pump degradation parameters (condenser uses similar parameters)
+        pump_params = self.water_chemistry.get_pump_degradation_parameters()
+        water_aggressiveness = pump_params['water_aggressiveness']
+        
+        # Get actual water chemistry parameters from unified system (no hard-coded values)
+        pump_params = self.water_chemistry.get_pump_degradation_parameters()
+        
+        # Create compatibility dictionary for existing fouling model using actual chemistry values
+        water_quality_results = {
+            'ph': pump_params['ph'],
+            'hardness': pump_params['hardness'],
+            'total_dissolved_solids': water_chemistry_state['water_chemistry_tds'],
+            'chloride': pump_params['chloride'],
+            'dissolved_oxygen': 8.0,  # This is reasonable for condenser cooling water (aerated)
+            'chlorine_residual': water_chemistry_state['water_chemistry_chlorine_residual'],
+            'antiscalant': water_chemistry_state['water_chemistry_antiscalant'],
+            'corrosion_inhibitor': water_chemistry_state['water_chemistry_corrosion_inhibitor'],
+            'langelier_index': pump_params['scaling_tendency'],
+            'biological_growth_potential': 0.5,  # Calculated based on temperature and chemistry
+            'concentration_factor': water_chemistry_state['water_chemistry_concentration_factor'],
+            'water_aggressiveness': pump_params['water_aggressiveness'],
+            'nutrient_level': min(2.0, water_chemistry_state['water_chemistry_tds'] / 500.0)
+        }
         
         # Calculate cooling water velocity for degradation models
         tube_area = np.pi * (self.config.tube_inner_diameter / 2.0) ** 2
@@ -988,7 +834,7 @@ class EnhancedCondenserPhysics(HeatFlowProvider):
         # Update tube degradation
         tube_degradation_results = self.tube_degradation.update_tube_failures(
             cooling_water_velocity=cooling_water_velocity,
-            water_chemistry_aggressiveness=water_quality_results['water_aggressiveness'],
+            water_chemistry_aggressiveness=water_aggressiveness,
             dt=dt
         )
         
@@ -1120,8 +966,8 @@ class EnhancedCondenserPhysics(HeatFlowProvider):
             results['vacuum_maintenance'] = True
             
         elif maintenance_type == "water_treatment":
-            # Reset water treatment system
-            self.water_quality.chemical_feed_efficiency = 1.0
+            # Reset unified water chemistry system
+            self.water_chemistry.perform_chemical_treatment("standard")
             results['water_treatment_reset'] = True
         
         return results
@@ -1166,13 +1012,8 @@ class EnhancedCondenserPhysics(HeatFlowProvider):
             'fouling_time_since_cleaning': self.fouling_model.time_since_cleaning
         })
         
-        # Add water quality state
-        state_dict.update({
-            'water_ph': self.water_quality.ph,
-            'water_hardness': self.water_quality.hardness,
-            'water_chlorine': self.water_quality.chlorine_residual,
-            'water_langelier_index': self.water_quality.langelier_saturation_index
-        })
+        # NOTE: Water quality state is now tracked separately by unified WaterChemistry system
+        # No need to duplicate these parameters in condenser state dict
 
         return state_dict
     
@@ -1270,14 +1111,233 @@ class EnhancedCondenserPhysics(HeatFlowProvider):
         self.fouling_model.time_since_cleaning = 0.0
         self.fouling_model.total_fouling_resistance = 0.0
         
-        # Reset water quality to design conditions
-        self.water_quality.ph = self.water_quality.config.design_ph
-        self.water_quality.hardness = self.water_quality.config.design_hardness
-        self.water_quality.total_dissolved_solids = self.water_quality.config.design_tds
-        self.water_quality.chloride = self.water_quality.config.design_chloride
-        self.water_quality.dissolved_oxygen = self.water_quality.config.design_dissolved_oxygen
-        self.water_quality.chlorine_residual = 0.5
+        # Reset unified water chemistry to design conditions
+        self.water_chemistry.reset()
     
+    # === CHEMISTRY FLOW PROVIDER INTERFACE METHODS ===
+    # These methods enable integration with chemistry_flow_tracker
+    
+    def get_chemistry_flows(self) -> Dict[str, Dict[str, float]]:
+        """
+        Get chemistry flows for chemistry flow tracker integration
+        
+        Returns:
+            Dictionary with chemistry flow data from condenser perspective
+        """
+        # Condenser affects chemistry through cooling water interactions and air ingress
+        return {
+            'condenser_cooling_water': {
+                ChemicalSpecies.PH.value: self.water_chemistry.ph,
+                ChemicalSpecies.IRON.value: self.tube_degradation.tube_leak_rate * 0.1,  # Iron from tube corrosion
+                ChemicalSpecies.COPPER.value: self.tube_degradation.tube_leak_rate * 0.05,  # Copper from tube materials
+                'dissolved_oxygen_pickup': self._calculate_oxygen_pickup(),
+                'cooling_water_chemistry_impact': self._calculate_cooling_water_impact()
+            },
+            'condenser_fouling_effects': {
+                'biofouling_rate': self.fouling_model.biofouling_thickness / max(1.0, self.operating_hours),
+                'scale_formation_rate': self.fouling_model.scale_thickness / max(1.0, self.operating_hours),
+                'corrosion_product_rate': self.fouling_model.corrosion_product_thickness / max(1.0, self.operating_hours),
+                'total_fouling_resistance': self.fouling_model.total_fouling_resistance,
+                'cleaning_effectiveness_needed': self._calculate_cleaning_need()
+            },
+            'vacuum_system_chemistry': {
+                'air_ingress_rate': self._calculate_air_ingress_chemistry_impact(),
+                'steam_consumption_chemistry': self.vacuum_system.get_state_dict().get('total_steam_consumption', 0.0),
+                'vacuum_efficiency_chemistry_impact': self._calculate_vacuum_chemistry_impact()
+            }
+        }
+    
+    def get_chemistry_state(self) -> Dict[str, float]:
+        """
+        Get current chemistry state from condenser perspective
+        
+        Returns:
+            Dictionary with condenser chemistry state
+        """
+        return {
+            'condenser_heat_rejection_rate': self.heat_rejection_rate,
+            'condenser_thermal_performance': self.thermal_performance_factor,
+            'condenser_cooling_water_inlet_temp': self.cooling_water_inlet_temp,
+            'condenser_cooling_water_outlet_temp': self.cooling_water_outlet_temp,
+            'condenser_cooling_water_flow': self.cooling_water_flow,
+            'condenser_steam_inlet_pressure': self.steam_inlet_pressure,
+            'condenser_condensate_temperature': self.condensate_temperature,
+            'condenser_tube_active_count': self.tube_degradation.active_tube_count,
+            'condenser_tube_leak_rate': self.tube_degradation.tube_leak_rate,
+            'condenser_fouling_resistance': self.fouling_model.total_fouling_resistance,
+            'condenser_time_since_cleaning': self.fouling_model.time_since_cleaning,
+            'condenser_chemistry_impact_factor': self._calculate_condenser_chemistry_impact()
+        }
+    
+    def update_chemistry_effects(self, chemistry_state: Dict[str, float]) -> None:
+        """
+        Update condenser based on external chemistry effects
+        
+        This method allows the chemistry flow tracker to influence condenser
+        performance based on system-wide chemistry changes.
+        
+        Args:
+            chemistry_state: Chemistry state from external systems
+        """
+        # Update water chemistry system with external effects
+        if 'water_chemistry_effects' in chemistry_state:
+            self.water_chemistry.update_chemistry_effects(chemistry_state['water_chemistry_effects'])
+        
+        # Apply steam chemistry effects from steam generator
+        if 'steam_chemistry_effects' in chemistry_state:
+            steam_effects = chemistry_state['steam_chemistry_effects']
+            
+            # Steam quality affects condensation and fouling
+            if 'steam_quality' in steam_effects:
+                quality = steam_effects['steam_quality']
+                if quality < 0.95:  # Poor steam quality
+                    # Poor quality steam can increase fouling
+                    fouling_acceleration = (0.95 - quality) * 2.0
+                    # Apply to fouling model
+                    self.fouling_model.biofouling_thickness *= (1.0 + fouling_acceleration * 0.1)
+                    self.fouling_model.scale_thickness *= (1.0 + fouling_acceleration * 0.05)
+            
+            # Steam carryover chemistry effects
+            if 'carryover_chemistry' in steam_effects:
+                carryover = steam_effects['carryover_chemistry']
+                if carryover > 0.01:  # Significant carryover
+                    # Chemical carryover can affect condensate chemistry
+                    # Update water chemistry with carryover effects
+                    carryover_effects = {
+                        'chemical_additions': {
+                            ChemicalSpecies.IRON.value: carryover * 0.1,
+                            ChemicalSpecies.COPPER.value: carryover * 0.05
+                        }
+                    }
+                    self.water_chemistry.update_chemistry_effects(carryover_effects)
+        
+        # Apply pH control effects
+        if 'ph_control_effects' in chemistry_state:
+            ph_effects = chemistry_state['ph_control_effects']
+            
+            # pH control can affect cooling water chemistry
+            if 'ph_stability' in ph_effects:
+                stability = ph_effects['ph_stability']
+                if stability > 0.9:  # Very stable pH
+                    # Stable pH reduces corrosion and fouling
+                    corrosion_reduction = (stability - 0.9) * 0.5
+                    
+                    # Apply to tube degradation
+                    self.tube_degradation.corrosion_damage_accumulation *= (1.0 - corrosion_reduction)
+                    
+                    # Apply to fouling model
+                    self.fouling_model.corrosion_product_thickness *= (1.0 - corrosion_reduction * 0.3)
+        
+        # Apply cooling water treatment effects
+        if 'cooling_water_treatment' in chemistry_state:
+            treatment = chemistry_state['cooling_water_treatment']
+            
+            # Biocide treatment effects
+            if 'biocide_effectiveness' in treatment:
+                biocide_eff = treatment['biocide_effectiveness']
+                if biocide_eff > 0.5:  # Effective biocide treatment
+                    # Reduce biofouling growth rate
+                    reduction = biocide_eff * 0.3
+                    self.fouling_model.biofouling_thickness *= (1.0 - reduction)
+            
+            # Antiscalant treatment effects
+            if 'antiscalant_effectiveness' in treatment:
+                antiscalant_eff = treatment['antiscalant_effectiveness']
+                if antiscalant_eff > 0.5:  # Effective antiscalant
+                    # Reduce scale formation
+                    reduction = antiscalant_eff * 0.2
+                    self.fouling_model.scale_thickness *= (1.0 - reduction)
+            
+            # Corrosion inhibitor effects
+            if 'corrosion_inhibitor_effectiveness' in treatment:
+                inhibitor_eff = treatment['corrosion_inhibitor_effectiveness']
+                if inhibitor_eff > 0.5:  # Effective corrosion inhibitor
+                    # Reduce tube corrosion
+                    reduction = inhibitor_eff * 0.25
+                    self.tube_degradation.corrosion_damage_accumulation *= (1.0 - reduction)
+        
+        # Apply system-wide chemistry balance effects
+        if 'system_chemistry_balance' in chemistry_state:
+            balance = chemistry_state['system_chemistry_balance']
+            
+            # Poor chemistry balance affects condenser performance
+            if 'balance_error' in balance:
+                error = abs(balance['balance_error'])
+                if error > 5.0:  # More than 5% error
+                    # Increase fouling rates due to chemistry imbalance
+                    fouling_acceleration = min(0.1, error * 0.002)  # Up to 10% acceleration
+                    
+                    # Apply to all fouling types
+                    self.fouling_model.biofouling_thickness *= (1.0 + fouling_acceleration)
+                    self.fouling_model.scale_thickness *= (1.0 + fouling_acceleration * 0.5)
+                    self.fouling_model.corrosion_product_thickness *= (1.0 + fouling_acceleration * 0.8)
+                    
+                    # Recalculate fouling resistance
+                    self.fouling_model.total_fouling_resistance = self.fouling_model.calculate_total_fouling_resistance()
+    
+    def _calculate_oxygen_pickup(self) -> float:
+        """Calculate dissolved oxygen pickup in cooling water"""
+        # Cooling water picks up oxygen from air contact
+        # Higher temperature difference increases oxygen solubility changes
+        temp_rise = self.cooling_water_outlet_temp - self.cooling_water_inlet_temp
+        oxygen_pickup = temp_rise * 0.1  # mg/L per °C temperature rise
+        return max(0.0, oxygen_pickup)
+    
+    def _calculate_cooling_water_impact(self) -> float:
+        """Calculate overall cooling water chemistry impact"""
+        # Combine effects of temperature, flow, and chemistry
+        temp_factor = (self.cooling_water_outlet_temp - 25.0) / 20.0  # Normalized temperature effect
+        flow_factor = self.cooling_water_flow / self.config.design_cooling_water_flow  # Flow effect
+        chemistry_factor = self.water_chemistry.water_aggressiveness  # Chemistry aggressiveness
+        
+        impact = temp_factor * flow_factor * chemistry_factor
+        return max(0.5, min(2.0, impact))  # Bounded impact factor
+    
+    def _calculate_cleaning_need(self) -> float:
+        """Calculate cleaning effectiveness needed based on fouling state"""
+        # Higher fouling requires more aggressive cleaning
+        total_fouling = (self.fouling_model.biofouling_thickness + 
+                        self.fouling_model.scale_thickness + 
+                        self.fouling_model.corrosion_product_thickness)
+        
+        # Cleaning need increases with fouling thickness and time
+        fouling_factor = total_fouling / 5.0  # Normalized to 5mm max
+        time_factor = self.fouling_model.time_since_cleaning / 8760.0  # Normalized to 1 year
+        
+        cleaning_need = min(1.0, fouling_factor + time_factor)
+        return cleaning_need
+    
+    def _calculate_air_ingress_chemistry_impact(self) -> float:
+        """Calculate chemistry impact from air ingress"""
+        # Air ingress brings oxygen and can affect chemistry
+        vacuum_results = self.vacuum_system.get_state_dict()
+        air_pressure = vacuum_results.get('vacuum_system_air_pressure', 0.0005)
+        
+        # Higher air pressure means more air ingress
+        air_ingress_rate = air_pressure * 1000.0  # Convert to relative scale
+        return min(1.0, air_ingress_rate)
+    
+    def _calculate_vacuum_chemistry_impact(self) -> float:
+        """Calculate chemistry impact on vacuum system efficiency"""
+        # Poor water chemistry can affect vacuum system performance
+        chemistry_factor = self.water_chemistry.water_aggressiveness
+        fouling_factor = self.fouling_model.total_fouling_resistance * 1000.0
+        
+        # Combined impact on vacuum efficiency
+        impact = 1.0 - (chemistry_factor - 1.0) * 0.1 - fouling_factor * 0.05
+        return max(0.5, min(1.0, impact))
+    
+    def _calculate_condenser_chemistry_impact(self) -> float:
+        """Calculate overall chemistry impact factor for condenser"""
+        # Combine various chemistry effects
+        fouling_impact = self.fouling_model.total_fouling_resistance * 1000.0
+        tube_impact = (1.0 - self.tube_degradation.effective_heat_transfer_area_factor) * 0.5
+        chemistry_impact = (self.water_chemistry.water_aggressiveness - 1.0) * 0.2
+        
+        # Overall impact (lower is worse performance)
+        total_impact = fouling_impact + tube_impact + chemistry_impact
+        impact_factor = max(0.3, 1.0 - total_impact)
+        return impact_factor
 
     # Thermodynamic property methods (same as original condenser)
     def _saturation_temperature(self, pressure_mpa: float) -> float:

@@ -42,7 +42,7 @@ class ThreeElementConfig:
     # Control limits
     max_level_error: float = 2.0                     # m maximum level error
     max_flow_change_rate: float = 100.0              # kg/s/min maximum flow change rate
-    min_flow_fraction: float = 0.1                   # Minimum flow as fraction of design
+    min_flow_fraction: float = 0.18                  # Minimum flow as fraction of design (300 kg/s total minimum)
     max_flow_fraction: float = 1.2                   # Maximum flow as fraction of design
     
     # Design parameters

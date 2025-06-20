@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 import numpy as np
 from simulator.state import auto_register
+from ..component_descriptions import TURBINE_COMPONENT_DESCRIPTIONS
 
 warnings.filterwarnings("ignore")
 
@@ -113,7 +114,8 @@ class TurbineStageSystemConfig:
     max_extraction_variation: float = 0.1    # Maximum extraction flow variation
 
 
-@auto_register("SECONDARY", "turbine", id_source="config.stage_id")
+@auto_register("SECONDARY", "turbine", id_source="config.stage_id", 
+               description=TURBINE_COMPONENT_DESCRIPTIONS['turbine_stage'])
 class TurbineStage:
     """
     Individual turbine stage model - analogous to individual SteamJetEjector
@@ -688,7 +690,8 @@ class TurbineStageControlLogic:
         return commands
 
 
-@auto_register("SECONDARY", "turbine", id_source="config.system_id")
+@auto_register("SECONDARY", "turbine", id_source="config.system_id",
+               description=TURBINE_COMPONENT_DESCRIPTIONS["turbine_stage_system"])
 class TurbineStageSystem:
     """
     Multi-stage turbine system - analogous to VacuumSystem

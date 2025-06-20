@@ -39,7 +39,7 @@ from .rotor_dynamics import (
     BearingModel
 )
 
-from .lubrication_base import (
+from ..lubrication_base import (
     BaseLubricationSystem,
     BaseLubricationConfig,
     LubricationComponent

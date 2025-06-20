@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 import numpy as np
 
-from .lubrication_base import BaseLubricationSystem, BaseLubricationConfig, LubricationComponent
+from ..lubrication_base import BaseLubricationSystem, BaseLubricationConfig, LubricationComponent
 
 warnings.filterwarnings("ignore")
 

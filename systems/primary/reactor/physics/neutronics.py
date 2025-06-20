@@ -8,7 +8,6 @@ including control rod reactivity and neutron flux management.
 import numpy as np
 from typing import Dict
 
-
 class NeutronicsModel:
     """
     Neutronics model for nuclear reactor neutron physics calculations

@@ -20,6 +20,7 @@ import numpy as np
 
 # Import state management interfaces
 from simulator.state import auto_register 
+from .component_descriptions import PRIMARY_SYSTEM_DESCRIPTIONS
 
 warnings.filterwarnings("ignore")
 
@@ -116,7 +117,8 @@ __all__ = [
 ]
 
 
-@auto_register("PRIMARY", "reactor", allow_no_id=True)
+@auto_register("PRIMARY", "reactor", allow_no_id=True,
+               description=PRIMARY_SYSTEM_DESCRIPTIONS['primary_reactor_physics'])
 class PrimaryReactorPhysics:
     """
     Integrated primary reactor physics system

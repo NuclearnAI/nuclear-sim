@@ -16,6 +16,11 @@ from simulator.state import auto_register
 # Import heat flow tracking
 from .heat_flow_tracker import HeatFlowTracker, HeatFlowProvider, ThermodynamicProperties
 
+# Import chemistry flow tracking and water chemistry
+from .chemistry_flow_tracker import ChemistryFlowTracker, ChemistryFlowProvider, ChemicalSpecies, ChemistryProperties
+from .water_chemistry import WaterChemistry, WaterChemistryConfig, DegradationCalculator
+from .ph_control_system import PHControlSystem, PHControllerConfig
+
 from .steam_generator import (
     SteamGenerator, 
     SteamGeneratorConfig,
@@ -49,8 +54,8 @@ from .feedwater import (
     FeedwaterPumpConfig,
     ThreeElementControl,
     ThreeElementConfig,
-    WaterQualityModel,
-    WaterQualityConfig,
+    # WaterQualityModel,  # Moved to unified water chemistry
+    # WaterQualityConfig,  # Moved to unified water chemistry
     PerformanceDiagnostics,
     FeedwaterProtectionSystem,
     FeedwaterProtectionConfig
@@ -87,11 +92,22 @@ __all__ = [
     'FeedwaterPumpConfig',
     'ThreeElementControl',
     'ThreeElementConfig',
-    'WaterQualityModel',
-    'WaterQualityConfig',
+    # 'WaterQualityModel',  # Moved to unified water chemistry
+    # 'WaterQualityConfig',  # Moved to unified water chemistry
     'PerformanceDiagnostics',
     'FeedwaterProtectionSystem',
     'FeedwaterProtectionConfig',
+    
+    # Chemistry Flow Tracking and Water Chemistry
+    'ChemistryFlowTracker',
+    'ChemistryFlowProvider',
+    'ChemicalSpecies',
+    'ChemistryProperties',
+    'WaterChemistry',
+    'WaterChemistryConfig',
+    'DegradationCalculator',
+    'PHControlSystem',
+    'PHControllerConfig',
     
     # Integrated System
     'SecondaryReactorPhysics'
@@ -167,6 +183,21 @@ class SecondaryReactorPhysics:
         
         # Initialize heat flow tracker
         self.heat_flow_tracker = HeatFlowTracker()
+        
+        # Initialize chemistry flow tracker and water chemistry system
+        self.water_chemistry = WaterChemistry()
+        self.ph_control_system = PHControlSystem()
+        
+        # Create chemistry flow providers dictionary for integration
+        chemistry_providers = {
+            'water_chemistry': self.water_chemistry,
+            'steam_generator': self.steam_generator_system,
+            'condenser': self.condenser,
+            'feedwater': self.feedwater_system
+        }
+        
+        # Initialize chemistry flow tracker with providers
+        self.chemistry_flow_tracker = ChemistryFlowTracker(chemistry_providers)
         
         # Initialize operating time tracking
         self.operating_hours = 0.0
@@ -423,6 +454,49 @@ class SecondaryReactorPhysics:
         
         # Update operating hours
         self.operating_hours += dt / 3600.0  # Convert seconds to hours
+        
+        # UPDATE CHEMISTRY SYSTEMS
+        # Update water chemistry with system conditions
+        system_conditions = {
+            'makeup_water_quality': makeup_water_quality,
+            'blowdown_rate': 0.02,  # Typical blowdown rate
+            'temperature': condensate_temp,
+            'pressure': avg_steam_pressure
+        }
+        
+        # Update water chemistry
+        water_chemistry_result = self.water_chemistry.update_chemistry(system_conditions, dt)
+        
+        # Update pH control system
+        ph_control_result = self.ph_control_system.update_system(
+            current_ph=water_chemistry_result.get('water_chemistry_ph', 9.2),
+            dt=dt
+        )
+        
+        # Extract controller outputs from pH control result
+        controller_outputs = ph_control_result.get('controller_outputs', {})
+        
+        # Apply pH control effects to water chemistry
+        chemistry_effects = {
+            'ph_setpoint': controller_outputs.get('ph_setpoint', 9.2),
+            'ammonia_dose_rate': controller_outputs.get('ammonia_dose_rate', 0.0),
+            'morpholine_dose_rate': controller_outputs.get('morpholine_dose_rate', 0.0),
+            'chemical_additions': {
+                'ammonia': controller_outputs.get('ammonia_dose_rate', 0.0) / 3600.0,  # Convert kg/hr to kg/s
+                'morpholine': controller_outputs.get('morpholine_dose_rate', 0.0) / 3600.0
+            }
+        }
+        self.water_chemistry.update_chemistry_effects(chemistry_effects)
+        
+        # Update chemistry flow tracker from all providers
+        self.chemistry_flow_tracker.update_from_providers()
+        
+        # Calculate system-wide chemistry flows
+        chemistry_flow_state = self.chemistry_flow_tracker.calculate_system_chemistry_flows()
+        chemistry_flow_validation = self.chemistry_flow_tracker.validate_chemistry_balance()
+        
+        # Add chemistry flow data to tracker history
+        self.chemistry_flow_tracker.add_to_history(self.operating_hours)
         
         # UPDATE HEAT FLOW TRACKER WITH COMPONENT DATA
         # Collect heat flows from all components that implement HeatFlowProvider
@@ -734,6 +808,26 @@ class SecondaryReactorPhysics:
             'heat_flow_net_electrical_output': heat_flow_state.net_electrical_output,
             'heat_flow_overall_efficiency': heat_flow_state.overall_thermal_efficiency,
             
+            # Chemistry flow tracking results
+            'chemistry_flow_balance_error': chemistry_flow_validation['overall_balance_error_percent'],
+            'chemistry_flow_balance_ok': chemistry_flow_validation['balance_acceptable'],
+            'chemistry_flow_ph': chemistry_flow_state.sg_liquid_chemistry.get('ph', 9.2),
+            'chemistry_flow_iron_concentration': chemistry_flow_state.sg_liquid_chemistry.get('iron', 0.1),
+            'chemistry_flow_tsp_fouling_rate': chemistry_flow_state.tsp_fouling_rate,
+            'chemistry_flow_treatment_efficiency': chemistry_flow_state.feedwater_treatment_effectiveness,
+            'chemistry_flow_stability': chemistry_flow_state.overall_chemistry_stability,
+            
+            # Water chemistry results
+            'water_chemistry_ph': water_chemistry_result.get('water_chemistry_ph', 9.2),
+            'water_chemistry_iron_concentration': water_chemistry_result.get('water_chemistry_iron_concentration', 0.1),
+            'water_chemistry_aggressiveness': water_chemistry_result.get('water_chemistry_aggressiveness', 1.0),
+            'water_chemistry_treatment_efficiency': water_chemistry_result.get('water_chemistry_treatment_efficiency', 0.95),
+            
+            # pH control results
+            'ph_control_output': controller_outputs.get('controller_output', 0.0),
+            'ph_control_ammonia_dose': controller_outputs.get('ammonia_dose_rate', 0.0),
+            'ph_control_error': controller_outputs.get('ph_error', 0.0),
+            
             # Control and operating conditions
             'load_demand': self.load_demand,
             'feedwater_temperature': self.feedwater_temperature,
@@ -744,7 +838,9 @@ class SecondaryReactorPhysics:
             'steam_generator_system_state': self.steam_generator_system.get_state_dict(),
             'turbine_state': self.turbine.get_state_dict(),
             'condenser_state': self.condenser.get_state_dict(),
-            'feedwater_state': self.feedwater_system.get_state_dict()
+            'feedwater_state': self.feedwater_system.get_state_dict(),
+            'water_chemistry_state': self.water_chemistry.get_state_dict(),
+            'chemistry_flow_state': self.chemistry_flow_tracker.get_state_dict()
         }
         return system_result
     

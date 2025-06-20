@@ -25,7 +25,9 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 import numpy as np
 
-from .lubrication_base import BaseLubricationSystem, BaseLubricationConfig, LubricationComponent
+from ..lubrication_base import BaseLubricationSystem, BaseLubricationConfig, LubricationComponent
+from simulator.state import auto_register
+from ..component_descriptions import TURBINE_COMPONENT_DESCRIPTIONS
 
 warnings.filterwarnings("ignore")
 
@@ -68,6 +70,8 @@ class TurbineBearingLubricationConfig(BaseLubricationConfig):
     oil_analysis_interval: float = 720.0        # hours (monthly)
 
 
+@auto_register('SECONDARY', 'turbine', id_source='config.system_id',
+               description=TURBINE_COMPONENT_DESCRIPTIONS['turbine_bearing_lubrication'])
 class TurbineBearingLubricationSystem(BaseLubricationSystem):
     """
     Turbine bearing-specific lubrication system implementation
@@ -348,7 +352,7 @@ class TurbineBearingLubricationSystem(BaseLubricationSystem):
         lubrication_temp_increase = (1.0 - self.lubrication_effectiveness) * 15.0  # °C
         self.bearing_housing_temperature = 80.0 + lubrication_temp_increase
     
-    def get_turbine_lubrication_state(self) -> Dict[str, float]:
+    def get_state_dict(self) -> Dict[str, float]:
         """Get turbine-specific lubrication state for integration with turbine models"""
         return {
             # Oil system state (replaces individual bearing oil tracking)
@@ -605,7 +609,7 @@ def update_lubrication_with_feedback(lubrication_system: TurbineBearingLubricati
         'component_wear': wear_results,
         'component_oil_temps': component_oil_temps,
         'system_oil_temp': system_oil_temp,
-        'lubrication_state': lubrication_system.get_turbine_lubrication_state()
+        'lubrication_state': lubrication_system.get_state_dict()
     }
 
 

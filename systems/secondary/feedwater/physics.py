@@ -30,9 +30,13 @@ from simulator.state import StateProvider, StateVariable, StateCategory, make_st
 # Import heat flow tracking
 from ..heat_flow_tracker import HeatFlowProvider, ThermodynamicProperties
 
+# Import chemistry flow tracking
+from ..chemistry_flow_tracker import ChemistryFlowProvider, ChemicalSpecies
+
+from ..component_descriptions import FEEDWATER_COMPONENT_DESCRIPTIONS
 from .pump_system import FeedwaterPumpSystem, FeedwaterPumpSystemConfig
 from .level_control import ThreeElementControl, ThreeElementConfig
-from .water_chemistry import WaterQualityModel, WaterQualityConfig
+from ..water_chemistry import WaterChemistry, WaterChemistryConfig
 from .performance_monitoring import PerformanceDiagnostics, PerformanceDiagnosticsConfig
 from .protection_system import FeedwaterProtectionSystem, FeedwaterProtectionConfig
 
@@ -63,7 +67,7 @@ class EnhancedFeedwaterConfig:
     # Subsystem configurations
     pump_system_config: FeedwaterPumpSystemConfig = field(default_factory=FeedwaterPumpSystemConfig)
     control_config: ThreeElementConfig = field(default_factory=ThreeElementConfig)
-    water_quality_config: WaterQualityConfig = field(default_factory=WaterQualityConfig)
+    water_quality_config: WaterChemistryConfig = field(default_factory=WaterChemistryConfig)
     diagnostics_config: PerformanceDiagnosticsConfig = field(default_factory=PerformanceDiagnosticsConfig)
     protection_config: FeedwaterProtectionConfig = field(default_factory=FeedwaterProtectionConfig)
     
@@ -79,8 +83,9 @@ class EnhancedFeedwaterConfig:
     predictive_maintenance: bool = True                  # Enable predictive maintenance
 
 
-@auto_register("SECONDARY", "feedwater", allow_no_id=True)
-class EnhancedFeedwaterPhysics(HeatFlowProvider):
+@auto_register("SECONDARY", "feedwater", allow_no_id=True,
+               description=FEEDWATER_COMPONENT_DESCRIPTIONS['enhanced_feedwater_physics'])
+class EnhancedFeedwaterPhysics(HeatFlowProvider, ChemistryFlowProvider):
     """
     Enhanced feedwater physics model - analogous to EnhancedCondenserPhysics
     
@@ -119,7 +124,7 @@ class EnhancedFeedwaterPhysics(HeatFlowProvider):
             num_steam_generators=config.num_steam_generators
         )
         
-        water_config = config.water_quality_config or WaterQualityConfig()
+        water_config = config.water_quality_config or WaterChemistryConfig()
         
         diagnostics_config = config.diagnostics_config or PerformanceDiagnosticsConfig()
         
@@ -128,7 +133,7 @@ class EnhancedFeedwaterPhysics(HeatFlowProvider):
         # Create subsystems
         self.pump_system = FeedwaterPumpSystem(pump_config)
         self.level_control = ThreeElementControl(control_config)
-        self.water_quality = WaterQualityModel(water_config)
+        self.water_quality = WaterChemistry(water_config)
         self.diagnostics = PerformanceDiagnostics(diagnostics_config)
         self.protection_system = FeedwaterProtectionSystem(protection_config)
         
@@ -197,10 +202,11 @@ class EnhancedFeedwaterPhysics(HeatFlowProvider):
             'biocide': 0.0
         })
         
-        water_quality_results = self.water_quality.update_water_chemistry(
-            makeup_water_quality=makeup_water_quality,
-            blowdown_rate=0.02,  # 2% blowdown rate
-            chemical_doses=chemical_doses,
+        water_quality_results = self.water_quality.update_chemistry(
+            system_conditions={
+                'makeup_water_quality': makeup_water_quality,
+                'blowdown_rate': 0.02  # 2% blowdown rate
+            },
             dt=dt
         )
         
@@ -239,12 +245,12 @@ class EnhancedFeedwaterPhysics(HeatFlowProvider):
             'individual_demands': control_demands['individual_demands']
         })
         
-        # CRITICAL FIX: Convert dt from minutes to seconds for pump system
-        # The feedwater physics receives dt in minutes, but pump system expects seconds
-        dt_seconds = dt * 60.0
+        # Convert dt from minutes to hours for pump system
+        # The feedwater physics receives dt in minutes, but pump system expects hours
+        dt_hours = dt / 60.0
         
         pump_results = self.pump_system.update_system(
-            dt=dt_seconds,
+            dt=dt_hours,
             system_conditions=pump_system_conditions,
             control_inputs=pump_control_inputs
         )
@@ -282,7 +288,7 @@ class EnhancedFeedwaterPhysics(HeatFlowProvider):
         
         # Calculate performance factors
         pump_performance = pump_results.get('average_performance_factor', 1.0)
-        water_quality_factor = 1.0 - water_quality_results.get('water_aggressiveness', 0.0) * 0.1
+        water_quality_factor = 1.0 - water_quality_results.get('water_chemistry_aggressiveness', 0.0) * 0.1
         diagnostics_factor = diagnostics_results.get('overall_health_factor', 1.0)
         
         self.performance_factor = pump_performance * water_quality_factor * diagnostics_factor
@@ -318,12 +324,12 @@ class EnhancedFeedwaterPhysics(HeatFlowProvider):
             'total_flow_demand': control_demands['total_flow_demand'],
             'flow_demand_error': control_demands['total_flow_demand'] - self.total_flow_rate,
             
-            # Water quality results
-            'water_ph': water_quality_results['ph'],
-            'water_hardness': water_quality_results['hardness'],
-            'water_tds': water_quality_results['total_dissolved_solids'],
-            'water_aggressiveness': water_quality_results['water_aggressiveness'],
-            'chemical_treatment_efficiency': water_quality_results.get('treatment_efficiency', 1.0),
+            # Water quality results - using unified water chemistry system
+            'water_ph': water_quality_results['water_chemistry_ph'],
+            'water_hardness': water_quality_results['water_chemistry_hardness'],
+            'water_tds': water_quality_results['water_chemistry_tds'],
+            'water_aggressiveness': water_quality_results['water_chemistry_aggressiveness'],
+            'chemical_treatment_efficiency': water_quality_results['water_chemistry_treatment_efficiency'],
             
             # Performance diagnostics
             'cavitation_risk': diagnostics_results.get('overall_cavitation_risk', 0.0),
@@ -380,45 +386,227 @@ class EnhancedFeedwaterPhysics(HeatFlowProvider):
             return True
         return False
     
-    def perform_maintenance(self, maintenance_type: str, **kwargs) -> Dict[str, float]:
+    def setup_maintenance_integration(self, maintenance_system):
         """
-        Perform maintenance operations on feedwater systems
+        Set up maintenance integration for the entire feedwater system
+        
+        Args:
+            maintenance_system: AutoMaintenanceSystem instance
+        """
+        from systems.maintenance import AutoMaintenanceSystem
+        
+        print(f"FEEDWATER SYSTEM: Setting up maintenance integration")
+        
+        # Set up pump system maintenance integration (primary integration point)
+        self.pump_system.setup_maintenance_integration(maintenance_system)
+        
+        # Register protection system for maintenance monitoring
+        protection_monitoring_config = {
+            'system_trip_active': {
+                'attribute': 'system_trip_active',
+                'threshold': 0.5,
+                'comparison': 'greater_than',
+                'action': 'protection_system_test',
+                'cooldown_hours': 24.0
+            },
+            'false_trip_count': {
+                'attribute': 'false_trip_count',
+                'threshold': 3.0,
+                'comparison': 'greater_than',
+                'action': 'protection_system_calibration',
+                'cooldown_hours': 168.0  # Weekly
+            }
+        }
+        
+        maintenance_system.register_component("feedwater_protection", self.protection_system, protection_monitoring_config)
+        print(f"  Registered feedwater protection system for maintenance monitoring")
+        
+        # Register diagnostics system for health monitoring
+        diagnostics_monitoring_config = {
+            'overall_health_score': {
+                'attribute': 'overall_health_score',
+                'threshold': 0.7,
+                'comparison': 'less_than',
+                'action': 'system_cleaning',
+                'cooldown_hours': 72.0  # 3 days
+            },
+            'maintenance_urgency': {
+                'attribute': 'maintenance_urgency',
+                'threshold': 0.8,
+                'comparison': 'greater_than',
+                'action': 'routine_maintenance',
+                'cooldown_hours': 24.0
+            }
+        }
+        
+        maintenance_system.register_component("feedwater_diagnostics", self.diagnostics, diagnostics_monitoring_config)
+        print(f"  Registered feedwater diagnostics system for maintenance monitoring")
+        
+        # Store reference for coordination
+        self.maintenance_system = maintenance_system
+        
+        # Subscribe to system-level maintenance events
+        maintenance_system.event_bus.subscribe('maintenance_completed', self._handle_maintenance_completed)
+        
+        print(f"FEEDWATER SYSTEM: Maintenance integration complete")
+    
+    def _handle_maintenance_completed(self, event):
+        """Handle maintenance completion events to update system performance"""
+        component_id = event.component_id
+        maintenance_data = event.data
+        
+        # Update maintenance factor based on completed maintenance
+        if maintenance_data.get('success', False):
+            effectiveness = maintenance_data.get('effectiveness_score', 0.8)
+            self.maintenance_factor = min(1.0, self.maintenance_factor + effectiveness * 0.1)
+            
+            print(f"FEEDWATER SYSTEM: Maintenance completed on {component_id}, "
+                  f"system maintenance factor: {self.maintenance_factor:.3f}")
+    
+    def perform_maintenance(self, maintenance_type: str, **kwargs) -> Dict[str, Any]:
+        """
+        Enhanced maintenance operations on feedwater systems
         
         Args:
             maintenance_type: Type of maintenance
             **kwargs: Additional maintenance parameters
             
         Returns:
-            Dictionary with maintenance results
+            Dictionary with maintenance results compatible with MaintenanceResult
         """
         results = {}
         
         if maintenance_type == "pump_maintenance":
-            # Perform pump maintenance
+            # Perform pump maintenance through pump system
             pump_id = kwargs.get('pump_id', None)
-            maintenance_results = self.pump_system.perform_maintenance(pump_id, **kwargs)
+            maintenance_results = self.pump_system.perform_maintenance(pump_id, maintenance_type="general", **kwargs)
+            results.update(maintenance_results)
+            
+        elif maintenance_type == "oil_change":
+            # Oil change on specific pump or all pumps
+            pump_id = kwargs.get('pump_id', None)
+            maintenance_results = self.pump_system.perform_maintenance(pump_id, maintenance_type="oil_change", **kwargs)
+            results.update(maintenance_results)
+            
+        elif maintenance_type == "oil_top_off":
+            # Oil top-off on specific pump or all pumps
+            pump_id = kwargs.get('pump_id', None)
+            maintenance_results = self.pump_system.perform_maintenance(pump_id, maintenance_type="oil_top_off", **kwargs)
+            results.update(maintenance_results)
+            
+        elif maintenance_type == "impeller_inspection":
+            # Impeller inspection
+            pump_id = kwargs.get('pump_id', None)
+            maintenance_results = self.pump_system.perform_maintenance(pump_id, maintenance_type="impeller_inspection", **kwargs)
+            results.update(maintenance_results)
+            
+        elif maintenance_type == "bearing_replacement":
+            # Bearing replacement
+            pump_id = kwargs.get('pump_id', None)
+            maintenance_results = self.pump_system.perform_maintenance(pump_id, maintenance_type="bearing_replacement", **kwargs)
+            results.update(maintenance_results)
+            
+        elif maintenance_type == "seal_replacement":
+            # Seal replacement
+            pump_id = kwargs.get('pump_id', None)
+            maintenance_results = self.pump_system.perform_maintenance(pump_id, maintenance_type="seal_replacement", **kwargs)
+            results.update(maintenance_results)
+            
+        elif maintenance_type == "vibration_analysis":
+            # Vibration analysis
+            pump_id = kwargs.get('pump_id', None)
+            maintenance_results = self.pump_system.perform_maintenance(pump_id, maintenance_type="vibration_analysis", **kwargs)
+            results.update(maintenance_results)
+            
+        elif maintenance_type == "component_overhaul":
+            # Component overhaul
+            pump_id = kwargs.get('pump_id', None)
+            maintenance_results = self.pump_system.perform_maintenance(pump_id, maintenance_type="component_overhaul", **kwargs)
+            results.update(maintenance_results)
+            
+        elif maintenance_type == "routine_maintenance":
+            # Routine maintenance
+            pump_id = kwargs.get('pump_id', None)
+            maintenance_results = self.pump_system.perform_maintenance(pump_id, maintenance_type="routine_maintenance", **kwargs)
             results.update(maintenance_results)
             
         elif maintenance_type == "water_treatment":
             # Reset water treatment system
-            treatment_results = self.water_quality.perform_treatment_maintenance(**kwargs)
-            results.update(treatment_results)
+            if hasattr(self.water_quality, 'perform_treatment_maintenance'):
+                treatment_results = self.water_quality.perform_treatment_maintenance(**kwargs)
+                results.update(treatment_results)
+            else:
+                # Basic water treatment maintenance
+                self.water_quality.reset()
+                results['water_treatment'] = {
+                    'success': True,
+                    'duration_hours': 4.0,
+                    'work_performed': 'Water treatment system maintenance',
+                    'effectiveness_score': 0.9
+                }
             
         elif maintenance_type == "control_calibration":
             # Calibrate control system
-            calibration_results = self.level_control.perform_calibration(**kwargs)
-            results.update(calibration_results)
+            if hasattr(self.level_control, 'perform_calibration'):
+                calibration_results = self.level_control.perform_calibration(**kwargs)
+                results.update(calibration_results)
+            else:
+                # Basic control calibration
+                results['control_calibration'] = {
+                    'success': True,
+                    'duration_hours': 2.0,
+                    'work_performed': 'Control system calibration',
+                    'effectiveness_score': 0.95
+                }
             
         elif maintenance_type == "system_cleaning":
             # Perform system cleaning
             cleaning_results = self.diagnostics.perform_system_cleaning(**kwargs)
             results.update(cleaning_results)
+            
+        elif maintenance_type == "protection_system_test":
+            # Test protection system
+            test_results = self.protection_system.perform_protection_test()
+            results['protection_test'] = {
+                'success': test_results.get('overall_test_passed', True),
+                'duration_hours': 1.0,
+                'work_performed': 'Protection system test',
+                'findings': f"Test results: {test_results}",
+                'effectiveness_score': 1.0 if test_results.get('overall_test_passed', True) else 0.5
+            }
+            
+        elif maintenance_type == "protection_system_calibration":
+            # Calibrate protection system
+            self.protection_system.reset_protection_system()
+            results['protection_calibration'] = {
+                'success': True,
+                'duration_hours': 4.0,
+                'work_performed': 'Protection system calibration',
+                'findings': 'Protection system reset and calibrated',
+                'effectiveness_score': 1.0
+            }
         
         # Update maintenance factor
-        self.maintenance_factor = min(1.0, self.maintenance_factor + 0.1)
-        results['maintenance_factor'] = self.maintenance_factor
+        if results:
+            avg_effectiveness = sum(r.get('effectiveness_score', 0.8) for r in results.values() if isinstance(r, dict)) / max(1, len(results))
+            self.maintenance_factor = min(1.0, self.maintenance_factor + avg_effectiveness * 0.05)
         
-        return results
+        # Return compatible format for automatic maintenance system
+        if len(results) == 1:
+            # Single maintenance action - return the result directly
+            return list(results.values())[0]
+        else:
+            # Multiple maintenance actions - return summary
+            all_successful = all(r.get('success', True) for r in results.values() if isinstance(r, dict))
+            total_duration = sum(r.get('duration_hours', 1.0) for r in results.values() if isinstance(r, dict))
+            
+            return {
+                'success': all_successful,
+                'duration_hours': total_duration,
+                'work_performed': f"Performed {maintenance_type} on feedwater system",
+                'findings': f"Completed {len(results)} maintenance actions",
+                'effectiveness_score': 1.0 if all_successful else 0.7
+            }
     
     def get_state_dict(self) -> Dict[str, float]:
         """Get current state as dictionary for logging/monitoring"""
@@ -500,6 +688,63 @@ class EnhancedFeedwaterPhysics(HeatFlowProvider):
             'work_input': heat_flows['pump_work_input'],
             'extraction_heating': heat_flows['extraction_heating']
         }
+    
+    def get_chemistry_flows(self) -> Dict[str, Dict[str, float]]:
+        """
+        Get chemistry flows for chemistry flow tracker integration
+        
+        Returns:
+            Dictionary with chemistry flow data
+        """
+        # Get water chemistry flows from the integrated water quality system
+        water_chemistry_flows = self.water_quality.get_chemistry_flows()
+        
+        # Add feedwater-specific chemistry flows
+        feedwater_flows = {
+            'feedwater_chemistry': {
+                ChemicalSpecies.PH.value: self.water_quality.ph,
+                ChemicalSpecies.IRON.value: self.water_quality.iron_concentration,
+                ChemicalSpecies.COPPER.value: self.water_quality.copper_concentration,
+                ChemicalSpecies.HARDNESS.value: self.water_quality.hardness,
+                ChemicalSpecies.CHLORIDE.value: self.water_quality.chloride,
+                ChemicalSpecies.TDS.value: self.water_quality.total_dissolved_solids,
+                ChemicalSpecies.ANTISCALANT.value: self.water_quality.antiscalant_concentration,
+                ChemicalSpecies.CORROSION_INHIBITOR.value: self.water_quality.corrosion_inhibitor_level
+            }
+        }
+        
+        # Combine flows
+        combined_flows = {}
+        combined_flows.update(water_chemistry_flows)
+        combined_flows.update(feedwater_flows)
+        
+        return combined_flows
+    
+    def get_chemistry_state(self) -> Dict[str, float]:
+        """
+        Get current chemistry state for chemistry flow tracker
+        
+        Returns:
+            Dictionary with current chemistry concentrations
+        """
+        return self.water_quality.get_chemistry_state()
+    
+    def update_chemistry_effects(self, chemistry_state: Dict[str, float]) -> None:
+        """
+        Update feedwater system based on chemistry state feedback
+        
+        Args:
+            chemistry_state: Chemistry state from external systems
+        """
+        # Pass chemistry effects to the water quality system
+        self.water_quality.update_chemistry_effects(chemistry_state)
+        
+        # Apply chemistry effects to pump performance if needed
+        if 'water_aggressiveness' in chemistry_state:
+            aggressiveness = chemistry_state['water_aggressiveness']
+            # Reduce performance factor based on water aggressiveness
+            chemistry_performance_factor = max(0.5, 1.0 - (aggressiveness - 1.0) * 0.1)
+            self.performance_factor *= chemistry_performance_factor
     
     def reset(self) -> None:
         """Reset enhanced feedwater system to initial conditions"""

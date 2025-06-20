@@ -24,6 +24,7 @@ import numpy as np
 from simulator.state import auto_register
 
 from .vacuum_pump import SteamJetEjector, SteamEjectorConfig
+from ..component_descriptions import CONDENSER_COMPONENT_DESCRIPTIONS
 
 warnings.filterwarnings("ignore")
 
@@ -264,7 +265,8 @@ class VacuumControlLogic:
         return commands
 
 
-@auto_register("SECONDARY", "condenser", id_source="config.system_id")
+@auto_register("SECONDARY", "condenser", id_source="config.system_id",
+               description=CONDENSER_COMPONENT_DESCRIPTIONS['vacuum_system'])
 class VacuumSystem:
     """
     Complete vacuum system model for PWR condenser

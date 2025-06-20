@@ -26,7 +26,8 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 from simulator.state import auto_register
 
-from ..turbine.lubrication_base import BaseLubricationSystem, BaseLubricationConfig, LubricationComponent
+from ..lubrication_base import BaseLubricationSystem, BaseLubricationConfig, LubricationComponent
+from ..component_descriptions import FEEDWATER_COMPONENT_DESCRIPTIONS
 
 warnings.filterwarnings("ignore")
 
@@ -65,7 +66,8 @@ class FeedwaterPumpLubricationConfig(BaseLubricationConfig):
     oil_analysis_interval: float = 500.0        # hours (3 weeks)
 
 
-@auto_register("SECONDARY", "feedwater", id_source="config.system_id")
+@auto_register("SECONDARY", "feedwater", id_source="config.system_id",
+               description=FEEDWATER_COMPONENT_DESCRIPTIONS['feedwater_pump_lubrication'])
 class FeedwaterPumpLubricationSystem(BaseLubricationSystem):
     """
     Feedwater pump-specific lubrication system implementation
@@ -294,11 +296,13 @@ class FeedwaterPumpLubricationSystem(BaseLubricationSystem):
         
         # Calculate seal leakage based on seal wear
         seal_wear = self.component_wear.get('mechanical_seals', 0.0)
-        base_seal_leakage = 0.05  # L/min base leakage (50 mL/min)
-        wear_leakage = seal_wear * 0.  # Additional leakage from wear
-        cavitation_leakage = cavitation_intensity * 0.  # Cavitation damages seals
+        base_seal_leakage = 0.005  # L/min base leakage (5 mL/min) - realistic for modern seals
+        wear_leakage = seal_wear * 0.02  # Additional leakage from wear (reduced from 0.8)
+        cavitation_leakage = cavitation_intensity * 0.01  # Cavitation damages seals (reduced from 0.5)
         
-        self.seal_leakage_rate = base_seal_leakage + wear_leakage + cavitation_leakage
+        # Calculate total leakage and apply realistic maximum cap
+        total_leakage = base_seal_leakage + wear_leakage + cavitation_leakage
+        self.seal_leakage_rate = min(total_leakage, 0.2)  # Cap at 200 mL/min maximum
         
         # Oil level decreases due to seal leakage
         if self.seal_leakage_rate > 0:
@@ -306,7 +310,8 @@ class FeedwaterPumpLubricationSystem(BaseLubricationSystem):
             # seal_leakage_rate is in L/min, dt is in minutes
             oil_lost_liters = self.seal_leakage_rate * dt  # L/min * minutes = L
             oil_loss_percentage = (oil_lost_liters / self.config.oil_reservoir_capacity) * 100.0
-            self.oil_level = max(0.0, self.oil_level - oil_loss_percentage)
+            # Reduce the impact by 50% to account for oil makeup systems and more realistic loss
+            self.oil_level = max(0.0, self.oil_level - oil_loss_percentage * 0.5)
             
         # Apply bounds checking to prevent oil level exceeding 100%
         self.oil_level = min(100.0, max(0.0, self.oil_level))
@@ -467,17 +472,17 @@ def integrate_lubrication_with_pump(pump, lubrication_system: FeedwaterPumpLubri
             moisture_input = 0.0001  # Reduced moisture input
             
             oil_quality_results = lubrication_system.update_oil_quality(
-                oil_temp, contamination_input, moisture_input, dt
+                oil_temp, contamination_input, moisture_input, dt / 60.0  # Convert minutes to hours
             )
             
             # Update component wear
             wear_results = lubrication_system.update_component_wear(
-                component_conditions, dt
+                component_conditions, dt / 60.0  # Convert minutes to hours
             )
             
             # Update pump-specific lubrication effects
             pump_lubrication_results = lubrication_system.update_pump_lubrication_effects(
-                pump_conditions, dt
+                pump_conditions, dt  # dt already in minutes for this method
             )
             
             # Get lubrication state for pump integration

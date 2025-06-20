@@ -40,12 +40,12 @@ from .level_control import (
     SteamQualityCompensator
 )
 
-# Import water chemistry components
-from .water_chemistry import (
-    WaterQualityModel,
-    WaterQualityConfig,
-    ChemicalTreatmentSystem
-)
+# Note: Water chemistry components moved to unified system at systems.secondary.water_chemistry
+# from .water_chemistry import (
+#     WaterQualityModel,
+#     WaterQualityConfig,
+#     ChemicalTreatmentSystem
+# )
 
 # Import performance monitoring
 from .performance_monitoring import (
@@ -88,10 +88,10 @@ __all__ = [
     'ThreeElementConfig',
     'SteamQualityCompensator',
     
-    # Water chemistry
-    'WaterQualityModel',
-    'WaterQualityConfig',
-    'ChemicalTreatmentSystem',
+    # Water chemistry (moved to unified system)
+    # 'WaterQualityModel',
+    # 'WaterQualityConfig', 
+    # 'ChemicalTreatmentSystem',
     
     # Performance monitoring
     'CavitationModel',
