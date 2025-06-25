@@ -23,95 +23,14 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 import numpy as np
 from simulator.state import auto_register
+from .config import TurbineStageSystemConfig
 from ..component_descriptions import TURBINE_COMPONENT_DESCRIPTIONS
 
 warnings.filterwarnings("ignore")
 
 
-@dataclass
-class TurbineStageConfig:
-    """
-    Configuration parameters for individual turbine stage
-    
-    References:
-    - Typical PWR turbine stage designs
-    - Steam expansion optimization
-    - Extraction point specifications
-    """
-    
-    # Stage identification
-    stage_id: str = "HP-1"                    # Stage identifier (HP-1, HP-2, LP-1, etc.)
-    stage_type: str = "impulse"               # "impulse", "reaction", "mixed"
-    turbine_section: str = "HP"               # "HP", "IP", "LP"
-    
-    # Design parameters
-    design_inlet_pressure: float = 6.895     # MPa design inlet pressure
-    design_outlet_pressure: float = 4.5      # MPa design outlet pressure
-    design_steam_flow: float = 555.0         # kg/s design steam flow
-    design_efficiency: float = 0.88          # Design isentropic efficiency
-    
-    # Physical geometry
-    blade_height: float = 0.05               # m blade height
-    blade_chord: float = 0.03                # m blade chord length
-    blade_count: int = 120                   # Number of blades
-    nozzle_area: float = 0.1                 # m² nozzle throat area
-    
-    # Performance parameters
-    reaction_ratio: float = 0.5              # Reaction ratio (0=impulse, 1=reaction)
-    velocity_coefficient: float = 0.95       # Velocity coefficient
-    blade_speed_ratio: float = 0.47          # Optimal blade speed ratio
-    
-    # Extraction parameters (if applicable)
-    has_extraction: bool = False             # Stage has extraction point
-    extraction_pressure: float = 2.0         # MPa extraction pressure
-    max_extraction_flow: float = 50.0        # kg/s maximum extraction flow
-    min_extraction_flow: float = 5.0         # kg/s minimum extraction flow
-    
-    # Degradation parameters
-    fouling_rate: float = 0.00001            # Efficiency loss per hour
-    erosion_rate: float = 0.000001           # Blade wear rate
-    deposit_buildup_rate: float = 0.00005    # Deposit accumulation rate
-
-
-@dataclass
-class TurbineStageSystemConfig:
-    """
-    Configuration for complete multi-stage turbine system
-    
-    References:
-    - PWR turbine arrangements
-    - Stage coordination strategies
-    - Extraction system design
-    """
-    
-    # System configuration
-    system_id: str = "TSS-001"               # Turbine stage system identifier
-    stage_configs: List[TurbineStageConfig] = field(default_factory=list)
-    
-    # HP turbine configuration
-    hp_stage_count: int = 8                  # Number of HP stages
-    hp_inlet_pressure: float = 6.895         # MPa HP inlet pressure
-    hp_outlet_pressure: float = 1.2          # MPa HP outlet pressure
-    
-    # LP turbine configuration
-    lp_stage_count: int = 6                  # Number of LP stages per flow
-    lp_flow_count: int = 2                   # Number of LP flows (double flow)
-    lp_inlet_pressure: float = 1.15          # MPa LP inlet pressure
-    lp_outlet_pressure: float = 0.007        # MPa LP outlet pressure
-    
-    # Extraction system
-    extraction_point_count: int = 6          # Number of extraction points
-    extraction_pressures: List[float] = field(default_factory=lambda: [4.0, 2.5, 1.5, 0.8, 0.4, 0.15])
-    
-    # Control parameters
-    stage_loading_strategy: str = "optimal"   # "optimal", "uniform", "custom"
-    extraction_control_mode: str = "pressure" # "pressure", "flow", "enthalpy"
-    performance_optimization: bool = True     # Enable performance optimization
-    
-    # Operating limits
-    max_stage_loading: float = 1.2           # Maximum stage loading factor
-    min_stage_efficiency: float = 0.7        # Minimum allowable stage efficiency
-    max_extraction_variation: float = 0.1    # Maximum extraction flow variation
+# TurbineStageConfig is now defined in the unified config system
+# Individual stage configurations are created from TurbineStageSystemConfig parameters
 
 
 @auto_register("SECONDARY", "turbine", id_source="config.stage_id", 
@@ -128,31 +47,37 @@ class TurbineStage:
     5. Performance optimization
     """
     
-    def __init__(self, config: TurbineStageConfig):
-        """Initialize individual turbine stage"""
-        self.config = config
+    def __init__(self, stage_id: str, stage_config_dict: Dict):
+        """Initialize individual turbine stage from config dictionary"""
+        # Create a simple config object from the dictionary
+        class StageConfig:
+            def __init__(self, **kwargs):
+                for key, value in kwargs.items():
+                    setattr(self, key, value)
+        
+        self.config = StageConfig(**stage_config_dict)
         
         # Stage thermodynamic state
-        self.inlet_pressure = config.design_inlet_pressure      # MPa
+        self.inlet_pressure = self.config.design_inlet_pressure      # MPa
         self.inlet_temperature = 285.8                          # °C
         self.inlet_enthalpy = 0.0                              # kJ/kg
         self.inlet_entropy = 0.0                               # kJ/kg/K
-        self.inlet_flow = config.design_steam_flow             # kg/s
+        self.inlet_flow = self.config.design_steam_flow             # kg/s
         
-        self.outlet_pressure = config.design_outlet_pressure    # MPa
+        self.outlet_pressure = self.config.design_outlet_pressure    # MPa
         self.outlet_temperature = 245.0                        # °C
         self.outlet_enthalpy = 0.0                             # kJ/kg
         self.outlet_entropy = 0.0                              # kJ/kg/K
-        self.outlet_flow = config.design_steam_flow            # kg/s
+        self.outlet_flow = self.config.design_steam_flow            # kg/s
         
         # Stage performance
-        self.actual_efficiency = config.design_efficiency      # Current efficiency
+        self.actual_efficiency = self.config.design_efficiency      # Current efficiency
         self.power_output = 0.0                                # MW stage power
         self.enthalpy_drop = 0.0                               # kJ/kg enthalpy drop
         
         # Extraction state (if applicable)
         self.extraction_flow = 0.0                             # kg/s current extraction
-        self.extraction_pressure = config.extraction_pressure  # MPa extraction pressure
+        self.extraction_pressure = self.config.extraction_pressure  # MPa extraction pressure
         self.extraction_enthalpy = 0.0                        # kJ/kg extraction enthalpy
         
         # Blade and mechanical state
@@ -714,7 +639,7 @@ class TurbineStageSystem:
         
         # Create stage objects
         self.stages = {}
-        if config.stage_configs:
+        if hasattr(config, 'stage_configs') and config.stage_configs:
             for stage_config in config.stage_configs:
                 self.stages[stage_config.stage_id] = TurbineStage(stage_config)
         else:
@@ -737,33 +662,64 @@ class TurbineStageSystem:
     def _create_default_stages(self):
         """Create default stage configuration"""
         # HP stages
-        hp_pressures = np.linspace(6.895, 1.2, self.config.hp_stage_count + 1)
-        for i in range(self.config.hp_stage_count):
-            stage_config = TurbineStageConfig(
-                stage_id=f"HP-{i+1}",
-                stage_type="impulse" if i < 2 else "reaction",
-                turbine_section="HP",
-                design_inlet_pressure=hp_pressures[i],
-                design_outlet_pressure=hp_pressures[i+1],
-                has_extraction=(i >= 2 and i < 6),  # Extraction on stages 3-6
-                extraction_pressure=hp_pressures[i] * 0.8
-            )
-            self.stages[stage_config.stage_id] = TurbineStage(stage_config)
+        hp_pressures = np.linspace(6.895, 1.2, self.config.hp_stages + 1)
+        for i in range(self.config.hp_stages):
+            stage_id = f"HP-{i+1}"
+            stage_config_dict = {
+                'stage_id': stage_id,
+                'stage_type': "impulse" if i < 2 else "reaction",
+                'turbine_section': "HP",
+                'design_inlet_pressure': hp_pressures[i],
+                'design_outlet_pressure': hp_pressures[i+1],
+                'design_steam_flow': 555.0,
+                'design_efficiency': 0.88,
+                'has_extraction': (i >= 2 and i < 6),  # Extraction on stages 3-6
+                'extraction_pressure': hp_pressures[i] * 0.8,
+                'max_extraction_flow': 50.0,
+                'min_extraction_flow': 5.0,
+                # Use parameters from new config system
+                'blade_height': self.config.blade_height,
+                'blade_chord': self.config.blade_chord,
+                'blade_count': self.config.blade_count,
+                'nozzle_area': self.config.nozzle_area,
+                'reaction_ratio': self.config.reaction_ratio,
+                'velocity_coefficient': self.config.velocity_coefficient,
+                'blade_speed_ratio': self.config.blade_speed_ratio,
+                'fouling_rate': self.config.fouling_rate,
+                'erosion_rate': self.config.erosion_rate,
+                'deposit_buildup_rate': self.config.deposit_buildup_rate
+            }
+            self.stages[stage_id] = TurbineStage(stage_id, stage_config_dict)
         
         # LP stages
-        lp_pressures = np.linspace(1.15, 0.007, self.config.lp_stage_count + 1)
-        for i in range(self.config.lp_stage_count):
-            stage_config = TurbineStageConfig(
-                stage_id=f"LP-{i+1}",
-                stage_type="reaction",
-                turbine_section="LP",
-                design_inlet_pressure=lp_pressures[i],
-                design_outlet_pressure=lp_pressures[i+1],
-                design_steam_flow=555.0 * self.config.lp_flow_count,  # Double flow
-                has_extraction=(i < 3),  # Extraction on first 3 LP stages
-                extraction_pressure=lp_pressures[i] * 0.7
-            )
-            self.stages[stage_config.stage_id] = TurbineStage(stage_config)
+        lp_pressures = np.linspace(1.15, 0.007, self.config.lp_stages + 1)
+        for i in range(self.config.lp_stages):
+            stage_id = f"LP-{i+1}"
+            stage_config_dict = {
+                'stage_id': stage_id,
+                'stage_type': "reaction",
+                'turbine_section': "LP",
+                'design_inlet_pressure': lp_pressures[i],
+                'design_outlet_pressure': lp_pressures[i+1],
+                'design_steam_flow': 555.0 * 2,  # Double flow LP
+                'design_efficiency': 0.88,
+                'has_extraction': (i < 3),  # Extraction on first 3 LP stages
+                'extraction_pressure': lp_pressures[i] * 0.7,
+                'max_extraction_flow': 50.0,
+                'min_extraction_flow': 5.0,
+                # Use parameters from new config system
+                'blade_height': self.config.blade_height,
+                'blade_chord': self.config.blade_chord,
+                'blade_count': self.config.blade_count,
+                'nozzle_area': self.config.nozzle_area,
+                'reaction_ratio': self.config.reaction_ratio,
+                'velocity_coefficient': self.config.velocity_coefficient,
+                'blade_speed_ratio': self.config.blade_speed_ratio,
+                'fouling_rate': self.config.fouling_rate,
+                'erosion_rate': self.config.erosion_rate,
+                'deposit_buildup_rate': self.config.deposit_buildup_rate
+            }
+            self.stages[stage_id] = TurbineStage(stage_id, stage_config_dict)
     
     def calculate_stage_by_stage_expansion(self,
                                          inlet_pressure: float,

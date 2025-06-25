@@ -19,7 +19,6 @@ Physical Basis:
 """
 
 import warnings
-from dataclasses import dataclass
 from typing import Dict, Optional, Tuple, List, Any
 from simulator.state import auto_register
 from ..component_descriptions import STEAM_GENERATOR_COMPONENT_DESCRIPTIONS
@@ -29,65 +28,15 @@ from ..water_chemistry import WaterChemistry, WaterChemistryConfig
 # Import chemistry flow interfaces
 from ..chemistry_flow_tracker import ChemistryFlowProvider, ChemicalSpecies
 
-import numpy as np
+# Import the new comprehensive config system
+from .config import SteamGeneratorConfig
 
-# Import state management interfaces
-# Removed StateProviderMixin import - this is now an individual unit managed by enhanced system
+import numpy as np
 
 warnings.filterwarnings("ignore")
 
 
-@dataclass
-class SteamGeneratorConfig:
-    """
-    Steam generator configuration parameters based on Westinghouse Model F design
-    
-    References:
-    - Westinghouse AP1000 DCD Chapter 5
-    - NUREG-0800 Standard Review Plan
-    - Steam Generator Reference Book (EPRI)
-    """
-    
-    # Physical dimensions (Westinghouse Model F basis)
-    generator_id : str = "SG-1"
-    heat_transfer_area: float = 5100.0  # m² (AP1000: ~5100 m² per SG)
-    tube_count: int = 3388  # Number of U-tubes (AP1000 actual count)
-    tube_inner_diameter: float = 0.0191  # m (3/4" tubes, 19.1mm ID)
-    tube_outer_diameter: float = 0.0222  # m (22.2mm OD)
-    tube_length: float = 19.8  # m effective heat transfer length
-    
-    # Heat transfer coefficients (from Dittus-Boelter correlation)
-    # Primary side: Nu = 0.023 * Re^0.8 * Pr^0.4
-    # For PWR conditions: Re ~3e5, Pr ~0.9, k ~0.6 W/m/K
-    primary_htc: float = 28000.0  # W/m²/K (typical range 25000-35000)
-    
-    # Secondary side: Chen correlation for nucleate boiling
-    # Typical values for PWR steam generators: 15000-25000 W/m²/K
-    secondary_htc: float = 18000.0  # W/m²/K
-    
-    # Tube material properties (Inconel 690)
-    tube_wall_conductivity: float = 16.2  # W/m/K (Inconel 690 at 300°C)
-    tube_wall_thickness: float = 0.00155  # m (1.55mm wall thickness)
-    
-    # Operating parameters (AP1000 design basis)
-    design_thermal_power: float = 1085.0e6  # W per SG (3255 MWt / 3 SGs)
-    primary_design_flow: float = 5700.0  # kg/s per SG (AP1000: 17100 kg/s total / 3)
-    secondary_design_flow: float = 555.0  # kg/s steam flow per SG
-    
-    # Design pressures (typical PWR values)
-    design_pressure_primary: float = 15.51  # MPa (2250 psia)
-    design_pressure_secondary: float = 6.895  # MPa (1000 psia)
-    
-    # Steam generator inventory (based on AP1000 design)
-    secondary_water_mass: float = 68000.0  # kg total water inventory per SG
-    steam_dome_volume: float = 28.0  # m³ steam space volume
-    
-    # Control parameters (tuned for realistic response)
-    feedwater_control_gain: float = 0.08  # Proportional gain for level control
-    steam_pressure_control_gain: float = 0.05  # Proportional gain for pressure control
-
-
-@auto_register("SECONDARY", "steam_generator", id_source="config.generator_id",
+@auto_register("SECONDARY", "steam_generator", id_source="config.system_id",
                description=STEAM_GENERATOR_COMPONENT_DESCRIPTIONS['steam_generator'])
 class SteamGenerator(ChemistryFlowProvider):
     """
@@ -125,8 +74,8 @@ class SteamGenerator(ChemistryFlowProvider):
         if tsp_fouling_config is None:
             tsp_fouling_config = TSPFoulingConfig()
         
-        # Set unique TSP fouling ID based on generator ID
-        tsp_fouling_config.fouling_model_id = f"TSP-{self.config.generator_id}"
+        # Set unique TSP fouling ID based on system ID
+        tsp_fouling_config.fouling_model_id = f"TSP-{self.config.system_id}"
         
         # Initialize TSP fouling model with unified water chemistry
         self.tsp_fouling = TSPFoulingModel(tsp_fouling_config, self.water_chemistry)
@@ -174,7 +123,7 @@ class SteamGenerator(ChemistryFlowProvider):
             Effective heat transfer area (m²)
         """
         normal_level = 12.5  # m (normal operating level)
-        design_area = self.config.heat_transfer_area  # m² (full design area)
+        design_area = self.config.heat_transfer_area_per_sg  # m² (full design area)
         
         # Level factor: relationship between level and wetted area
         if water_level >= normal_level:
@@ -249,7 +198,7 @@ class SteamGenerator(ChemistryFlowProvider):
         
         # Thermal resistances
         r_primary = 1.0 / h_primary
-        r_wall = self.config.tube_wall_thickness / self.config.tube_wall_conductivity
+        r_wall = self.config.tube_wall_thickness / self.config.tube_material_conductivity
         r_secondary = 1.0 / h_secondary
         
         # Overall heat transfer coefficient
@@ -291,7 +240,7 @@ class SteamGenerator(ChemistryFlowProvider):
             heat_transfer_rate = 0.0
         
         # Calculate tube wall temperature (thermal circuit analysis)
-        heat_flux = heat_transfer_rate / self.config.heat_transfer_area
+        heat_flux = heat_transfer_rate / self.config.heat_transfer_area_per_sg
         primary_avg_temp = (primary_temp_in + primary_temp_out) / 2.0
         
         # Temperature drop from primary fluid to tube wall
@@ -379,7 +328,7 @@ class SteamGenerator(ChemistryFlowProvider):
         # Pressure should stabilize based on heat input and steam generation, not drift linearly
         
         # Calculate equilibrium pressure based on current heat input and steam demand
-        design_heat_input = self.config.design_thermal_power / 1000.0  # kJ/s
+        design_heat_input = self.config.design_thermal_power_per_sg / 1000.0  # kJ/s
         heat_input_factor = heat_input_kj / design_heat_input if design_heat_input > 0 else 0.0
         
         # Equilibrium pressure scales with heat input capability
@@ -458,8 +407,8 @@ class SteamGenerator(ChemistryFlowProvider):
             quality_degradation += min(flow_degradation, 0.03)  # Max 3% degradation
         
         # 3. Heat flux effect - very high heat flux can cause carryover
-        design_heat_flux = self.config.design_thermal_power / self.config.heat_transfer_area
-        current_heat_flux = heat_input / self.config.heat_transfer_area
+        design_heat_flux = self.config.design_thermal_power_per_sg / self.config.heat_transfer_area_per_sg
+        current_heat_flux = heat_input / self.config.heat_transfer_area_per_sg
         heat_flux_ratio = current_heat_flux / design_heat_flux
         if heat_flux_ratio > 1.2:  # Above 120% design heat flux
             heat_flux_degradation = (heat_flux_ratio - 1.2) * 0.005  # 0.5% per 10% excess
@@ -573,7 +522,7 @@ class SteamGenerator(ChemistryFlowProvider):
         # Calculate average flow velocity in steam generator
         # Simplified calculation based on tube bundle geometry
         tube_cross_section = np.pi * (self.config.tube_inner_diameter / 2.0) ** 2
-        total_flow_area = self.config.tube_count * tube_cross_section
+        total_flow_area = self.config.tube_count_per_sg * tube_cross_section
         avg_velocity = primary_flow / (1000.0 * total_flow_area)  # m/s (assuming water density ~1000 kg/m³)
         
         # Update TSP fouling state using unified water chemistry
@@ -585,7 +534,7 @@ class SteamGenerator(ChemistryFlowProvider):
         )
         
         # Calculate performance metrics
-        thermal_efficiency = heat_transfer / self.config.design_thermal_power
+        thermal_efficiency = heat_transfer / self.config.design_thermal_power_per_sg
         steam_production_rate = secondary_dynamics['steam_generation_rate']
         
         # Heat transfer effectiveness
@@ -779,6 +728,256 @@ class SteamGenerator(ChemistryFlowProvider):
     def get_tsp_state(self) -> Dict[str, float]:
         """Get current TSP fouling state"""
         return self.tsp_fouling.get_state_dict()
+    
+    def setup_maintenance_integration(self, maintenance_system, component_id: str):
+        """
+        Set up maintenance integration for individual steam generator
+        
+        Args:
+            maintenance_system: AutoMaintenanceSystem instance
+            component_id: Unique identifier for this steam generator
+        """
+        print(f"STEAM GENERATOR {component_id}: Setting up maintenance integration")
+        
+        # Define monitoring configuration for steam generator parameters
+        monitoring_config = {
+            'tsp_fouling_fraction': {
+                'attribute': 'tsp_fouling.fouling_fraction',
+                'threshold': 0.15,  # 15% fouling triggers cleaning
+                'comparison': 'greater_than',
+                'action': 'tsp_chemical_cleaning',
+                'cooldown_hours': 168.0  # Weekly cooldown
+            },
+            'heat_transfer_degradation': {
+                'attribute': 'tsp_fouling.heat_transfer_degradation',
+                'threshold': 0.10,  # 10% degradation triggers maintenance
+                'comparison': 'greater_than',
+                'action': 'tube_bundle_inspection',
+                'cooldown_hours': 72.0  # 3-day cooldown
+            },
+            'steam_quality': {
+                'attribute': 'steam_quality',
+                'threshold': 0.99,  # Below 99% quality
+                'comparison': 'less_than',
+                'action': 'moisture_separator_maintenance',
+                'cooldown_hours': 48.0  # 2-day cooldown
+            },
+            'tube_wall_temperature': {
+                'attribute': 'tube_wall_temp',
+                'threshold': 350.0,  # High tube wall temperature
+                'comparison': 'greater_than',
+                'action': 'scale_removal',
+                'cooldown_hours': 24.0  # Daily cooldown
+            }
+        }
+        
+        # Register with maintenance system using event bus
+        maintenance_system.register_component(component_id, self, monitoring_config)
+        
+        print(f"  Registered {component_id} with {len(monitoring_config)} monitoring parameters")
+        
+        # Store reference for coordination
+        self.maintenance_system = maintenance_system
+        self.component_id = component_id
+    
+    def perform_maintenance(self, maintenance_type: str = None, **kwargs):
+        """
+        Perform maintenance operations on steam generator
+        
+        Args:
+            maintenance_type: Type of maintenance to perform
+            **kwargs: Additional maintenance parameters
+            
+        Returns:
+            Dictionary with maintenance results compatible with MaintenanceResult
+        """
+        from systems.maintenance.maintenance_actions import MaintenanceResult
+        
+        if maintenance_type == "tsp_chemical_cleaning":
+            # Perform TSP chemical cleaning
+            cleaning_result = self.tsp_fouling.perform_cleaning("chemical")
+            
+            # Calculate performance improvement
+            fouling_reduction = cleaning_result.get('fouling_reduction', 0.0)
+            performance_improvement = fouling_reduction * 100.0  # Convert to percentage
+            
+            return {
+                'success': True,
+                'duration_hours': 12.0,
+                'work_performed': 'TSP chemical cleaning completed',
+                'findings': f"Removed {fouling_reduction:.1%} of TSP fouling deposits",
+                'performance_improvement': performance_improvement,
+                'effectiveness_score': min(1.0, fouling_reduction * 2.0),  # Scale to 0-1
+                'next_maintenance_due': 8760.0,  # Annual
+                'parts_used': ['Chemical cleaning solution', 'Cleaning equipment']
+            }
+        
+        elif maintenance_type == "tsp_mechanical_cleaning":
+            # Perform TSP mechanical cleaning
+            cleaning_result = self.tsp_fouling.perform_cleaning("mechanical")
+            
+            fouling_reduction = cleaning_result.get('fouling_reduction', 0.0)
+            performance_improvement = fouling_reduction * 100.0
+            
+            return {
+                'success': True,
+                'duration_hours': 16.0,
+                'work_performed': 'TSP mechanical cleaning completed',
+                'findings': f"Mechanically removed {fouling_reduction:.1%} of TSP fouling",
+                'performance_improvement': performance_improvement,
+                'effectiveness_score': min(1.0, fouling_reduction * 1.5),
+                'next_maintenance_due': 17520.0,  # Every 2 years
+                'parts_used': ['Mechanical cleaning tools', 'Replacement brushes']
+            }
+        
+        elif maintenance_type == "tube_bundle_inspection":
+            # Perform tube bundle inspection
+            current_degradation = self.tsp_fouling.heat_transfer_degradation
+            
+            # Inspection provides information but doesn't restore performance
+            findings = f"Heat transfer degradation: {current_degradation:.1%}"
+            recommendations = []
+            
+            if current_degradation > 0.15:
+                recommendations.append("Schedule TSP cleaning within 30 days")
+            if current_degradation > 0.20:
+                recommendations.append("Consider mechanical cleaning for severe fouling")
+            if self.steam_quality < 0.98:
+                recommendations.append("Inspect moisture separator equipment")
+            
+            return {
+                'success': True,
+                'duration_hours': 8.0,
+                'work_performed': 'Comprehensive tube bundle inspection',
+                'findings': findings,
+                'recommendations': recommendations,
+                'effectiveness_score': 1.0,  # Inspection always successful
+                'next_maintenance_due': 4380.0,  # Semi-annual
+                'parts_used': ['Inspection equipment', 'Documentation materials']
+            }
+        
+        elif maintenance_type == "moisture_separator_maintenance":
+            # Perform moisture separator maintenance
+            current_quality = self.steam_quality
+            
+            # Restore steam quality to design value
+            quality_improvement = 0.999 - current_quality
+            self.steam_quality = min(0.999, current_quality + quality_improvement * 0.8)
+            
+            return {
+                'success': True,
+                'duration_hours': 6.0,
+                'work_performed': 'Moisture separator maintenance completed',
+                'findings': f"Improved steam quality from {current_quality:.3f} to {self.steam_quality:.3f}",
+                'performance_improvement': quality_improvement * 100.0,
+                'effectiveness_score': 0.9,
+                'next_maintenance_due': 4380.0,  # Semi-annual
+                'parts_used': ['Separator elements', 'Gaskets', 'Cleaning materials']
+            }
+        
+        elif maintenance_type == "scale_removal":
+            # Perform scale removal
+            # Reset tube wall temperature to more normal value
+            original_temp = self.tube_wall_temp
+            self.tube_wall_temp = min(self.tube_wall_temp, 320.0)  # Reduce to reasonable level
+            
+            temp_reduction = original_temp - self.tube_wall_temp
+            
+            return {
+                'success': True,
+                'duration_hours': 10.0,
+                'work_performed': 'Scale removal completed',
+                'findings': f"Reduced tube wall temperature by {temp_reduction:.1f}°C",
+                'performance_improvement': temp_reduction / original_temp * 100.0,
+                'effectiveness_score': 0.85,
+                'next_maintenance_due': 8760.0,  # Annual
+                'parts_used': ['Descaling chemicals', 'Cleaning equipment']
+            }
+        
+        elif maintenance_type == "water_chemistry_adjustment":
+            # Perform water chemistry adjustment
+            # Reset water chemistry to optimal conditions
+            self.water_chemistry.reset()
+            
+            return {
+                'success': True,
+                'duration_hours': 2.0,
+                'work_performed': 'Water chemistry adjustment completed',
+                'findings': 'Restored optimal water chemistry parameters',
+                'effectiveness_score': 0.95,
+                'next_maintenance_due': 720.0,  # Monthly
+                'parts_used': ['Chemical additives', 'pH adjustment chemicals']
+            }
+        
+        elif maintenance_type == "eddy_current_testing":
+            # Perform eddy current testing
+            tsp_state = self.tsp_fouling.get_state_dict()
+            
+            findings = f"Tube integrity assessment completed. "
+            findings += f"TSP fouling level: {tsp_state['fouling_fraction']:.1%}, "
+            findings += f"Operating years: {tsp_state['operating_years']:.1f}"
+            
+            recommendations = []
+            if tsp_state['fouling_fraction'] > 0.20:
+                recommendations.append("Schedule immediate TSP cleaning")
+            if tsp_state['operating_years'] > 15:
+                recommendations.append("Consider tube replacement program")
+            
+            return {
+                'success': True,
+                'duration_hours': 24.0,
+                'work_performed': 'Eddy current testing of all tubes',
+                'findings': findings,
+                'recommendations': recommendations,
+                'effectiveness_score': 1.0,
+                'next_maintenance_due': 8760.0,  # Annual
+                'parts_used': ['Eddy current probes', 'Data recording equipment']
+            }
+        
+        elif maintenance_type == "secondary_side_cleaning":
+            # Perform general secondary side cleaning
+            # Partial restoration of performance
+            current_degradation = self.tsp_fouling.heat_transfer_degradation
+            
+            # Cleaning provides moderate improvement
+            improvement_factor = 0.3  # 30% of fouling removed
+            self.tsp_fouling.fouling_fraction *= (1.0 - improvement_factor)
+            
+            return {
+                'success': True,
+                'duration_hours': 8.0,
+                'work_performed': 'Secondary side cleaning completed',
+                'findings': f"Reduced heat transfer degradation by {improvement_factor:.1%}",
+                'performance_improvement': current_degradation * improvement_factor * 100.0,
+                'effectiveness_score': 0.7,
+                'next_maintenance_due': 4380.0,  # Semi-annual
+                'parts_used': ['Cleaning chemicals', 'Brushes', 'Rinse water']
+            }
+        
+        elif maintenance_type == "routine_maintenance":
+            # Perform routine maintenance
+            # Minor performance restoration
+            self.steam_quality = min(0.999, self.steam_quality + 0.001)
+            
+            return {
+                'success': True,
+                'duration_hours': 4.0,
+                'work_performed': 'Routine steam generator maintenance',
+                'findings': 'General maintenance activities completed',
+                'effectiveness_score': 0.8,
+                'next_maintenance_due': 2190.0,  # Quarterly
+                'parts_used': ['General maintenance supplies']
+            }
+        
+        else:
+            # Unknown maintenance type
+            return {
+                'success': False,
+                'duration_hours': 0.0,
+                'work_performed': f'Unknown maintenance type: {maintenance_type}',
+                'error_message': f'Maintenance type {maintenance_type} not supported',
+                'effectiveness_score': 0.0
+            }
     
     def reset(self) -> None:
         """Reset to initial steady-state conditions"""
@@ -1027,9 +1226,9 @@ if __name__ == "__main__":
     # Display key parameters and their sources
     config = sg.config
     print("Key Design Parameters:")
-    print(f"  Heat Transfer Area: {config.heat_transfer_area:.0f} m² (AP1000: ~5100 m²)")
-    print(f"  Tube Count: {config.tube_count} (AP1000 actual)")
-    print(f"  Design Power: {config.design_thermal_power/1e6:.0f} MW per SG")
+    print(f"  Heat Transfer Area: {config.heat_transfer_area_per_sg:.0f} m² (AP1000: ~5100 m²)")
+    print(f"  Tube Count: {config.tube_count_per_sg} (AP1000 actual)")
+    print(f"  Design Power: {config.design_thermal_power_per_sg/1e6:.0f} MW per SG")
     print(f"  Primary Flow: {config.primary_design_flow:.0f} kg/s per SG")
     print(f"  Secondary Flow: {config.secondary_design_flow:.0f} kg/s per SG")
     print()

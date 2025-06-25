@@ -16,25 +16,31 @@ Components:
 - protection_system.py: Trip conditions and safety systems
 """
 
+# Import new unified config system
+from .config import (
+    TurbineConfig,
+    TurbineStageSystemConfig,
+    RotorDynamicsConfig,
+    TurbineThermalStressConfig,
+    TurbineProtectionConfig,
+    TurbineGovernorConfig,
+    TurbineBearingConfig
+)
+
 from .enhanced_physics import (
     EnhancedTurbinePhysics,
-    EnhancedTurbineConfig,
-    RotorDynamicsConfig,
-    TurbineStageSystemConfig,
-    ThermalStressConfig,
-    TurbineProtectionConfig
+    MetalTemperatureTracker,
+    TurbineProtectionSystem
 )
 
 from .stage_system import (
     TurbineStageSystem,
     TurbineStage,
-    TurbineStageConfig,
     TurbineStageControlLogic
 )
 
 from .rotor_dynamics import (
     RotorDynamicsModel,
-    RotorDynamicsConfig,
     VibrationMonitor,
     BearingModel
 )
@@ -47,9 +53,6 @@ from ..lubrication_base import (
 
 from .governor_system import (
     TurbineGovernorSystem,
-    GovernorControlConfig,
-    GovernorValveConfig,
-    GovernorLubricationConfig,
     GovernorLubricationSystem,
     GovernorValveModel
 )
@@ -67,25 +70,27 @@ from .turbine_bearing_lubrication import (
 # These will be added in future versions
 
 __all__ = [
+    # New unified configuration classes
+    'TurbineConfig',
+    'TurbineStageSystemConfig',
+    'RotorDynamicsConfig',
+    'TurbineThermalStressConfig',
+    'TurbineProtectionConfig',
+    'TurbineGovernorConfig',
+    'TubrineBearingConfig',
+    
     # Main enhanced physics
     'EnhancedTurbinePhysics',
-    'EnhancedTurbineConfig',
-    
-    # Configuration classes
-    'RotorDynamicsConfig',
-    'TurbineStageSystemConfig', 
-    'ThermalStressConfig',
-    'TurbineProtectionConfig',
+    'MetalTemperatureTracker',
+    'TurbineProtectionSystem',
     
     # Stage system
     'TurbineStageSystem',
     'TurbineStage',
-    'TurbineStageConfig',
     'TurbineStageControlLogic',
     
     # Rotor dynamics
     'RotorDynamicsModel',
-    'RotorDynamicsConfig',
     'VibrationMonitor',
     'BearingModel',
     
@@ -96,9 +101,6 @@ __all__ = [
     
     # Governor system with lubrication
     'TurbineGovernorSystem',
-    'GovernorControlConfig',
-    'GovernorValveConfig',
-    'GovernorLubricationConfig',
     'GovernorLubricationSystem',
     'GovernorValveModel',
     
@@ -106,13 +108,4 @@ __all__ = [
     'TurbineBearingLubricationSystem',
     'TurbineBearingLubricationConfig',
     'integrate_lubrication_with_turbine'
-    
-    # Note: Legacy turbine classes (TurbinePhysics, TurbineConfig) are imported
-    # directly in systems.secondary.__init__.py to avoid circular imports
-    
-    # Note: Thermal modeling and protection systems will be added when implemented
-    # 'ThermalStressModel',
-    # 'MetalTemperatureTracker',
-    # 'TurbineProtectionSystem',
-    # 'EmergencyActionSystem'
 ]

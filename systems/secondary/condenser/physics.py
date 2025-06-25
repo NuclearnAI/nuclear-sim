@@ -44,44 +44,15 @@ from ..component_descriptions import CONDENSER_COMPONENT_DESCRIPTIONS
 warnings.filterwarnings("ignore")
 
 
-@dataclass
-class TubeDegradationConfig:
-    """Configuration for tube degradation modeling"""
-    initial_tube_count: int = 28000           # Initial number of tubes
-    tube_failure_rate: float = 0.000001      # Tubes/hour base failure rate (reduced)
-    vibration_damage_threshold: float = 3.0  # m/s velocity threshold for damage
-    wall_thickness_initial: float = 0.00159  # m initial wall thickness
-    wall_thickness_minimum: float = 0.001    # m minimum allowable thickness
-    corrosion_rate: float = 0.0000001        # m/hour wall thinning rate (reduced)
-    leak_detection_threshold: float = 0.01   # kg/s leak rate for detection
-
-
-@dataclass
-class FoulingConfig:
-    """Configuration for advanced fouling modeling"""
-    # Biofouling parameters
-    biofouling_base_rate: float = 0.001      # mm/1000hrs base growth rate
-    biofouling_temp_coefficient: float = 0.1 # Temperature effect coefficient
-    biofouling_nutrient_factor: float = 1.0  # Nutrient availability factor
-    
-    # Scale formation parameters
-    scale_base_rate: float = 0.0005          # mm/1000hrs base formation rate
-    scale_hardness_coefficient: float = 0.002 # Water hardness effect
-    scale_temp_coefficient: float = 0.15     # Temperature effect
-    
-    # Corrosion product parameters
-    corrosion_base_rate: float = 0.0002     # mm/1000hrs base rate
-    corrosion_oxygen_coefficient: float = 0.01 # Dissolved oxygen effect
-    corrosion_ph_optimum: float = 7.5       # Optimal pH for minimum corrosion
-
-
-# NOTE: WaterQualityConfig removed - now using unified WaterChemistry system
+# NOTE: TubeDegradationConfig and FoulingConfig moved to condenser/config.py
+# Import them from the centralized configuration system
+from .config import CondenserTubeDegradationConfig, CondenserFoulingConfig
 
 
 class TubeDegradationModel:
     """Model for tube degradation and failure mechanisms"""
     
-    def __init__(self, config: TubeDegradationConfig):
+    def __init__(self, config: CondenserTubeDegradationConfig):
         self.config = config
         
         # Tube state tracking
@@ -177,7 +148,7 @@ class TubeDegradationModel:
 class AdvancedFoulingModel:
     """Model for multi-component fouling (biofouling, scale, corrosion products)"""
     
-    def __init__(self, config: FoulingConfig):
+    def __init__(self, config):
         self.config = config
         
         # Fouling thickness tracking (mm)
@@ -483,30 +454,9 @@ class AdvancedFoulingModel:
 # This eliminates duplicate water chemistry modeling and ensures consistency
 
 
-# Enhanced condenser configuration that includes all new models
-@dataclass
-class EnhancedCondenserConfig:
-    """Enhanced condenser configuration with all advanced models"""
-    
-    # Basic condenser parameters (FIXED for realistic PWR sizing)
-    design_heat_duty: float = 2200.0e6
-    design_steam_flow: float = 1665.0
-    design_cooling_water_flow: float = 45000.0
-    heat_transfer_area: float = 75000.0     # INCREASED: Realistic PWR condenser area
-    tube_count: int = 84000                 # INCREASED: More tubes for larger area
-    
-    # Heat transfer parameters (IMPROVED for better heat rejection)
-    steam_side_htc: float = 12000.0     # INCREASED: Better condensing coefficient
-    water_side_htc: float = 5000.0      # INCREASED: Better cooling water coefficient
-    tube_wall_conductivity: float = 385.0  # W/m/K (copper tubes)
-    tube_wall_thickness: float = 0.00159   # m (1.59mm wall)
-    tube_inner_diameter: float = 0.0254    # m (1 inch ID tubes)
-    
-    # Enhanced model configurations
-    tube_degradation_config: TubeDegradationConfig = None
-    fouling_config: FoulingConfig = None
-    vacuum_system_config: VacuumSystemConfig = None
-    # NOTE: water_quality_config removed - now using unified WaterChemistry system
+# NOTE: EnhancedCondenserConfig removed - now using centralized CondenserConfig
+# Import the centralized configuration system
+from .config import CondenserConfig
 
 
 @auto_register("SECONDARY", "condenser", allow_no_id=True,
@@ -533,26 +483,26 @@ class EnhancedCondenserPhysics(HeatFlowProvider, ChemistryFlowProvider):
     Implements StateProvider interface for automatic state collection.
     """
     
-    def __init__(self, config: Optional[EnhancedCondenserConfig] = None):
+    def __init__(self, config: Optional[CondenserConfig] = None):
         """Initialize enhanced condenser physics model"""
         if config is None:
-            config = EnhancedCondenserConfig()
+            from .config import create_standard_condenser_config
+            config = create_standard_condenser_config()
         
         self.config = config
         
-        # Initialize sub-models with default configurations if not provided
-        tube_config = config.tube_degradation_config or TubeDegradationConfig()
-        fouling_config = config.fouling_config or FoulingConfig()
+        # Initialize sub-models using centralized configuration
+        tube_config = config.tube_degradation
+        fouling_config = config.fouling_system
         
-        # Create vacuum system configuration if not provided
-        if config.vacuum_system_config is None:
-            ejector_configs = [
-                SteamEjectorConfig(ejector_id="SJE-001", design_capacity=25.0),
-                SteamEjectorConfig(ejector_id="SJE-002", design_capacity=25.0)
-            ]
-            vacuum_config = VacuumSystemConfig(ejector_configs=ejector_configs)
-        else:
-            vacuum_config = config.vacuum_system_config
+        # Create vacuum system configuration from centralized config
+        vacuum_config = config.vacuum_system
+        
+        # Create steam ejector configurations for vacuum system
+        if not hasattr(vacuum_config, 'ejector_configs') or vacuum_config.ejector_configs is None:
+            # Create ejector configs from steam_ejectors list in main config
+            ejector_configs = config.steam_ejectors
+            vacuum_config.ejector_configs = ejector_configs
         
         # Initialize or use provided unified water chemistry system
         if hasattr(config, 'water_chemistry') and config.water_chemistry is not None:
@@ -667,7 +617,7 @@ class EnhancedCondenserPhysics(HeatFlowProvider, ChemistryFlowProvider):
         # Heat transfer coefficients with degradation effects
         
         # Steam side (condensing) - affected by fouling and air concentration
-        h_steam_base = self.config.steam_side_htc
+        h_steam_base = self.config.heat_transfer.steam_side_htc
         
         # Get vacuum system results for air effects
         vacuum_results = self.vacuum_system.get_state_dict()
@@ -679,7 +629,7 @@ class EnhancedCondenserPhysics(HeatFlowProvider, ChemistryFlowProvider):
         
         # Cooling water side - affected by flow rate and fouling
         flow_factor = (cooling_water_flow / self.config.design_cooling_water_flow) ** 0.8
-        h_water_base = self.config.water_side_htc * flow_factor
+        h_water_base = self.config.heat_transfer.water_side_htc * flow_factor
         
         # Apply tube degradation effects (higher velocity in remaining tubes)
         tube_degradation_results = self.tube_degradation.__dict__
@@ -690,14 +640,14 @@ class EnhancedCondenserPhysics(HeatFlowProvider, ChemistryFlowProvider):
         # 1/U = 1/h_steam + R_fouling + t_wall/k_wall + 1/h_water
         r_steam = 1.0 / h_steam
         r_fouling = self.fouling_model.total_fouling_resistance
-        r_wall = self.config.tube_wall_thickness / self.config.tube_wall_conductivity
+        r_wall = self.config.heat_transfer.tube_wall_thickness / self.config.heat_transfer.tube_wall_conductivity
         r_water = 1.0 / h_water
         
         overall_resistance = r_steam + r_fouling + r_wall + r_water
         overall_htc = 1.0 / overall_resistance
         
         # Effective heat transfer area (reduced by tube plugging)
-        effective_area = (self.config.heat_transfer_area * 
+        effective_area = (self.config.heat_transfer.heat_transfer_area * 
                          self.tube_degradation.effective_heat_transfer_area_factor)
         
         # PHYSICS-BASED HEAT TRANSFER CALCULATION
@@ -827,7 +777,7 @@ class EnhancedCondenserPhysics(HeatFlowProvider, ChemistryFlowProvider):
         }
         
         # Calculate cooling water velocity for degradation models
-        tube_area = np.pi * (self.config.tube_inner_diameter / 2.0) ** 2
+        tube_area = np.pi * (self.config.heat_transfer.tube_inner_diameter / 2.0) ** 2
         total_flow_area = tube_area * self.tube_degradation.active_tube_count
         cooling_water_velocity = (cooling_water_flow / 1000.0) / total_flow_area  # m/s
         
@@ -877,7 +827,10 @@ class EnhancedCondenserPhysics(HeatFlowProvider, ChemistryFlowProvider):
         
         # Calculate overall thermal performance factor
         area_factor = tube_degradation_results['heat_transfer_area_factor']
-        fouling_factor = 1.0 / (1.0 + fouling_results['total_fouling_resistance'] * 1000)
+        # Fixed: More realistic fouling impact calculation
+        # Reduced multiplier from 50 to 5 for realistic fouling impact
+        # This allows fouling resistance up to 0.18 m²K/W before hitting minimum performance
+        fouling_factor = max(0.3, 1.0 - fouling_results['total_fouling_resistance'] * 5)
         vacuum_factor = vacuum_results['system_efficiency']
         
         self.thermal_performance_factor = area_factor * fouling_factor * vacuum_factor
@@ -1072,6 +1025,396 @@ class EnhancedCondenserPhysics(HeatFlowProvider, ChemistryFlowProvider):
             'heat_rejection_enthalpy': self.heat_rejection_rate / 1e6  # MW
         }
     
+    def setup_maintenance_integration(self, maintenance_system, component_id: str):
+        """
+        Set up maintenance integration using pub/sub architecture
+        
+        Args:
+            maintenance_system: AutoMaintenanceSystem instance
+            component_id: Unique identifier for this condenser
+        """
+        self.maintenance_system = maintenance_system
+        self.component_id = component_id
+        
+        print(f"ENHANCED CONDENSER {component_id}: Setting up maintenance integration")
+        
+        # Register main condenser system
+        condenser_monitoring_config = {
+            'thermal_performance_factor': {
+                'attribute': 'thermal_performance_factor',
+                'threshold': 0.85,
+                'comparison': 'less_than',
+                'action': 'condenser_tube_cleaning',
+                'cooldown_hours': 168.0  # Weekly cooldown
+            },
+            'fouling_resistance': {
+                'attribute': 'fouling_model.total_fouling_resistance',
+                'threshold': 0.001,
+                'comparison': 'greater_than',
+                'action': 'condenser_chemical_cleaning',
+                'cooldown_hours': 720.0  # Monthly cooldown
+            },
+            'tube_leak_rate': {
+                'attribute': 'tube_degradation.tube_leak_rate',
+                'threshold': 0.01,
+                'comparison': 'greater_than',
+                'action': 'condenser_tube_plugging',
+                'cooldown_hours': 24.0  # Daily cooldown
+            },
+            'active_tube_count': {
+                'attribute': 'tube_degradation.active_tube_count',
+                'threshold': 26000,
+                'comparison': 'less_than',
+                'action': 'condenser_tube_inspection',
+                'cooldown_hours': 168.0  # Weekly cooldown
+            },
+            'time_since_cleaning': {
+                'attribute': 'fouling_model.time_since_cleaning',
+                'threshold': 4320.0,  # 6 months
+                'comparison': 'greater_than',
+                'action': 'condenser_hydroblast_cleaning',
+                'cooldown_hours': 4320.0  # 6 month cooldown
+            }
+        }
+        
+        maintenance_system.register_component(
+            component_id=component_id,
+            component=self,
+            monitoring_config=condenser_monitoring_config
+        )
+        
+        # Register individual vacuum ejectors
+        print(f"  Setting up vacuum system maintenance integration...")
+        ejector_count = 0
+        for ejector_id, ejector in self.vacuum_system.ejectors.items():
+            ejector_monitoring_config = {
+                'performance_factor': {
+                    'attribute': 'overall_performance_factor',
+                    'threshold': 0.8,
+                    'comparison': 'less_than',
+                    'action': 'vacuum_ejector_cleaning',
+                    'cooldown_hours': 168.0  # Weekly cooldown
+                },
+                'nozzle_fouling_factor': {
+                    'attribute': 'nozzle_fouling_factor',
+                    'threshold': 0.85,
+                    'comparison': 'less_than',
+                    'action': 'vacuum_ejector_cleaning',
+                    'cooldown_hours': 720.0  # Monthly cooldown
+                },
+                'steam_consumption_rate': {
+                    'attribute': 'steam_consumption_rate',
+                    'threshold': 3.5,
+                    'comparison': 'greater_than',
+                    'action': 'vacuum_ejector_nozzle_replacement',
+                    'cooldown_hours': 8760.0  # Annual cooldown
+                },
+                'operating_hours': {
+                    'attribute': 'operating_hours',
+                    'threshold': 8760.0,  # Annual maintenance
+                    'comparison': 'greater_than',
+                    'action': 'vacuum_ejector_inspection',
+                    'cooldown_hours': 8760.0  # Annual cooldown
+                }
+            }
+            
+            # Add maintenance integration to ejector
+            ejector.setup_maintenance_integration = lambda ms, cid: self._setup_ejector_maintenance(ejector, ms, cid)
+            ejector.perform_maintenance = lambda mt, **kwargs: self._perform_ejector_maintenance(ejector, mt, **kwargs)
+            
+            ejector.setup_maintenance_integration(maintenance_system, ejector_id)
+            
+            maintenance_system.register_component(
+                component_id=ejector_id,
+                component=ejector,
+                monitoring_config=ejector_monitoring_config
+            )
+            ejector_count += 1
+        
+        # Register vacuum system as a whole
+        vacuum_monitoring_config = {
+            'system_efficiency': {
+                'attribute': 'vacuum_system.system_efficiency',
+                'threshold': 0.8,
+                'comparison': 'less_than',
+                'action': 'vacuum_system_test',
+                'cooldown_hours': 720.0  # Monthly cooldown
+            },
+            'air_leakage_rate': {
+                'attribute': 'vacuum_system.current_air_leakage',
+                'threshold': 0.3,  # 3x base leakage
+                'comparison': 'greater_than',
+                'action': 'vacuum_leak_detection',
+                'cooldown_hours': 168.0  # Weekly cooldown
+            }
+        }
+        
+        maintenance_system.register_component(
+            component_id=f"{component_id}-VACUUM",
+            component=self.vacuum_system,
+            monitoring_config=vacuum_monitoring_config
+        )
+        
+        print(f"  Enhanced condenser maintenance integration complete")
+        print(f"  Total Registered Components: {1 + ejector_count + 1}")  # Condenser + ejectors + vacuum system
+    
+    def _setup_ejector_maintenance(self, ejector, maintenance_system, component_id: str):
+        """Set up maintenance integration for individual ejector"""
+        print(f"VACUUM EJECTOR {component_id}: Setting up maintenance integration")
+    
+    def _perform_ejector_maintenance(self, ejector, maintenance_type: str, **kwargs):
+        """Perform maintenance on individual ejector"""
+        # Import here to avoid circular imports
+        from ...maintenance.maintenance_actions import create_maintenance_result
+        
+        if maintenance_type == "vacuum_ejector_cleaning":
+            # Clean ejector nozzles and diffusers
+            cleaning_type = kwargs.get('cleaning_type', 'chemical')
+            ejector.perform_cleaning(cleaning_type)
+            
+            performance_improvement = (1.0 - ejector.overall_performance_factor) * 100
+            
+            return create_maintenance_result(
+                success=True,
+                duration=4.0,
+                work_description=f"Cleaned ejector {ejector.config.ejector_id} using {cleaning_type} method",
+                findings=f"Nozzle fouling factor improved from {ejector.nozzle_fouling_factor:.3f} to {min(1.0, ejector.nozzle_fouling_factor + 0.3):.3f}",
+                performance_improvement=performance_improvement,
+                parts_used=[f"{cleaning_type}_cleaning_solution"],
+                next_maintenance_due=4380.0  # 6 months
+            )
+        
+        elif maintenance_type == "vacuum_ejector_nozzle_replacement":
+            # Replace worn nozzles
+            old_performance = ejector.overall_performance_factor
+            ejector.perform_cleaning("replacement")
+            
+            performance_improvement = (ejector.overall_performance_factor - old_performance) * 100
+            
+            return create_maintenance_result(
+                success=True,
+                duration=8.0,
+                work_description=f"Replaced nozzles in ejector {ejector.config.ejector_id}",
+                findings="Nozzles showed significant erosion and fouling",
+                performance_improvement=performance_improvement,
+                parts_used=["ejector_nozzle_assembly", "gaskets", "bolts"],
+                cost=15000.0,
+                next_maintenance_due=17520.0  # 2 years
+            )
+        
+        elif maintenance_type == "vacuum_ejector_inspection":
+            # Inspect ejector condition
+            findings = []
+            if ejector.nozzle_fouling_factor < 0.9:
+                findings.append("Nozzle fouling detected")
+            if ejector.diffuser_fouling_factor < 0.9:
+                findings.append("Diffuser fouling detected")
+            if ejector.nozzle_erosion_factor < 0.9:
+                findings.append("Nozzle erosion detected")
+            
+            return create_maintenance_result(
+                success=True,
+                duration=3.0,
+                work_description=f"Inspected ejector {ejector.config.ejector_id}",
+                findings="; ".join(findings) if findings else "No significant issues found",
+                performance_improvement=0.0,
+                next_maintenance_due=8760.0  # Annual
+            )
+        
+        else:
+            return create_maintenance_result(
+                success=False,
+                duration=0.0,
+                work_description=f"Unknown maintenance type: {maintenance_type}",
+                error_message=f"Maintenance type '{maintenance_type}' not supported for vacuum ejector"
+            )
+    
+    def perform_maintenance(self, maintenance_type: str, **kwargs):
+        """
+        Perform maintenance operations on condenser systems
+        
+        Args:
+            maintenance_type: Type of maintenance action
+            **kwargs: Additional maintenance parameters
+            
+        Returns:
+            MaintenanceResult with detailed results
+        """
+        # Import here to avoid circular imports
+        from ...maintenance.maintenance_actions import create_maintenance_result
+        
+        current_time = self.operating_hours
+        
+        if maintenance_type == "condenser_tube_cleaning":
+            # Clean condenser tubes
+            cleaning_type = kwargs.get('cleaning_type', 'chemical')
+            old_fouling = self.fouling_model.total_fouling_resistance
+            
+            # Perform cleaning based on type
+            cleaning_result = self.fouling_model.perform_cleaning(cleaning_type)
+            
+            # Calculate performance improvement
+            fouling_reduction = old_fouling - self.fouling_model.total_fouling_resistance
+            performance_improvement = (fouling_reduction / max(0.001, old_fouling)) * 100
+            
+            # Update thermal performance factor
+            self.thermal_performance_factor = min(1.0, self.thermal_performance_factor + performance_improvement * 0.01)
+            
+            return create_maintenance_result(
+                success=True,
+                duration=8.0,
+                work_description=f"Cleaned condenser tubes using {cleaning_type} method",
+                findings=f"Removed {cleaning_result['total_removed']:.3f}mm of fouling. "
+                         f"Biofouling: {cleaning_result['bio_removed']:.3f}mm, "
+                         f"Scale: {cleaning_result['scale_removed']:.3f}mm, "
+                         f"Corrosion products: {cleaning_result['corrosion_removed']:.3f}mm",
+                performance_improvement=performance_improvement,
+                parts_used=[f"{cleaning_type}_cleaning_solution", "cleaning_brushes"],
+                cost=5000.0,
+                effectiveness_score=min(1.0, performance_improvement / 10.0),
+                next_maintenance_due=4380.0  # 6 months
+            )
+        
+        elif maintenance_type == "condenser_tube_plugging":
+            # Plug failed tubes
+            tubes_to_plug = kwargs.get('tubes_to_plug', 10)
+            
+            # Update tube degradation model
+            old_active_count = self.tube_degradation.active_tube_count
+            self.tube_degradation.plugged_tube_count += tubes_to_plug
+            self.tube_degradation.active_tube_count = max(1000, old_active_count - tubes_to_plug)
+            
+            # Update heat transfer area factor
+            self.tube_degradation.effective_heat_transfer_area_factor = (
+                self.tube_degradation.active_tube_count / self.config.tube_count
+            )
+            
+            # Reset leak rate
+            self.tube_degradation.tube_leak_rate = max(0.0, self.tube_degradation.tube_leak_rate - 0.005)
+            
+            performance_impact = (tubes_to_plug / self.config.tube_count) * 100
+            
+            return create_maintenance_result(
+                success=True,
+                duration=4.0,
+                work_description=f"Plugged {tubes_to_plug} failed condenser tubes",
+                findings=f"Tubes showed leakage and wall thinning. "
+                         f"Active tube count reduced from {old_active_count} to {self.tube_degradation.active_tube_count}",
+                performance_improvement=-performance_impact,  # Negative because we lose capacity
+                parts_used=["tube_plugs", "sealant"],
+                cost=tubes_to_plug * 50.0,
+                next_maintenance_due=8760.0  # Annual inspection
+            )
+        
+        elif maintenance_type == "condenser_chemical_cleaning":
+            # Comprehensive chemical cleaning
+            old_fouling = self.fouling_model.total_fouling_resistance
+            old_performance = self.thermal_performance_factor
+            
+            # Perform aggressive chemical cleaning
+            cleaning_result = self.fouling_model.perform_cleaning("chemical")
+            
+            # Additional performance restoration
+            self.thermal_performance_factor = min(1.0, self.thermal_performance_factor + 0.1)
+            
+            performance_improvement = (self.thermal_performance_factor - old_performance) * 100
+            
+            return create_maintenance_result(
+                success=True,
+                duration=12.0,
+                work_description="Comprehensive chemical cleaning of condenser",
+                findings=f"Removed {cleaning_result['total_removed']:.3f}mm total fouling. "
+                         f"Thermal performance improved from {old_performance:.3f} to {self.thermal_performance_factor:.3f}",
+                performance_improvement=performance_improvement,
+                parts_used=["chemical_cleaning_solution", "neutralizing_agent", "corrosion_inhibitor"],
+                cost=25000.0,
+                effectiveness_score=min(1.0, performance_improvement / 15.0),
+                next_maintenance_due=8760.0  # Annual
+            )
+        
+        elif maintenance_type == "condenser_water_treatment":
+            # Optimize cooling water chemistry
+            old_aggressiveness = self.water_chemistry.water_aggressiveness
+            
+            # Reset water chemistry to optimal conditions
+            self.water_chemistry.perform_chemical_treatment("standard")
+            
+            # Slow down fouling rates
+            self.fouling_model.biofouling_thickness *= 0.9
+            self.fouling_model.scale_thickness *= 0.8
+            self.fouling_model.corrosion_product_thickness *= 0.7
+            
+            # Recalculate fouling resistance
+            self.fouling_model.total_fouling_resistance = self.fouling_model.calculate_total_fouling_resistance()
+            
+            improvement = (old_aggressiveness - self.water_chemistry.water_aggressiveness) * 50
+            
+            return create_maintenance_result(
+                success=True,
+                duration=2.0,
+                work_description="Optimized cooling water chemistry treatment",
+                findings=f"Water aggressiveness reduced from {old_aggressiveness:.2f} to {self.water_chemistry.water_aggressiveness:.2f}",
+                performance_improvement=improvement,
+                parts_used=["biocide", "antiscalant", "corrosion_inhibitor", "ph_adjuster"],
+                cost=2000.0,
+                next_maintenance_due=720.0  # Monthly
+            )
+        
+        elif maintenance_type == "vacuum_system_test":
+            # Test vacuum system performance
+            vacuum_efficiency = self.vacuum_system.system_efficiency
+            target_pressure = 0.007  # MPa
+            actual_pressure = self.vacuum_system.condenser_pressure
+            
+            findings = []
+            if vacuum_efficiency < 0.9:
+                findings.append(f"Vacuum efficiency degraded to {vacuum_efficiency:.1%}")
+            if actual_pressure > target_pressure * 1.1:
+                findings.append(f"Condenser pressure elevated: {actual_pressure:.4f} MPa")
+            if self.vacuum_system.current_air_leakage > self.vacuum_system.config.base_air_leakage * 2:
+                findings.append("Excessive air leakage detected")
+            
+            if len(findings) == 0:
+                findings.append("Vacuum system operating normally")
+            
+            return create_maintenance_result(
+                success=True,
+                duration=4.0,
+                work_description="Vacuum system performance test",
+                findings="; ".join(findings),
+                performance_improvement=0.0,
+                next_maintenance_due=2190.0  # Quarterly
+            )
+        
+        elif maintenance_type == "vacuum_leak_detection":
+            # Detect and repair air leaks
+            old_leakage = self.vacuum_system.current_air_leakage
+            
+            # Reduce air leakage by 50%
+            self.vacuum_system.current_air_leakage *= 0.5
+            
+            leakage_reduction = old_leakage - self.vacuum_system.current_air_leakage
+            performance_improvement = (leakage_reduction / old_leakage) * 10  # 10% improvement per 100% leakage reduction
+            
+            return create_maintenance_result(
+                success=True,
+                duration=6.0,
+                work_description="Vacuum leak detection and repair",
+                findings=f"Reduced air leakage from {old_leakage:.3f} to {self.vacuum_system.current_air_leakage:.3f} kg/s",
+                performance_improvement=performance_improvement,
+                parts_used=["gaskets", "sealant", "bolts"],
+                cost=3000.0,
+                next_maintenance_due=4380.0  # Semi-annual
+            )
+        
+        else:
+            return create_maintenance_result(
+                success=False,
+                duration=0.0,
+                work_description=f"Unknown maintenance type: {maintenance_type}",
+                error_message=f"Maintenance type '{maintenance_type}' not supported for condenser"
+            )
+
     def reset(self) -> None:
         """Reset enhanced condenser to initial conditions"""
         # Reset basic state

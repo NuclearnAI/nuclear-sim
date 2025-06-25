@@ -168,23 +168,27 @@ class FeedwaterPump(BasePump):
     def _calculate_flow_rate(self, system_conditions: Dict):
         """Calculate feedwater pump flow rate based on head-flow curve"""
         if self.state.status in [PumpStatus.RUNNING, PumpStatus.STARTING]:
-            # Simplified flow calculation based on speed and flow demand
+            # FIXED: Simplified flow calculation that properly honors flow demand
             speed_ratio = self.state.speed_percent / 100.0
-            
-            # Base flow calculation: flow proportional to speed for centrifugal pumps
-            base_flow = self.config.rated_flow * speed_ratio
             
             # Apply flow demand if set by control system
             if hasattr(self, 'flow_demand') and self.flow_demand > 0:
-                # Use flow demand as target, but limit by pump capability
-                target_flow = min(self.flow_demand, self.config.rated_flow * 1.2)
-                # Blend between base flow and target flow based on speed
-                if speed_ratio > 0.8:  # At high speed, follow demand closely
+                # CRITICAL FIX: At high speeds (>80%), deliver the demanded flow directly
+                # This represents proper pump control where speed is adjusted to meet demand
+                target_flow = self.flow_demand
+                
+                if speed_ratio > 0.8:
+                    # High speed operation - pump can deliver demanded flow
+                    # Speed was already set to achieve this flow demand
                     self.state.flow_rate = target_flow
-                else:  # At low speed, limit by speed capability
-                    self.state.flow_rate = min(target_flow, base_flow)
+                else:
+                    # Lower speed operation - limited by speed capability
+                    max_flow_at_speed = self.config.rated_flow * speed_ratio
+                    self.state.flow_rate = min(target_flow, max_flow_at_speed)
+                
             else:
-                # No specific demand, use speed-based flow
+                # No specific demand, use speed-based flow (fallback)
+                base_flow = self.config.rated_flow * speed_ratio
                 self.state.flow_rate = base_flow
             
             # Apply system conditions (temperature effects, etc.)
@@ -193,9 +197,9 @@ class FeedwaterPump(BasePump):
             # Apply performance degradation from wear and cavitation
             self.state.flow_rate *= self.state.flow_degradation_factor
             
-            # Reduce minimum flow constraint to allow load following
-            if self.state.status == PumpStatus.RUNNING and self.state.speed_percent > 10.0:
-                min_flow = self.config.rated_flow * 0.05  # 5% minimum when running
+            # Minimum flow constraint only when running at very low speeds
+            if self.state.status == PumpStatus.RUNNING and self.state.speed_percent < 20.0:
+                min_flow = self.config.rated_flow * 0.05  # 5% minimum only at very low speeds
                 self.state.flow_rate = max(self.state.flow_rate, min_flow)
             
             # Ensure we don't exceed rated flow significantly
@@ -479,12 +483,12 @@ class FeedwaterPump(BasePump):
             # Calculate cavitation intensity (0-1 scale)
             self.state.cavitation_intensity = cavitation_severity * flow_factor
             
-            # Accumulate cavitation time
+            # Accumulate cavitation time (dt is in minutes)
             self.state.cavitation_time += dt * 60.0  # Convert minutes to seconds
             
             # Calculate damage accumulation (exponential with intensity)
             if self.state.cavitation_intensity > 0.1:
-                damage_rate = (self.state.cavitation_intensity ** 2) * dt
+                damage_rate = (self.state.cavitation_intensity ** 2) * dt / 60.0  # Convert minutes to hours for damage rate
                 self.state.cavitation_damage += damage_rate
                 
             # Calculate acoustic signature (noise increase)
@@ -789,10 +793,11 @@ class FeedwaterPumpSystem(ChemistryFlowProvider):
         for i in range(total_pumps):
             pump_config = FeedwaterPumpConfig(
                 pump_id=f"FWP-{i+1}",
-                rated_flow=555.0,  # kg/s per pump
-                rated_power=10.0,  # MW per pump
-                rated_head=1200.0  # m head
+                rated_flow=config.pump_config.rated_flow,  # Use config value
+                rated_power=config.pump_config.rated_power,  # Use config value
+                rated_head=config.pump_config.rated_head   # Use config value
             )
+            
             
             # Create the pump
             pump = FeedwaterPump(pump_config)
@@ -843,16 +848,21 @@ class FeedwaterPumpSystem(ChemistryFlowProvider):
                 pump_id = pump_ids[i]
                 pump = self.pumps[pump_id]
                 
-                # Only set defaults if not already set by equilibrium initialization
-                if pump.state.speed_setpoint == 0.0:
-                    pump.state.speed_setpoint = 100.0
-                if not hasattr(pump, 'flow_demand') or pump.flow_demand == 0.0:
-                    pump.set_flow_demand(555.0)  # Design flow per pump
+                # CRITICAL FIX: Set proper flow demand and let set_flow_demand calculate speed
+                design_flow_per_pump = pump.config.rated_flow  # Use rated flow (533.3 kg/s)
+                pump.set_flow_demand(design_flow_per_pump)     # This calculates speed setpoint automatically
                 
-                # Start the pump (this will initiate STARTING state)
-                # Only start if not already started by equilibrium initialization
+                # Set actual speed to match the calculated setpoint for steady state
+                pump.state.speed_percent = pump.state.speed_setpoint
+                
+                # Start the pump and immediately transition to RUNNING for steady state
                 if pump.state.status == PumpStatus.STOPPED:
                     pump.start_pump()
+                    # For steady-state initialization, immediately transition to RUNNING
+                    pump.state.status = PumpStatus.RUNNING
+                
+                print(f"Pump {pump_id} initialized: speed={pump.state.speed_percent:.1f}%, "
+                      f"flow_demand={pump.flow_demand:.1f} kg/s, status={pump.state.status}")
         
         # Keep spare pumps stopped
         for i in range(self.minimum_pumps_required, len(pump_ids)):
@@ -870,13 +880,21 @@ class FeedwaterPumpSystem(ChemistryFlowProvider):
         # Process control inputs for flow demands
         total_flow_demand = control_inputs.get('flow_demand', self.total_design_flow)
         
-        # Calculate individual demands, handling case where no pumps are running
+        # CRITICAL FIX: Properly redistribute total flow demand among running pumps
+        # The control system may calculate demands for more SGs than we have running pumps
         if len(self.running_pumps) > 0:
-            individual_demands = control_inputs.get('individual_demands', 
-                                                  [total_flow_demand / len(self.running_pumps)] * len(self.running_pumps))
+            # Always use total flow demand divided by actual running pumps
+            # This ensures proper mass balance regardless of control system configuration
+            flow_per_pump = total_flow_demand / len(self.running_pumps)
+            individual_demands = [flow_per_pump] * len(self.running_pumps)
+            
+            # Debug: Show the redistribution
+            control_individual_demands = control_inputs.get('individual_demands', [])
+            if control_individual_demands:
+                control_total = sum(control_individual_demands)
         else:
-            individual_demands = control_inputs.get('individual_demands', [])
-        
+            individual_demands = []
+
         # Update individual pumps
         pump_results = {}
         total_flow = 0.0
@@ -888,7 +906,14 @@ class FeedwaterPumpSystem(ChemistryFlowProvider):
             if pump.state.status == PumpStatus.RUNNING and individual_demands:
                 pump_index = len(running_pumps)
                 if pump_index < len(individual_demands):
-                    pump.set_flow_demand(individual_demands[pump_index])
+                    # CRITICAL FIX: Don't override flow demand if it's much lower than design
+                    # This prevents control system from setting unrealistically low demands during initialization
+                    new_demand = individual_demands[pump_index]
+                    if new_demand < pump.config.rated_flow * 0.2:  # Less than 20% of rated flow
+                        print(f"DEBUG: Rejecting low flow demand {new_demand:.1f} kg/s for {pump_id}, keeping {pump.flow_demand:.1f} kg/s")
+                    else:
+                        pump.set_flow_demand(new_demand)
+                        # print(f"PUMP SYSTEM DEBUG: Set {pump_id} flow demand to {individual_demands[pump_index]:.1f} kg/s")
             
             result = pump.update_pump(dt, system_conditions, control_inputs)
             pump_results[pump_id] = result
@@ -897,6 +922,10 @@ class FeedwaterPumpSystem(ChemistryFlowProvider):
                 total_flow += pump.state.flow_rate
                 total_power += pump.state.power_consumption
                 running_pumps.append(pump_id)
+                # print(f"PUMP SYSTEM DEBUG: {pump_id} actual flow={pump.state.flow_rate:.1f} kg/s, "
+                #      f"speed={pump.state.speed_percent:.1f}%")
+        
+        # print(f"PUMP SYSTEM DEBUG: Total system flow={total_flow:.1f} kg/s from {len(running_pumps)} pumps")
         
         # Update system totals
         self.total_flow = total_flow

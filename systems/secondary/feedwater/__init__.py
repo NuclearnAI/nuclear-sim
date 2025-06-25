@@ -21,7 +21,12 @@ Components:
 # Import enhanced feedwater physics
 from .physics import (
     EnhancedFeedwaterPhysics,
-    EnhancedFeedwaterConfig
+)
+
+# Import proper feedwater config
+from .config import (
+    FeedwaterConfig,
+    create_standard_feedwater_config
 )
 
 # Import pump system components
@@ -36,7 +41,6 @@ from .pump_system import (
 # Import control system components
 from .level_control import (
     ThreeElementControl,
-    ThreeElementConfig,
     SteamQualityCompensator
 )
 
@@ -74,7 +78,10 @@ from .pump_lubrication import (
 __all__ = [
     # Main enhanced physics
     'EnhancedFeedwaterPhysics',
-    'EnhancedFeedwaterConfig',
+    
+    # Proper feedwater config
+    'FeedwaterConfig',
+    'create_standard_feedwater_config',
     
     # Pump system
     'FeedwaterPumpSystem',
@@ -85,7 +92,6 @@ __all__ = [
     
     # Control system
     'ThreeElementControl',
-    'ThreeElementConfig',
     'SteamQualityCompensator',
     
     # Water chemistry (moved to unified system)

@@ -14,48 +14,68 @@ Components:
 - Vacuum system control logic
 """
 
-# Import enhanced condenser physics
-from .physics import (
-    EnhancedCondenserPhysics,
-    EnhancedCondenserConfig,
-    TubeDegradationModel,
-    TubeDegradationConfig,
-    AdvancedFoulingModel,
-    FoulingConfig
+# Import centralized configuration system
+from .config import (
+    CondenserConfig,
+    CondenserHeatTransferConfig,
+    CondenserVacuumSystemConfig,
+    CondenserTubeDegradationConfig,
+    CondenserFoulingConfig,
+    CondenserCoolingWaterConfig,
+    SteamEjectorConfig,
+    CondenserInitialConditions,
+    CondenserMaintenanceConfig,
+    create_standard_condenser_config,
+    create_uprated_condenser_config,
+    create_high_efficiency_condenser_config
 )
 
-# Import vacuum system components
+# Import enhanced condenser physics (now uses centralized config)
+from .physics import (
+    EnhancedCondenserPhysics,
+    TubeDegradationModel,
+    AdvancedFoulingModel
+)
+
+# Import vacuum system components (now uses centralized config)
 from .vacuum_system import (
     VacuumSystem,
-    VacuumSystemConfig,
     VacuumControlLogic
 )
 
-# Import vacuum pump components
+# Import vacuum pump components (now uses centralized config)
 from .vacuum_pump import (
-    SteamJetEjector,
-    SteamEjectorConfig
+    SteamJetEjector
 )
 
 __all__ = [
+    # Centralized configuration system
+    'CondenserConfig',
+    'CondenserHeatTransferConfig',
+    'CondenserVacuumSystemConfig',
+    'CondenserTubeDegradationConfig',
+    'CondenserFoulingConfig',
+    'CondenserCoolingWaterConfig',
+    'SteamEjectorConfig',
+    'CondenserInitialConditions',
+    'CondenserMaintenanceConfig',
+    'create_standard_condenser_config',
+    'create_uprated_condenser_config',
+    'create_high_efficiency_condenser_config',
+    
     # Enhanced condenser physics
     'EnhancedCondenserPhysics',
-    'EnhancedCondenserConfig',
     
     # Tube degradation
     'TubeDegradationModel',
-    'TubeDegradationConfig',
     
     # Fouling models
     'AdvancedFoulingModel',
-    'FoulingConfig',
     
     # Vacuum system
     'VacuumSystem',
-    'VacuumSystemConfig',
     'VacuumControlLogic',
     
     # Steam jet ejectors
-    'SteamJetEjector',
-    'SteamEjectorConfig'
+    'SteamJetEjector'
 ]

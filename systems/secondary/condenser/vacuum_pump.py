@@ -28,54 +28,9 @@ from ..component_descriptions import CONDENSER_COMPONENT_DESCRIPTIONS
 warnings.filterwarnings("ignore")
 
 
-@dataclass
-class SteamEjectorConfig:
-    """
-    Configuration parameters for steam jet ejectors
-    
-    References:
-    - Schutte & Koerting ejector design data
-    - Graham Manufacturing ejector specifications
-    - Typical PWR vacuum system designs
-    """
-    
-    # Basic ejector parameters
-    ejector_id: str = "SJE-001"            # Unique ejector identifier
-    ejector_type: str = "two_stage"        # "single_stage", "two_stage", "three_stage"
-    design_capacity: float = 25.0          # kg/s air at design conditions
-    design_suction_pressure: float = 0.007 # MPa design suction pressure
-    design_compression_ratio: float = 14.3 # Discharge/suction pressure ratio
-    
-    # Motive steam parameters
-    motive_steam_pressure: float = 1.0     # MPa motive steam pressure
-    motive_steam_temperature: float = 180.0 # °C motive steam temperature
-    design_steam_consumption: float = 2.5   # kg steam / kg air removed
-    
-    # Performance characteristics
-    # Steam consumption = base_consumption * (capacity_factor^steam_exponent) * pressure_factor
-    base_steam_consumption: float = 2.5     # kg steam / kg air at design
-    steam_consumption_exponent: float = 0.8 # Exponent for capacity scaling
-    pressure_effect_coefficient: float = 1.5 # Effect of suction pressure on steam consumption
-    
-    # Operating limits
-    min_suction_pressure: float = 0.003    # MPa minimum operating pressure
-    max_suction_pressure: float = 0.015    # MPa maximum operating pressure
-    min_motive_pressure: float = 0.8       # MPa minimum motive steam pressure
-    max_capacity_factor: float = 1.2       # Maximum capacity vs design
-    
-    # Inter-stage condenser (for multi-stage ejectors)
-    has_intercondenser: bool = True        # Inter-stage condenser present
-    intercondenser_pressure: float = 0.02  # MPa inter-stage pressure
-    intercondenser_cooling_water: float = 50.0 # kg/s cooling water flow
-    
-    # After-condenser
-    has_aftercondenser: bool = True        # After-condenser present
-    aftercondenser_cooling_water: float = 25.0 # kg/s cooling water flow
-    
-    # Degradation and fouling
-    nozzle_fouling_rate: float = 0.00001   # Fouling rate per hour
-    diffuser_fouling_rate: float = 0.00002 # Diffuser fouling rate per hour
-    erosion_rate: float = 0.000001         # Nozzle erosion rate per hour
+# NOTE: SteamEjectorConfig moved to condenser/config.py
+# Import from the centralized configuration system
+from .config import SteamEjectorConfig
 
 
 @auto_register("SECONDARY", "condenser", id_source="config.ejector_id",

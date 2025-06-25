@@ -24,109 +24,13 @@ import warnings
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 import numpy as np
+from .config import RotorDynamicsConfig
 
 warnings.filterwarnings("ignore")
 
 
-@dataclass
-class BearingConfig:
-    """
-    Configuration for individual bearing
-    
-    References:
-    - Bearing manufacturer specifications
-    - Turbine bearing design standards
-    - Load capacity calculations
-    """
-    
-    # Bearing identification
-    bearing_id: str = "TB-001"               # Bearing identifier
-    bearing_type: str = "tilting_pad"        # "tilting_pad", "journal", "thrust"
-    location: str = "hp_inlet"               # Location on rotor
-    
-    # Design parameters
-    design_load_capacity: float = 500.0      # kN design load capacity
-    design_speed: float = 3600.0             # RPM design speed
-    oil_film_thickness: float = 0.05         # mm oil film thickness
-    bearing_clearance: float = 0.15          # mm bearing clearance
-    
-    # Operating limits
-    max_load: float = 600.0                  # kN maximum load
-    max_temperature: float = 120.0           # °C maximum temperature
-    max_vibration: float = 25.0              # mils maximum vibration
-    
-    # Performance parameters
-    stiffness_coefficient: float = 1e8       # N/m bearing stiffness
-    damping_coefficient: float = 1e5         # N⋅s/m bearing damping
-    friction_coefficient: float = 0.001      # Bearing friction coefficient
-
-
-@dataclass
-class VibrationConfig:
-    """
-    Configuration for vibration monitoring
-    
-    References:
-    - ISO 10816 vibration standards
-    - API 670 machinery protection systems
-    - Turbine vibration monitoring practices
-    """
-    
-    # Monitoring parameters
-    sampling_frequency: float = 1000.0       # Hz vibration sampling rate
-    frequency_range: Tuple[float, float] = (0.1, 500.0)  # Hz monitoring range
-    
-    # Alarm and trip levels
-    displacement_alarm: float = 15.0         # mils displacement alarm
-    displacement_trip: float = 25.0          # mils displacement trip
-    velocity_alarm: float = 0.3              # in/s velocity alarm
-    velocity_trip: float = 0.5               # in/s velocity trip
-    acceleration_alarm: float = 5.0          # g acceleration alarm
-    acceleration_trip: float = 10.0          # g acceleration trip
-    
-    # Critical speed parameters
-    first_critical_speed: float = 1800.0     # RPM first critical speed
-    second_critical_speed: float = 5400.0    # RPM second critical speed
-    critical_speed_margin: float = 0.15      # 15% margin from critical speeds
-
-
-@dataclass
-class RotorDynamicsConfig:
-    """
-    Configuration for rotor dynamics system
-    
-    References:
-    - Turbine rotor design specifications
-    - Dynamics analysis requirements
-    - Operating envelope definitions
-    """
-    
-    # System configuration
-    system_id: str = "RDS-001"               # Rotor dynamics system identifier
-    bearing_configs: List[BearingConfig] = field(default_factory=list)
-    vibration_config: VibrationConfig = field(default_factory=VibrationConfig)
-    
-    # Rotor parameters
-    rotor_mass: float = 15000.0              # kg total rotor mass
-    rotor_inertia: float = 15000.0           # kg⋅m² rotor moment of inertia
-    rotor_length: float = 8.0                # m rotor length
-    shaft_diameter: float = 0.5              # m shaft diameter
-    
-    # Operating parameters
-    rated_speed: float = 3600.0              # RPM rated operating speed
-    max_speed: float = 3780.0                # RPM maximum speed (105% overspeed)
-    startup_acceleration: float = 300.0      # RPM/min normal startup rate
-    emergency_deceleration: float = 600.0    # RPM/min emergency stop rate
-    
-    # Dynamic parameters
-    unbalance_tolerance: float = 6.35        # g⋅mm/kg allowable unbalance
-    thermal_bow_limit: float = 0.025         # mm thermal bow limit
-    shaft_deflection_limit: float = 0.1      # mm maximum shaft deflection
-    
-    # Material properties
-    shaft_material_density: float = 7850.0   # kg/m³ steel density
-    elastic_modulus: float = 200e9           # Pa elastic modulus
-    thermal_expansion_coeff: float = 12e-6   # 1/K thermal expansion coefficient
+# BearingConfig is now integrated into the unified RotorDynamicsConfig
+# Individual bearing configurations are created from RotorDynamicsConfig parameters
 
 
 class BearingModel:
@@ -140,9 +44,15 @@ class BearingModel:
     4. Wear and degradation tracking
     """
     
-    def __init__(self, config: BearingConfig):
-        """Initialize bearing model"""
-        self.config = config
+    def __init__(self, bearing_id: str, bearing_config_dict: Dict):
+        """Initialize bearing model from config dictionary"""
+        # Create a simple config object from the dictionary
+        class BearingConfig:
+            def __init__(self, **kwargs):
+                for key, value in kwargs.items():
+                    setattr(self, key, value)
+        
+        self.config = BearingConfig(**bearing_config_dict)
         
         # Bearing state
         self.current_load = 0.0                  # kN current bearing load
@@ -417,6 +327,242 @@ class BearingModel:
             f'{self.config.bearing_id}_operating_hours': self.operating_hours
         }
     
+    def setup_maintenance_integration(self, maintenance_system, component_id: str):
+        """
+        Set up maintenance integration for individual bearing
+        
+        Args:
+            maintenance_system: AutoMaintenanceSystem instance
+            component_id: Unique identifier for this bearing
+        """
+        print(f"BEARING {component_id}: Setting up maintenance integration")
+        
+        # Define monitoring configuration for bearing parameters
+        monitoring_config = {
+            'bearing_temperature': {
+                'attribute': 'metal_temperature',
+                'threshold': 120.0,  # °C temperature threshold
+                'comparison': 'greater_than',
+                'action': 'turbine_bearing_inspection',
+                'cooldown_hours': 24.0  # Daily cooldown
+            },
+            'bearing_wear': {
+                'attribute': 'wear_factor',
+                'threshold': 0.8,  # 80% remaining (20% wear)
+                'comparison': 'less_than',
+                'action': 'turbine_bearing_replacement',
+                'cooldown_hours': 168.0  # Weekly cooldown
+            },
+            'bearing_clearance': {
+                'attribute': 'clearance_increase',
+                'threshold': 0.1,  # mm clearance increase
+                'comparison': 'greater_than',
+                'action': 'bearing_clearance_check',
+                'cooldown_hours': 72.0  # 3-day cooldown
+            },
+            'oil_contamination': {
+                'attribute': 'oil_contamination_level',
+                'threshold': 8.0,  # ppm contamination threshold
+                'comparison': 'greater_than',
+                'action': 'turbine_oil_change',
+                'cooldown_hours': 48.0  # 2-day cooldown
+            }
+        }
+        
+        # Register with maintenance system using event bus
+        maintenance_system.register_component(component_id, self, monitoring_config)
+        
+        print(f"  Registered {component_id} with {len(monitoring_config)} monitoring parameters")
+        
+        # Store reference for coordination
+        self.maintenance_system = maintenance_system
+        self.component_id = component_id
+    
+    def perform_maintenance(self, maintenance_type: str = None, **kwargs):
+        """
+        Perform maintenance operations on bearing
+        
+        Args:
+            maintenance_type: Type of maintenance to perform
+            **kwargs: Additional maintenance parameters
+            
+        Returns:
+            Dictionary with maintenance results compatible with MaintenanceResult
+        """
+        if maintenance_type == "turbine_bearing_inspection":
+            # Perform bearing inspection
+            current_temp = self.metal_temperature
+            current_wear = (1.0 - self.wear_factor) * 100.0  # Convert to percentage
+            current_clearance = self.clearance_increase
+            
+            findings = f"Bearing temperature: {current_temp:.1f}°C, "
+            findings += f"wear: {current_wear:.1f}%, clearance increase: {current_clearance:.3f}mm"
+            
+            recommendations = []
+            if current_temp > 110.0:
+                recommendations.append("Monitor bearing temperature closely")
+            if current_wear > 15.0:
+                recommendations.append("Schedule bearing replacement within 6 months")
+            if current_clearance > 0.08:
+                recommendations.append("Check bearing alignment")
+            
+            return {
+                'success': True,
+                'duration_hours': 4.0,
+                'work_performed': 'Comprehensive bearing inspection completed',
+                'findings': findings,
+                'recommendations': recommendations,
+                'effectiveness_score': 1.0,  # Inspection always successful
+                'next_maintenance_due': 4380.0,  # Semi-annual
+                'parts_used': ['Inspection tools', 'Measurement equipment']
+            }
+        
+        elif maintenance_type == "turbine_bearing_replacement":
+            # Perform bearing replacement
+            old_wear = (1.0 - self.wear_factor) * 100.0
+            
+            # Reset bearing to new condition
+            self.wear_factor = 1.0
+            self.clearance_increase = 0.0
+            self.efficiency_factor = 1.0
+            self.metal_temperature = min(self.metal_temperature, 90.0)  # Reduce temperature
+            
+            performance_improvement = old_wear  # Percentage improvement
+            
+            return {
+                'success': True,
+                'duration_hours': 12.0,
+                'work_performed': 'Bearing replacement completed',
+                'findings': f"Replaced bearing with {old_wear:.1f}% wear",
+                'performance_improvement': performance_improvement,
+                'effectiveness_score': 1.0,
+                'next_maintenance_due': 35040.0,  # Every 4 years
+                'parts_used': ['New bearing assembly', 'Bearing housing gaskets', 'Lubricating oil']
+            }
+        
+        elif maintenance_type == "bearing_clearance_check":
+            # Perform clearance check and adjustment
+            original_clearance = self.clearance_increase
+            
+            # Adjust clearance (simulated improvement)
+            clearance_reduction = min(0.05, self.clearance_increase * 0.5)  # 50% improvement up to 0.05mm
+            self.clearance_increase -= clearance_reduction
+            self.clearance_increase = max(0.0, self.clearance_increase)
+            
+            # Improve efficiency slightly
+            self.efficiency_factor = min(1.0, self.efficiency_factor + 0.02)
+            
+            return {
+                'success': True,
+                'duration_hours': 3.0,
+                'work_performed': 'Bearing clearance check and adjustment',
+                'findings': f"Reduced clearance from {original_clearance:.3f}mm to {self.clearance_increase:.3f}mm",
+                'performance_improvement': (clearance_reduction / max(0.001, original_clearance)) * 100.0,
+                'effectiveness_score': 0.8,
+                'next_maintenance_due': 8760.0,  # Annual
+                'parts_used': ['Shim stock', 'Measurement tools']
+            }
+        
+        elif maintenance_type == "bearing_alignment":
+            # Perform bearing alignment
+            # Improve efficiency and reduce vibration
+            alignment_improvement = 0.05  # 5% improvement
+            self.efficiency_factor = min(1.0, self.efficiency_factor + alignment_improvement)
+            
+            # Reduce vibration levels
+            self.vibration_displacement *= 0.8  # 20% reduction
+            self.vibration_velocity *= 0.8
+            
+            return {
+                'success': True,
+                'duration_hours': 6.0,
+                'work_performed': 'Bearing alignment completed',
+                'findings': 'Improved bearing concentricity and reduced vibration',
+                'performance_improvement': alignment_improvement * 100.0,
+                'effectiveness_score': 0.9,
+                'next_maintenance_due': 17520.0,  # Every 2 years
+                'parts_used': ['Alignment tools', 'Precision shims']
+            }
+        
+        elif maintenance_type == "thrust_bearing_adjustment":
+            # Perform thrust bearing adjustment (only applicable to thrust bearings)
+            if self.config.bearing_type == "thrust":
+                # Optimize thrust bearing position
+                self.efficiency_factor = min(1.0, self.efficiency_factor + 0.03)
+                self.metal_temperature = max(80.0, self.metal_temperature - 5.0)  # Reduce temperature
+                
+                return {
+                    'success': True,
+                    'duration_hours': 4.0,
+                    'work_performed': 'Thrust bearing adjustment completed',
+                    'findings': 'Optimized thrust bearing position and clearances',
+                    'performance_improvement': 3.0,
+                    'effectiveness_score': 0.85,
+                    'next_maintenance_due': 8760.0,  # Annual
+                    'parts_used': ['Adjustment tools', 'Thrust collar']
+                }
+            else:
+                return {
+                    'success': False,
+                    'duration_hours': 0.0,
+                    'work_performed': 'Thrust bearing adjustment not applicable',
+                    'error_message': f'Bearing type {self.config.bearing_type} is not a thrust bearing',
+                    'effectiveness_score': 0.0
+                }
+        
+        elif maintenance_type == "turbine_oil_change":
+            # Perform oil change (affects oil contamination)
+            original_contamination = self.oil_contamination_level
+            
+            # Reset oil contamination to clean levels
+            self.oil_contamination_level = 1.0  # Clean oil
+            
+            # Improve efficiency slightly
+            self.efficiency_factor = min(1.0, self.efficiency_factor + 0.01)
+            
+            # Reduce temperature slightly
+            self.metal_temperature = max(80.0, self.metal_temperature - 2.0)
+            
+            contamination_reduction = original_contamination - self.oil_contamination_level
+            
+            return {
+                'success': True,
+                'duration_hours': 6.0,
+                'work_performed': 'Turbine oil change completed',
+                'findings': f"Reduced oil contamination from {original_contamination:.1f}ppm to {self.oil_contamination_level:.1f}ppm",
+                'performance_improvement': (contamination_reduction / max(1.0, original_contamination)) * 100.0,
+                'effectiveness_score': 0.95,
+                'next_maintenance_due': 8760.0,  # Annual
+                'parts_used': ['Turbine oil', 'Oil filters', 'Drain plugs']
+            }
+        
+        elif maintenance_type == "routine_maintenance":
+            # Perform routine maintenance
+            # Minor improvements across all parameters
+            self.efficiency_factor = min(1.0, self.efficiency_factor + 0.01)
+            self.oil_contamination_level = max(1.0, self.oil_contamination_level - 0.5)
+            self.metal_temperature = max(80.0, self.metal_temperature - 1.0)
+            
+            return {
+                'success': True,
+                'duration_hours': 2.0,
+                'work_performed': 'Routine bearing maintenance completed',
+                'findings': 'General maintenance activities completed',
+                'effectiveness_score': 0.7,
+                'next_maintenance_due': 2190.0,  # Quarterly
+                'parts_used': ['General maintenance supplies']
+            }
+        
+        else:
+            # Unknown maintenance type
+            return {
+                'success': False,
+                'duration_hours': 0.0,
+                'work_performed': f'Unknown maintenance type: {maintenance_type}',
+                'error_message': f'Maintenance type {maintenance_type} not supported for bearing',
+                'effectiveness_score': 0.0
+            }
+    
     def reset(self) -> None:
         """Reset bearing to initial conditions"""
         self.current_load = 0.0
@@ -448,7 +594,7 @@ class VibrationMonitor:
     4. Alarm and trip logic
     """
     
-    def __init__(self, config: VibrationConfig):
+    def __init__(self, config: RotorDynamicsConfig):
         """Initialize vibration monitor"""
         self.config = config
         
@@ -647,7 +793,7 @@ class RotorDynamicsModel:
         
         # Create bearing objects
         self.bearings = {}
-        if config.bearing_configs:
+        if hasattr(config, 'bearing_configs') and config.bearing_configs:
             for bearing_config in config.bearing_configs:
                 self.bearings[bearing_config.bearing_id] = BearingModel(bearing_config)
         else:
@@ -655,7 +801,7 @@ class RotorDynamicsModel:
             self._create_default_bearings()
         
         # Vibration monitoring
-        self.vibration_monitor = VibrationMonitor(config.vibration_config)
+        self.vibration_monitor = VibrationMonitor(config)
         
         # Rotor state
         self.rotor_speed = 0.0                   # RPM current speed
@@ -678,16 +824,33 @@ class RotorDynamicsModel:
         self.overspeed_events = 0                # Number of overspeed events
         
     def _create_default_bearings(self):
-        """Create default bearing configuration"""
-        bearing_configs = [
-            BearingConfig(bearing_id="TB-001", bearing_type="journal", location="hp_inlet"),
-            BearingConfig(bearing_id="TB-002", bearing_type="journal", location="hp_outlet"),
-            BearingConfig(bearing_id="TB-003", bearing_type="thrust", location="lp_center"),
-            BearingConfig(bearing_id="TB-004", bearing_type="journal", location="lp_outlet")
-        ]
+        """Create default bearing configuration using unified config parameters"""
+        bearing_locations = ["hp_inlet", "hp_outlet", "lp_center", "lp_outlet"]
+        bearing_types = ["journal", "journal", "thrust", "journal"]
         
-        for bearing_config in bearing_configs:
-            self.bearings[bearing_config.bearing_id] = BearingModel(bearing_config)
+        for i in range(self.config.num_bearings):
+            bearing_id = f"TB-{i+1:03d}"
+            location = bearing_locations[i] if i < len(bearing_locations) else f"bearing_{i+1}"
+            bearing_type = bearing_types[i] if i < len(bearing_types) else "journal"
+            
+            # Create bearing config dict from unified config parameters
+            bearing_config_dict = {
+                'bearing_id': bearing_id,
+                'bearing_type': bearing_type,
+                'location': location,
+                'design_load_capacity': self.config.design_load_capacity,
+                'design_speed': 3600.0,  # RPM
+                'oil_film_thickness': 0.05,  # mm
+                'bearing_clearance': self.config.bearing_clearance,
+                'max_load': self.config.design_load_capacity * 1.2,  # 20% margin
+                'max_temperature': 120.0,  # °C
+                'max_vibration': self.config.vibration_trip_level,
+                'stiffness_coefficient': self.config.bearing_stiffness,
+                'damping_coefficient': self.config.bearing_damping,
+                'friction_coefficient': self.config.friction_coefficient
+            }
+            
+            self.bearings[bearing_id] = BearingModel(bearing_id, bearing_config_dict)
     
     def calculate_rotor_dynamics(self,
                                applied_torque: float,
@@ -769,7 +932,7 @@ class RotorDynamicsModel:
         
         # Thermal expansion
         temp_difference = self.rotor_temperature - ambient_temperature
-        expansion = (temp_difference * self.config.thermal_expansion_coeff * 
+        expansion = (temp_difference * self.config.thermal_expansion_coefficient * 
                     self.config.rotor_length * 1000.0)  # mm
         self.thermal_expansion = expansion
         

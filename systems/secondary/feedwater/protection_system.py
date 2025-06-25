@@ -21,71 +21,8 @@ import time
 warnings.filterwarnings("ignore")
 
 
-@dataclass
-class FeedwaterProtectionConfig:
-    """Configuration for feedwater protection system"""
-    
-    # System protection parameters
-    system_id: str = "FPC-001"                       # Protection system identifier
-    
-    # NPSH protection
-    npsh_low_alarm: float = 18.0                     # m NPSH low alarm
-    npsh_low_low_trip: float = 15.0                  # m NPSH low-low trip
-    npsh_critical_trip: float = 12.0                 # m NPSH critical trip
-    
-    # Pressure protection
-    suction_pressure_low_alarm: float = 0.3          # MPa suction pressure low alarm
-    suction_pressure_low_trip: float = 0.2           # MPa suction pressure low trip
-    discharge_pressure_high_alarm: float = 9.0       # MPa discharge pressure high alarm
-    discharge_pressure_high_trip: float = 10.0       # MPa discharge pressure high trip
-    
-    # Flow protection
-    low_flow_alarm: float = 100.0                    # kg/s low flow alarm
-    low_flow_trip: float = 50.0                      # kg/s low flow trip
-    high_flow_alarm: float = 1800.0                  # kg/s high flow alarm
-    high_flow_trip: float = 2000.0                   # kg/s high flow trip
-    
-    # Steam generator level protection
-    sg_level_high_alarm: float = 15.5                # m SG level high alarm
-    sg_level_high_trip: float = 16.5                 # m SG level high trip
-    sg_level_low_alarm: float = 11.0                 # m SG level low alarm
-    sg_level_low_trip: float = 10.0                  # m SG level low trip
-    
-    # Equipment protection
-    pump_vibration_alarm: float = 5.0                # mm/s vibration alarm
-    pump_vibration_trip: float = 10.0                # mm/s vibration trip
-    bearing_temp_alarm: float = 80.0                 # °C bearing temperature alarm
-    bearing_temp_trip: float = 120.0                 # °C bearing temperature trip
-    motor_temp_alarm: float = 100.0                  # °C motor temperature alarm
-    motor_temp_trip: float = 130.0                   # °C motor temperature trip
-    
-    # Trip delays and logic
-    instantaneous_trips: List[str] = None            # Trips with no delay
-    delayed_trips: Dict[str, float] = None           # Trips with time delays
-    
-    # Emergency actions
-    enable_emergency_feedwater: bool = True          # Enable emergency feedwater
-    enable_steam_dump: bool = True                   # Enable steam dump on trip
-    enable_reactor_trip: bool = False                # Enable reactor trip (external)
-    
-    def __post_init__(self):
-        if self.instantaneous_trips is None:
-            self.instantaneous_trips = [
-                'npsh_critical',
-                'suction_pressure_low',
-                'discharge_pressure_high',
-                'sg_level_high'
-            ]
-        
-        if self.delayed_trips is None:
-            self.delayed_trips = {
-                'npsh_low_low': 5.0,        # 5 second delay
-                'low_flow': 10.0,           # 10 second delay
-                'high_flow': 2.0,           # 2 second delay
-                'bearing_temp': 30.0,       # 30 second delay
-                'motor_temp': 60.0,         # 60 second delay
-                'vibration': 10.0           # 10 second delay
-            }
+# Import the unified config from config.py
+from .config import FeedwaterProtectionConfig
 
 
 class NPSHProtection:
@@ -149,8 +86,9 @@ class NPSHProtection:
         
         dt_seconds = dt * 60.0
         
-        # NPSH Low Alarm
-        if npsh_available < self.config.npsh_low_alarm:
+        # NPSH Low Alarm (handle missing attributes with defaults)
+        npsh_low_alarm = getattr(self.config, 'npsh_low_alarm', 18.0)
+        if npsh_available < npsh_low_alarm:
             if not self.npsh_low_alarm_active:
                 self.npsh_low_alarm_active = True
                 self.protection_actions_taken.append(f"NPSH Low Alarm at {npsh_available:.1f}m")
@@ -158,9 +96,11 @@ class NPSHProtection:
             self.npsh_low_alarm_active = False
         
         # NPSH Low-Low Trip (with delay)
-        if npsh_available < self.config.npsh_low_low_trip:
+        npsh_low_low_trip = getattr(self.config, 'npsh_low_low_trip', getattr(self.config, 'low_suction_pressure_trip', 15.0))
+        if npsh_available < npsh_low_low_trip:
             self.npsh_low_low_timer += dt_seconds
-            if self.npsh_low_low_timer >= self.config.delayed_trips['npsh_low_low']:
+            delayed_trips = getattr(self.config, 'delayed_trips', {'npsh_low_low': 5.0})
+            if self.npsh_low_low_timer >= delayed_trips.get('npsh_low_low', 5.0):
                 if not self.npsh_low_low_trip_active:
                     self.npsh_low_low_trip_active = True
                     self.protection_actions_taken.append(f"NPSH Low-Low Trip at {npsh_available:.1f}m")
@@ -169,7 +109,8 @@ class NPSHProtection:
             self.npsh_low_low_trip_active = False
         
         # NPSH Critical Trip (instantaneous)
-        if npsh_available < self.config.npsh_critical_trip:
+        npsh_critical_trip = getattr(self.config, 'npsh_critical_trip', getattr(self.config, 'low_suction_pressure_trip', 12.0))
+        if npsh_available < npsh_critical_trip:
             if not self.npsh_critical_trip_active:
                 self.npsh_critical_trip_active = True
                 self.protection_actions_taken.append(f"NPSH Critical Trip at {npsh_available:.1f}m")
@@ -188,10 +129,10 @@ class NPSHProtection:
         return {
             'current_npsh': self.current_npsh,
             'npsh_trend': self.npsh_trend,
-            'npsh_margin': self.current_npsh - self.config.npsh_critical_trip,
-            'npsh_low_alarm_setpoint': self.config.npsh_low_alarm,
-            'npsh_trip_setpoint': self.config.npsh_low_low_trip,
-            'npsh_critical_setpoint': self.config.npsh_critical_trip
+            'npsh_margin': self.current_npsh - getattr(self.config, 'npsh_critical_trip', getattr(self.config, 'low_suction_pressure_trip', 12.0)),
+            'npsh_low_alarm_setpoint': getattr(self.config, 'npsh_low_alarm', 18.0),
+            'npsh_trip_setpoint': getattr(self.config, 'npsh_low_low_trip', getattr(self.config, 'low_suction_pressure_trip', 15.0)),
+            'npsh_critical_setpoint': getattr(self.config, 'npsh_critical_trip', getattr(self.config, 'low_suction_pressure_trip', 12.0))
         }
 
 
@@ -205,6 +146,7 @@ class FeedwaterProtectionSystem:
     3. System-level safety interlocks
     4. Trip condition management
     5. Emergency feedwater activation
+    6. Maintenance event publishing for post-trip actions
     """
     
     def __init__(self, config: FeedwaterProtectionConfig):
@@ -246,6 +188,192 @@ class FeedwaterProtectionSystem:
         self.false_trip_count = 0
         self.valid_trip_count = 0
         self.system_response_time = 0.0
+        
+        # Maintenance event bus integration
+        self.maintenance_event_bus = None
+        self.component_id = "FEEDWATER_SYSTEM"  # Default component ID
+    
+    def set_maintenance_event_bus(self, event_bus, component_id: str = None):
+        """
+        Set the maintenance event bus for publishing trip events
+        
+        Args:
+            event_bus: MaintenanceEventBus instance
+            component_id: Component identifier for events
+        """
+        self.maintenance_event_bus = event_bus
+        if component_id:
+            self.component_id = component_id
+    
+    def _publish_trip_event(self, trip_type: str, trip_value: float, trip_setpoint: float, 
+                           severity: str = "HIGH", recommended_actions: List[str] = None):
+        """
+        Publish a protection trip event to the maintenance system
+        
+        Args:
+            trip_type: Type of trip that occurred
+            trip_value: Current value that caused the trip
+            trip_setpoint: Setpoint that was exceeded
+            severity: Severity level (CRITICAL, HIGH, MEDIUM, LOW)
+            recommended_actions: List of recommended maintenance actions
+        """
+        if not self.maintenance_event_bus:
+            return
+        
+        if recommended_actions is None:
+            # Default recommended actions based on trip type
+            action_map = {
+                'npsh_critical': ['pump_inspection', 'npsh_analysis', 'suction_system_check'],
+                'npsh_low_low': ['pump_inspection', 'npsh_analysis'],
+                'suction_pressure_low': ['suction_system_inspection', 'pump_inspection'],
+                'discharge_pressure_high': ['discharge_system_inspection', 'pump_inspection'],
+                'system_low_flow': ['flow_system_inspection', 'pump_performance_test'],
+                'system_high_flow': ['flow_control_inspection', 'valve_inspection'],
+                'vibration_high': ['vibration_analysis', 'pump_alignment_check'],
+                'bearing_temp_high': ['bearing_inspection', 'lubrication_system_check'],
+                'motor_temp_high': ['motor_inspection', 'cooling_system_check'],
+                'system_health_critical': ['comprehensive_system_inspection', 'root_cause_analysis'],
+                'system_cavitation_severe': ['cavitation_analysis', 'npsh_improvement'],
+                'system_wear_critical': ['wear_analysis', 'component_replacement_evaluation']
+            }
+            
+            # Find matching actions (handle pump-specific trips)
+            recommended_actions = []
+            for key, actions in action_map.items():
+                if key in trip_type:
+                    recommended_actions = actions
+                    break
+            
+            if not recommended_actions:
+                recommended_actions = ['post_trip_inspection', 'trip_root_cause_analysis']
+        
+        # Determine priority based on severity
+        priority_map = {
+            'CRITICAL': 'CRITICAL',
+            'HIGH': 'HIGH', 
+            'MEDIUM': 'MEDIUM',
+            'LOW': 'LOW'
+        }
+        priority = priority_map.get(severity, 'HIGH')
+        
+        # Publish the event
+        self.maintenance_event_bus.publish(
+            'protection_trip_occurred',
+            self.component_id,
+            {
+                'trip_type': trip_type,
+                'trip_value': trip_value,
+                'trip_setpoint': trip_setpoint,
+                'severity': severity,
+                'recommended_actions': recommended_actions,
+                'system_type': 'feedwater_protection',
+                'emergency_actions_taken': list(self.emergency_actions.keys())
+            },
+            priority=priority
+        )
+        
+        print(f"FEEDWATER PROTECTION: Published trip event - {trip_type} ({severity})")
+    
+    def _publish_trip_events(self, trip_types: List[str], pump_results: Dict[str, Dict], 
+                            system_conditions: Dict[str, float]):
+        """
+        Publish maintenance events for all trips that occurred
+        
+        Args:
+            trip_types: List of trip types that occurred
+            pump_results: Pump results data for extracting trip values
+            system_conditions: System conditions for extracting trip values
+        """
+        if not self.maintenance_event_bus:
+            return
+        
+        for trip_type in trip_types:
+            # Extract trip value and setpoint based on trip type
+            trip_value = 0.0
+            trip_setpoint = 0.0
+            severity = "HIGH"
+            
+            # NPSH trips
+            if 'npsh_critical' in trip_type:
+                pump_id = trip_type.split('_')[0]
+                if pump_id in pump_results:
+                    trip_value = pump_results[pump_id].get('npsh_available', 0.0)
+                    trip_setpoint = self.config.npsh_critical_trip
+                    severity = "CRITICAL"
+            elif 'npsh_low_low' in trip_type:
+                pump_id = trip_type.split('_')[0]
+                if pump_id in pump_results:
+                    trip_value = pump_results[pump_id].get('npsh_available', 0.0)
+                    trip_setpoint = self.config.npsh_low_low_trip
+                    severity = "HIGH"
+            
+            # Pressure trips
+            elif 'suction_pressure_low' in trip_type:
+                pump_id = trip_type.split('_')[0]
+                if pump_id in pump_results:
+                    trip_value = pump_results[pump_id].get('suction_pressure', 0.0)
+                    trip_setpoint = self.config.suction_pressure_low_trip
+                    severity = "CRITICAL"
+            elif 'discharge_pressure_high' in trip_type:
+                pump_id = trip_type.split('_')[0]
+                if pump_id in pump_results:
+                    trip_value = pump_results[pump_id].get('discharge_pressure', 0.0)
+                    trip_setpoint = self.config.discharge_pressure_high_trip
+                    severity = "HIGH"
+            
+            # Flow trips
+            elif 'system_low_flow' in trip_type:
+                trip_value = sum(pump_data.get('flow_rate', 0.0) for pump_data in pump_results.values())
+                trip_setpoint = self.config.low_flow_trip
+                severity = "CRITICAL"
+            elif 'system_high_flow' in trip_type:
+                trip_value = sum(pump_data.get('flow_rate', 0.0) for pump_data in pump_results.values())
+                trip_setpoint = self.config.high_flow_trip
+                severity = "HIGH"
+            
+            # Equipment trips
+            elif 'vibration_high' in trip_type:
+                pump_id = trip_type.split('_')[0]
+                if pump_id in pump_results:
+                    trip_value = pump_results[pump_id].get('vibration_level', 0.0)
+                    trip_setpoint = self.config.pump_vibration_trip
+                    severity = "HIGH"
+            elif 'bearing_temp_high' in trip_type:
+                pump_id = trip_type.split('_')[0]
+                if pump_id in pump_results:
+                    trip_value = pump_results[pump_id].get('bearing_temperature', 0.0)
+                    trip_setpoint = self.config.bearing_temp_trip
+                    severity = "HIGH"
+            elif 'motor_temp_high' in trip_type:
+                pump_id = trip_type.split('_')[0]
+                if pump_id in pump_results:
+                    trip_value = pump_results[pump_id].get('motor_temperature', 0.0)
+                    trip_setpoint = self.config.motor_temp_trip
+                    severity = "HIGH"
+            
+            # Steam generator level trips
+            elif 'level_high' in trip_type:
+                sg_levels = system_conditions.get('sg_levels', [12.5, 12.5, 12.5])
+                trip_value = max(sg_levels) if sg_levels else 0.0
+                trip_setpoint = self.config.sg_level_high_trip
+                severity = "HIGH"
+            
+            # System health trips
+            elif 'system_health_critical' in trip_type:
+                trip_value = 0.3  # Critical health threshold
+                trip_setpoint = 0.3
+                severity = "CRITICAL"
+            elif 'system_cavitation_severe' in trip_type:
+                trip_value = 0.8  # Severe cavitation threshold
+                trip_setpoint = 0.8
+                severity = "CRITICAL"
+            elif 'system_wear_critical' in trip_type:
+                trip_value = 40.0  # Critical wear threshold
+                trip_setpoint = 40.0
+                severity = "CRITICAL"
+            
+            # Publish the event for this specific trip
+            self._publish_trip_event(trip_type, trip_value, trip_setpoint, severity)
         
     def check_protection_systems(self,
                                pump_results: Dict[str, Dict],
@@ -319,6 +447,7 @@ class FeedwaterProtectionSystem:
         # Execute emergency actions if new trip
         if self.system_trip_active and not previous_trip_state:
             self._execute_emergency_actions(current_trips)
+            self._publish_trip_events(current_trips, pump_results, system_conditions)
             self.valid_trip_count += 1
             
             # Record trip in history
@@ -358,95 +487,139 @@ class FeedwaterProtectionSystem:
             discharge_pressure = pump_data.get('discharge_pressure', 8.0)
             
             # Suction pressure protection
-            if suction_pressure < self.config.suction_pressure_low_trip:
+            suction_pressure_low_trip = getattr(self.config, 'suction_pressure_low_trip', getattr(self.config, 'low_suction_pressure_trip', 0.2))
+            suction_pressure_low_alarm = getattr(self.config, 'suction_pressure_low_alarm', 0.3)
+            if suction_pressure < suction_pressure_low_trip:
                 current_trips.append(f'{pump_id}_suction_pressure_low')
-            elif suction_pressure < self.config.suction_pressure_low_alarm:
+            elif suction_pressure < suction_pressure_low_alarm:
                 current_alarms.append(f'{pump_id}_suction_pressure_low')
             
             # Discharge pressure protection
-            if discharge_pressure > self.config.discharge_pressure_high_trip:
+            discharge_pressure_high_trip = getattr(self.config, 'discharge_pressure_high_trip', getattr(self.config, 'high_discharge_pressure_trip', 10.0))
+            discharge_pressure_high_alarm = getattr(self.config, 'discharge_pressure_high_alarm', 9.0)
+            if discharge_pressure > discharge_pressure_high_trip:
                 current_trips.append(f'{pump_id}_discharge_pressure_high')
-            elif discharge_pressure > self.config.discharge_pressure_high_alarm:
+            elif discharge_pressure > discharge_pressure_high_alarm:
                 current_alarms.append(f'{pump_id}_discharge_pressure_high')
     
     def _check_flow_protection(self, total_flow, current_trips, current_alarms, dt_seconds):
         """Check flow-related protection"""
+        # Get flow protection setpoints with defaults
+        # CRITICAL FIX: Convert fractional setpoints to absolute values
+        low_flow_trip_fraction = getattr(self.config, 'low_flow_trip', 0.05)
+        high_flow_trip_fraction = getattr(self.config, 'high_flow_trip', 1.3)
+        
+        # Assume design flow of 1500 kg/s if not available
+        design_flow = getattr(self.config, 'design_total_flow', 1500.0)
+        
+        # Convert fractions to absolute values
+        if low_flow_trip_fraction < 1.0:  # It's a fraction
+            low_flow_trip = low_flow_trip_fraction * design_flow
+            low_flow_alarm = low_flow_trip * 2.0  # Alarm at 2x trip level
+        else:  # It's already an absolute value
+            low_flow_trip = low_flow_trip_fraction
+            low_flow_alarm = getattr(self.config, 'low_flow_alarm', 100.0)
+        
+        if high_flow_trip_fraction < 2.0:  # It's a fraction
+            high_flow_trip = high_flow_trip_fraction * design_flow
+            high_flow_alarm = high_flow_trip * 0.9  # Alarm at 90% of trip level
+        else:  # It's already an absolute value
+            high_flow_trip = high_flow_trip_fraction
+            high_flow_alarm = getattr(self.config, 'high_flow_alarm', 1800.0)
+        
+        delayed_trips = getattr(self.config, 'delayed_trips', {'low_flow': 10.0, 'high_flow': 2.0})
+        
         # Low flow protection (with delay)
-        if total_flow < self.config.low_flow_trip:
+        if total_flow < low_flow_trip:
             self.trip_timers['low_flow'] += dt_seconds
-            if self.trip_timers['low_flow'] >= self.config.delayed_trips['low_flow']:
+            if self.trip_timers['low_flow'] >= delayed_trips.get('low_flow', 10.0):
                 current_trips.append('system_low_flow')
         else:
             self.trip_timers['low_flow'] = 0.0
         
-        if total_flow < self.config.low_flow_alarm:
+        if total_flow < low_flow_alarm:
             current_alarms.append('system_low_flow')
         
         # High flow protection (with delay)
-        if total_flow > self.config.high_flow_trip:
+        if total_flow > high_flow_trip:
             self.trip_timers['high_flow'] += dt_seconds
-            if self.trip_timers['high_flow'] >= self.config.delayed_trips['high_flow']:
+            if self.trip_timers['high_flow'] >= delayed_trips.get('high_flow', 2.0):
                 current_trips.append('system_high_flow')
         else:
             self.trip_timers['high_flow'] = 0.0
         
-        if total_flow > self.config.high_flow_alarm:
+        if total_flow > high_flow_alarm:
             current_alarms.append('system_high_flow')
     
     def _check_sg_level_protection(self, sg_levels, current_trips, current_alarms):
         """Check steam generator level protection"""
+        # Get SG level protection setpoints with defaults
+        sg_level_high_trip = getattr(self.config, 'sg_level_high_trip', 16.5)
+        sg_level_high_alarm = getattr(self.config, 'sg_level_high_alarm', 15.5)
+        sg_level_low_trip = getattr(self.config, 'sg_level_low_trip', 10.0)
+        sg_level_low_alarm = getattr(self.config, 'sg_level_low_alarm', 11.0)
+        
         for i, level in enumerate(sg_levels):
             sg_id = f'SG_{i+1}'
             
             # High level protection (instantaneous)
-            if level > self.config.sg_level_high_trip:
+            if level > sg_level_high_trip:
                 current_trips.append(f'{sg_id}_level_high')
-            elif level > self.config.sg_level_high_alarm:
+            elif level > sg_level_high_alarm:
                 current_alarms.append(f'{sg_id}_level_high')
             
             # Low level protection (alarm only - trip handled by reactor protection)
-            if level < self.config.sg_level_low_trip:
+            if level < sg_level_low_trip:
                 current_alarms.append(f'{sg_id}_level_low_critical')
-            elif level < self.config.sg_level_low_alarm:
+            elif level < sg_level_low_alarm:
                 current_alarms.append(f'{sg_id}_level_low')
     
     def _check_equipment_protection(self, pump_results, current_trips, current_alarms, dt_seconds):
         """Check equipment-related protection"""
+        # Get equipment protection setpoints with defaults
+        pump_vibration_trip = getattr(self.config, 'pump_vibration_trip', 10.0)
+        pump_vibration_alarm = getattr(self.config, 'pump_vibration_alarm', 5.0)
+        bearing_temp_trip = getattr(self.config, 'bearing_temp_trip', 120.0)
+        bearing_temp_alarm = getattr(self.config, 'bearing_temp_alarm', 80.0)
+        motor_temp_trip = getattr(self.config, 'motor_temp_trip', 130.0)
+        motor_temp_alarm = getattr(self.config, 'motor_temp_alarm', 100.0)
+        delayed_trips = getattr(self.config, 'delayed_trips', {'vibration': 10.0, 'bearing_temp': 30.0, 'motor_temp': 60.0})
+        
         for pump_id, pump_data in pump_results.items():
             # Vibration protection
             vibration = pump_data.get('vibration_level', 1.5)
-            if vibration > self.config.pump_vibration_trip:
+            if vibration > pump_vibration_trip:
                 self.trip_timers['vibration'] += dt_seconds
-                if self.trip_timers['vibration'] >= self.config.delayed_trips['vibration']:
+                if self.trip_timers['vibration'] >= delayed_trips.get('vibration', 10.0):
                     current_trips.append(f'{pump_id}_vibration_high')
             else:
                 self.trip_timers['vibration'] = 0.0
             
-            if vibration > self.config.pump_vibration_alarm:
+            if vibration > pump_vibration_alarm:
                 current_alarms.append(f'{pump_id}_vibration_high')
             
             # Bearing temperature protection
             bearing_temp = pump_data.get('bearing_temperature', 45.0)
-            if bearing_temp > self.config.bearing_temp_trip:
+            if bearing_temp > bearing_temp_trip:
                 self.trip_timers['bearing_temp'] += dt_seconds
-                if self.trip_timers['bearing_temp'] >= self.config.delayed_trips['bearing_temp']:
+                if self.trip_timers['bearing_temp'] >= delayed_trips.get('bearing_temp', 30.0):
                     current_trips.append(f'{pump_id}_bearing_temp_high')
             else:
                 self.trip_timers['bearing_temp'] = 0.0
             
-            if bearing_temp > self.config.bearing_temp_alarm:
+            if bearing_temp > bearing_temp_alarm:
                 current_alarms.append(f'{pump_id}_bearing_temp_high')
             
             # Motor temperature protection
             motor_temp = pump_data.get('motor_temperature', 60.0)
-            if motor_temp > self.config.motor_temp_trip:
+            if motor_temp > motor_temp_trip:
                 self.trip_timers['motor_temp'] += dt_seconds
-                if self.trip_timers['motor_temp'] >= self.config.delayed_trips['motor_temp']:
+                if self.trip_timers['motor_temp'] >= delayed_trips.get('motor_temp', 60.0):
                     current_trips.append(f'{pump_id}_motor_temp_high')
             else:
                 self.trip_timers['motor_temp'] = 0.0
             
-            if motor_temp > self.config.motor_temp_alarm:
+            if motor_temp > motor_temp_alarm:
                 current_alarms.append(f'{pump_id}_motor_temp_high')
     
     def _check_diagnostic_protection(self, diagnostics_results, current_trips, current_alarms):

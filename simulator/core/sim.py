@@ -28,7 +28,8 @@ class NuclearPlantSimulator:
     """Physics-based nuclear power plant simulator with integrated primary and secondary systems"""
 
     def __init__(self, dt: float = 1.0, heat_source=None, enable_secondary: bool = True, 
-                 enable_state_management: bool = True, max_state_rows: int = 100000):
+                 enable_state_management: bool = True, max_state_rows: int = 100000,
+                 secondary_config=None, secondary_config_file: str = None):
         self.dt = dt  # Time step in seconds
         self.time = 0.0
         self.enable_state_management = enable_state_management
@@ -40,9 +41,22 @@ class NuclearPlantSimulator:
             heat_source=heat_source
         )
         
-        # Initialize secondary reactor physics system (3 steam generators for typical PWR)
+        # Initialize secondary reactor physics system with optional configuration
         if self.enable_secondary:
-            self.secondary_physics = SecondaryReactorPhysics(num_steam_generators=3)
+            if secondary_config is not None:
+                # Use provided configuration object
+                self.secondary_physics = SecondaryReactorPhysics(config=secondary_config)
+            elif secondary_config_file is not None:
+                # Use provided configuration file
+                self.secondary_physics = SecondaryReactorPhysics(config_file=secondary_config_file)
+            else:
+                # CRITICAL FIX: Use proper PWR configuration instead of just num_steam_generators
+                # Import the PWR configuration system
+                from systems.secondary.config import PWR3000ConfigFactory
+                
+                # Create standard 3000 MW PWR configuration with proper feedwater pump setup
+                pwr_config = PWR3000ConfigFactory.create_standard_pwr3000()
+                self.secondary_physics = SecondaryReactorPhysics(config=pwr_config)
         else:
             self.secondary_physics = None
         
@@ -53,8 +67,12 @@ class NuclearPlantSimulator:
             # Discover and register components that used @auto_register decorator
             self.state_manager.discover_registered_components()
             print(f"State management initialized with component discovery: {self.state_manager}")
+            
+            # Initialize automatic maintenance system
+            self._initialize_maintenance_system(secondary_config)
         else:
             self.state_manager = None
+            self.maintenance_system = None
         
         # Integration parameters for primary-secondary coupling
         self.primary_loops = 3  # Number of primary loops
@@ -68,6 +86,47 @@ class NuclearPlantSimulator:
         self.state = self.primary_physics.state
 
         self.state_df = pd.DataFrame()
+
+    def _initialize_maintenance_system(self, secondary_config):
+        """Initialize automatic maintenance system with component discovery"""
+        try:
+            from systems.maintenance import AutoMaintenanceSystem
+            
+            # Create maintenance system
+            self.maintenance_system = AutoMaintenanceSystem()
+            
+            # Check if aggressive mode is enabled in config
+            aggressive_mode = False
+            if secondary_config:
+                # Check for maintenance_system section in config
+                if isinstance(secondary_config, dict):
+                    maintenance_config = secondary_config.get('maintenance_system', {})
+                    if maintenance_config.get('maintenance_mode') in ['aggressive', 'ultra_aggressive']:
+                        aggressive_mode = True
+                elif hasattr(secondary_config, 'get'):
+                    maintenance_config = secondary_config.get('maintenance_system', {})
+                    if maintenance_config.get('maintenance_mode') in ['aggressive', 'ultra_aggressive']:
+                        aggressive_mode = True
+                elif hasattr(secondary_config, 'maintenance_aggressive_mode'):
+                    aggressive_mode = secondary_config.maintenance_aggressive_mode
+                elif hasattr(secondary_config, 'plant_name') and 'demo' in secondary_config.plant_name.lower():
+                    # Auto-detect demo mode from plant name
+                    aggressive_mode = True
+            
+            # Pass the secondary_config to the maintenance system for YAML configuration loading
+            self.maintenance_system.secondary_config = secondary_config
+            
+            # Discover and register components automatically
+            self.maintenance_system.discover_components_from_state_manager(
+                self.state_manager, 
+                aggressive_mode=aggressive_mode
+            )
+            
+            print(f"Automatic maintenance system initialized ({'aggressive' if aggressive_mode else 'conservative'} mode)")
+            
+        except Exception as e:
+            print(f"Warning: Failed to initialize maintenance system: {e}")
+            self.maintenance_system = None
 
     def step(
         self, action: Optional[ControlAction] = None, magnitude: float = 1.0,
@@ -124,13 +183,6 @@ class NuclearPlantSimulator:
         # Update time
         self.time += self.dt
         
-        # Collect states using the new state management system
-        if self.enable_state_management and self.state_manager is not None:
-            try:
-                collected_states = self.state_manager.collect_states(self.time)
-            except Exception as e:
-                warnings.warn(f"State collection failed: {e}")
-        
         # Get observation for RL
         observation = self.get_observation()
 
@@ -142,6 +194,23 @@ class NuclearPlantSimulator:
             "reactivity": primary_result['total_reactivity_pcm'],
             "reactivity_components": primary_result['reactivity_components'],
         }
+        
+        # Update maintenance system if available
+        if hasattr(self, 'maintenance_system') and self.maintenance_system is not None:
+            try:
+                maintenance_work_orders = self.maintenance_system.update(self.time, self.dt)
+                # Add maintenance info to result if work orders were created/executed
+                if maintenance_work_orders:
+                    info['maintenance_work_orders'] = [wo.to_dict() for wo in maintenance_work_orders]
+            except Exception as e:
+                warnings.warn(f"Maintenance system update failed: {e}")
+        
+        # Collect states using the new state management system
+        if self.enable_state_management and self.state_manager is not None:
+            try:
+                collected_states = self.state_manager.collect_states(self.time)
+            except Exception as e:
+                warnings.warn(f"State collection failed: {e}")
         
         # Add secondary system information if available
         if secondary_result is not None:

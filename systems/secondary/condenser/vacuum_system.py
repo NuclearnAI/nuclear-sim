@@ -29,44 +29,9 @@ from ..component_descriptions import CONDENSER_COMPONENT_DESCRIPTIONS
 warnings.filterwarnings("ignore")
 
 
-@dataclass
-class VacuumSystemConfig:
-    """
-    Configuration parameters for the complete vacuum system
-    
-    References:
-    - Typical PWR vacuum system arrangements
-    - Steam ejector system design practices
-    - Plant operating procedures
-    """
-    
-    # System configuration
-    system_id: str = "VS-001"              # Vacuum system identifier
-    ejector_configs: List[SteamEjectorConfig] = None  # List of ejector configurations
-    
-    # Control parameters
-    auto_start_pressure: float = 0.008     # MPa pressure to auto-start backup ejector
-    auto_stop_pressure: float = 0.006      # MPa pressure to auto-stop backup ejector
-    rotation_interval: float = 168.0       # hours between ejector rotation (weekly)
-    control_strategy: str = "lead_lag"     # "lead_lag", "parallel", "sequential"
-    
-    # Air leakage parameters
-    base_air_leakage: float = 0.1          # kg/s base air in-leakage
-    leakage_degradation_rate: float = 0.00001  # Increase in leakage per hour
-    
-    # System performance
-    condenser_volume: float = 500.0        # m³ condenser steam space volume
-    air_holdup_time: float = 60.0          # seconds average air residence time
-    
-    # Motive steam supply
-    motive_steam_header_pressure: float = 1.2  # MPa motive steam header pressure
-    motive_steam_temperature: float = 185.0    # °C motive steam temperature
-    steam_pressure_drop: float = 0.1           # MPa pressure drop to ejectors
-    
-    # Alarm and trip settings
-    high_pressure_alarm: float = 0.010     # MPa high condenser pressure alarm
-    high_pressure_trip: float = 0.012      # MPa high pressure trip (turbine trip)
-    low_motive_pressure_alarm: float = 0.9 # MPa low motive steam pressure alarm
+# NOTE: VacuumSystemConfig moved to condenser/config.py
+# Import from the centralized configuration system
+from .config import CondenserVacuumSystemConfig as VacuumSystemConfig, SteamEjectorConfig
 
 
 class VacuumControlLogic:
@@ -536,10 +501,15 @@ class VacuumSystem:
         self.total_steam_consumption = total_steam_consumption
         self.operating_hours += dt
         
-        # Calculate system efficiency
-        total_design_capacity = sum(e.config.design_capacity for e in self.ejectors.values())
-        self.system_efficiency = (total_capacity / max(1.0, total_design_capacity) 
-                                if total_design_capacity > 0 else 0.0)
+        # Calculate system efficiency based on ejector performance, not capacity utilization
+        running_ejectors = [e for e in self.ejectors.values() if e.is_operating]
+        if running_ejectors:
+            # Average efficiency of running ejectors
+            total_efficiency = sum(getattr(e, 'overall_performance_factor', 1.0) for e in running_ejectors)
+            self.system_efficiency = total_efficiency / len(running_ejectors)
+        else:
+            # No ejectors running - use a reasonable default efficiency
+            self.system_efficiency = 0.95  # 95% efficiency when no ejectors needed
         
         # Update alarms and trips
         self.update_alarms_and_trips()

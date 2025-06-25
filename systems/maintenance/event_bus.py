@@ -72,6 +72,9 @@ class MaintenanceEventBus:
         self.events_published = 0
         self.events_processed = 0
         
+        # Current simulation time for event timestamps
+        self.current_simulation_time = 0.0
+        
     def subscribe(self, event_type: str, callback: Callable[[MaintenanceEvent], None]):
         """
         Subscribe to maintenance events
@@ -102,7 +105,7 @@ class MaintenanceEventBus:
         event = MaintenanceEvent(
             event_type=event_type,
             component_id=component_id,
-            timestamp=time.time(),
+            timestamp=self.current_simulation_time,  # Use simulation time instead of Unix time
             data=data,
             priority=priority,
             source=source
@@ -126,13 +129,39 @@ class MaintenanceEventBus:
     def register_component(self, component_id: str, component: Any, 
                           monitoring_config: Dict[str, Dict[str, Any]]):
         """
-        Register a component for maintenance monitoring
+        Register a component for maintenance monitoring with comprehensive duplicate detection
         
         Args:
             component_id: Unique component identifier
             component: Component instance
             monitoring_config: Configuration for parameter monitoring
         """
+        # COMPREHENSIVE DUPLICATE DETECTION
+        if component_id in self.components:
+            print(f"DUPLICATE PREVENTION: Component {component_id} already registered in EventBus, skipping")
+            return
+        
+        # Check if component is registered in the global ComponentRegistry
+        try:
+            from .component_registry import get_component_registry
+            component_registry = get_component_registry()
+            if component_id in component_registry.components:
+                print(f"DUPLICATE PREVENTION: Component {component_id} already in ComponentRegistry")
+                # Don't return here - we still want to register in EventBus even if it's in ComponentRegistry
+        except ImportError:
+            pass  # ComponentRegistry not available
+        
+        # Check for existing parameter monitors that would conflict
+        existing_monitors = [mid for mid in self.parameter_monitors.keys() 
+                           if mid.startswith(f"{component_id}.")]
+        if existing_monitors:
+            print(f"DUPLICATE PREVENTION: Component {component_id} has existing monitors: {existing_monitors}")
+            print(f"DUPLICATE PREVENTION: Clearing existing monitors for clean re-registration")
+            # Remove existing monitors for clean re-registration
+            for monitor_id in existing_monitors:
+                del self.parameter_monitors[monitor_id]
+        
+        # Register the component
         self.components[component_id] = component
         self.component_metadata[component_id] = {
             'class_name': component.__class__.__name__,
@@ -141,8 +170,14 @@ class MaintenanceEventBus:
         }
         
         # Create parameter monitors
+        monitors_created = 0
         for param_name, param_config in monitoring_config.items():
             monitor_id = f"{component_id}.{param_name}"
+            
+            # Skip if monitor already exists (shouldn't happen after cleanup above)
+            if monitor_id in self.parameter_monitors:
+                print(f"DUPLICATE PREVENTION: Monitor {monitor_id} already exists, skipping")
+                continue
             
             monitor = ParameterMonitor(
                 component_id=component_id,
@@ -156,8 +191,18 @@ class MaintenanceEventBus:
             )
             
             self.parameter_monitors[monitor_id] = monitor
+            monitors_created += 1
         
-        print(f"Registered component {component_id} for maintenance monitoring")
+        print(f"EVENT BUS: ✅ Registered component {component_id} with {monitors_created} monitors")
+        
+        # Also register in ComponentRegistry if available
+        try:
+            from .component_registry import get_component_registry
+            component_registry = get_component_registry()
+            component_registry.register_component(component_id, component)
+            print(f"EVENT BUS: ✅ Also registered {component_id} in ComponentRegistry")
+        except ImportError:
+            pass  # ComponentRegistry not available
     
     def unregister_component(self, component_id: str):
         """Unregister a component from monitoring"""
@@ -178,12 +223,15 @@ class MaintenanceEventBus:
         Args:
             current_time: Current simulation time
         """
+        # Update current simulation time for event timestamps
+        self.current_simulation_time = current_time
+        
         for monitor_id, monitor in self.parameter_monitors.items():
             if not monitor.enabled:
                 continue
             
-            # Check cooldown
-            if current_time - monitor.last_triggered < monitor.cooldown_hours:
+            # Check cooldown (allow first trigger when last_triggered is 0.0)
+            if monitor.last_triggered > 0.0 and current_time - monitor.last_triggered < monitor.cooldown_hours:
                 continue
             
             try:
@@ -232,22 +280,33 @@ class MaintenanceEventBus:
         
         Args:
             component: Component instance
-            attribute_path: Path to attribute (e.g., "state.oil_level")
+            attribute_path: Path to attribute (e.g., "state.oil_level" or "pumps.FWP-1.state.oil_level")
             
         Returns:
             Parameter value or None if not found
         """
         try:
-            # Handle nested attribute paths
+            # Handle nested attribute paths with dictionary access
             obj = component
             for attr in attribute_path.split('.'):
-                obj = getattr(obj, attr)
+                if hasattr(obj, attr):
+                    # Standard attribute access
+                    obj = getattr(obj, attr)
+                elif hasattr(obj, '__getitem__'):
+                    # Dictionary-like access
+                    obj = obj[attr]
+                else:
+                    # Try both approaches
+                    try:
+                        obj = getattr(obj, attr)
+                    except AttributeError:
+                        obj = obj[attr]
             
             # Convert to float if possible
             if isinstance(obj, (int, float)):
                 return float(obj)
             
-        except (AttributeError, TypeError, ValueError):
+        except (AttributeError, TypeError, ValueError, KeyError):
             pass
         
         return None

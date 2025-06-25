@@ -29,114 +29,13 @@ from simulator.state import auto_register
 # Import heat flow tracking
 from ..heat_flow_tracker import HeatFlowProvider, ThermodynamicProperties
 
-from .stage_system import TurbineStageSystem, TurbineStageSystemConfig
-from .rotor_dynamics import RotorDynamicsModel, RotorDynamicsConfig
-from .turbine_bearing_lubrication import TurbineBearingLubricationSystem, TurbineBearingLubricationConfig, integrate_lubrication_with_turbine
+from .stage_system import TurbineStageSystem
+from .rotor_dynamics import RotorDynamicsModel
+from .turbine_bearing_lubrication import TurbineBearingLubricationSystem, integrate_lubrication_with_turbine
+from .config import TurbineConfig, TurbineThermalStressConfig, TurbineProtectionConfig
 from ..component_descriptions import TURBINE_COMPONENT_DESCRIPTIONS
 
 warnings.filterwarnings("ignore")
-
-
-@dataclass
-class ThermalStressConfig:
-    """
-    Configuration for thermal stress modeling
-    
-    References:
-    - Turbine thermal stress analysis
-    - Material property specifications
-    - Operating envelope definitions
-    """
-    
-    # System configuration
-    system_id: str = "TSC-001"               # Thermal stress system identifier
-    
-    # Material properties
-    thermal_conductivity: float = 45.0       # W/m/K thermal conductivity
-    thermal_expansion_coeff: float = 12e-6   # 1/K thermal expansion coefficient
-    elastic_modulus: float = 200e9           # Pa elastic modulus
-    poisson_ratio: float = 0.3               # Poisson's ratio
-    
-    # Thermal limits
-    max_metal_temperature: float = 600.0     # °C maximum metal temperature
-    max_thermal_gradient: float = 5.0        # °C/cm maximum thermal gradient
-    max_thermal_stress: float = 800e6        # Pa maximum thermal stress (increased from 400e6)
-    
-    # Time constants
-    thermal_time_constant: float = 300.0     # seconds thermal response time
-    stress_relaxation_time: float = 3600.0   # seconds stress relaxation time
-
-
-@dataclass
-class TurbineProtectionConfig:
-    """
-    Configuration for turbine protection systems
-    
-    References:
-    - Turbine protection system standards
-    - Trip logic specifications
-    - Emergency response procedures
-    """
-    
-    # System configuration
-    system_id: str = "TPC-001"               # Protection system identifier
-    
-    # Trip setpoints
-    overspeed_trip: float = 3780.0           # RPM overspeed trip (105%)
-    vibration_trip: float = 25.0             # mils vibration trip
-    bearing_temp_trip: float = 120.0         # °C bearing temperature trip
-    thrust_bearing_trip: float = 50.0        # mm thrust bearing displacement trip (increased from 2.0)
-    low_vacuum_trip: float = 0.012           # MPa low vacuum trip
-    
-    # Trip delays
-    overspeed_delay: float = 0.1             # seconds overspeed trip delay
-    vibration_delay: float = 2.0             # seconds vibration trip delay
-    bearing_temp_delay: float = 10.0         # seconds bearing temp trip delay
-    
-    # Emergency actions
-    enable_steam_dump: bool = True           # Enable steam dump on trip
-    enable_turning_gear: bool = True         # Enable turning gear after trip
-    emergency_seal_steam: bool = True        # Emergency seal steam on trip
-    
-    # Thermal stress limits (for compatibility)
-    max_thermal_stress: float = 800e6        # Pa maximum thermal stress (increased from 400e6)
-
-
-@dataclass
-class EnhancedTurbineConfig:
-    """
-    Enhanced turbine configuration that integrates all subsystems
-    
-    References:
-    - Complete turbine system specifications
-    - Integration requirements
-    - Performance optimization parameters
-    """
-    
-    # System configuration
-    system_id: str = "T-001"               # Enhanced turbine system identifier
-    
-    # Subsystem configurations
-    stage_system_config: TurbineStageSystemConfig = field(default_factory=TurbineStageSystemConfig)
-    rotor_dynamics_config: RotorDynamicsConfig = field(default_factory=RotorDynamicsConfig)
-    thermal_stress_config: ThermalStressConfig = field(default_factory=ThermalStressConfig)
-    protection_config: TurbineProtectionConfig = field(default_factory=TurbineProtectionConfig)
-    
-    # Overall turbine parameters
-    rated_power_mwe: float = 1100.0          # MW electrical rated power
-    design_steam_flow: float = 1665.0        # kg/s design steam flow
-    design_steam_pressure: float = 6.895     # MPa design steam pressure
-    design_steam_temperature: float = 285.8  # °C design steam temperature
-    
-    # Performance parameters
-    design_efficiency: float = 0.34          # Overall design efficiency
-    minimum_load: float = 0.2                # Minimum stable load (20%)
-    maximum_load: float = 1.05               # Maximum load (105%)
-    
-    # Control parameters
-    load_following_enabled: bool = True      # Enable load following
-    performance_optimization: bool = True    # Enable performance optimization
-    predictive_maintenance: bool = True      # Enable predictive maintenance
 
 
 class MetalTemperatureTracker:
@@ -150,7 +49,7 @@ class MetalTemperatureTracker:
     4. Thermal shock protection
     """
     
-    def __init__(self, config: ThermalStressConfig):
+    def __init__(self, config: TurbineThermalStressConfig):
         """Initialize metal temperature tracker"""
         self.config = config
         
@@ -276,6 +175,7 @@ class TurbineProtectionSystem:
     2. Emergency action sequences
     3. Protection logic coordination
     4. Safety system validation
+    5. Maintenance event publishing for post-trip actions
     """
     
     def __init__(self, config: TurbineProtectionConfig):
@@ -309,6 +209,141 @@ class TurbineProtectionSystem:
         # Protection system health
         self.system_available = True
         self.last_test_time = 0.0
+        
+        # Maintenance event bus integration
+        self.maintenance_event_bus = None
+        self.component_id = "TURBINE_SYSTEM"  # Default component ID
+    
+    def set_maintenance_event_bus(self, event_bus, component_id: str = None):
+        """
+        Set the maintenance event bus for publishing trip events
+        
+        Args:
+            event_bus: MaintenanceEventBus instance
+            component_id: Component identifier for events
+        """
+        self.maintenance_event_bus = event_bus
+        if component_id:
+            self.component_id = component_id
+    
+    def _publish_trip_event(self, trip_type: str, trip_value: float, trip_setpoint: float, 
+                           severity: str = "HIGH", recommended_actions: List[str] = None):
+        """
+        Publish a protection trip event to the maintenance system
+        
+        Args:
+            trip_type: Type of trip that occurred
+            trip_value: Current value that caused the trip
+            trip_setpoint: Setpoint that was exceeded
+            severity: Severity level (CRITICAL, HIGH, MEDIUM, LOW)
+            recommended_actions: List of recommended maintenance actions
+        """
+        if not self.maintenance_event_bus:
+            return
+        
+        if recommended_actions is None:
+            # Default recommended actions based on trip type
+            action_map = {
+                'overspeed': ['rotor_inspection', 'governor_system_check', 'overspeed_test'],
+                'vibration': ['vibration_analysis', 'rotor_balancing', 'bearing_inspection'],
+                'bearing_temp': ['bearing_inspection', 'lubrication_system_check', 'cooling_system_check'],
+                'thrust_bearing': ['bearing_alignment', 'thrust_bearing_adjustment', 'bearing_clearance_check'],
+                'low_vacuum': ['vacuum_system_check', 'condenser_tube_inspection', 'vacuum_leak_detection'],
+                'thermal_stress': ['thermal_stress_analysis', 'rotor_inspection', 'blade_inspection']
+            }
+            
+            # Find matching actions
+            recommended_actions = []
+            for key, actions in action_map.items():
+                if key in trip_type:
+                    recommended_actions = actions
+                    break
+            
+            if not recommended_actions:
+                recommended_actions = ['post_trip_inspection', 'trip_root_cause_analysis']
+        
+        # Determine priority based on severity
+        priority_map = {
+            'CRITICAL': 'CRITICAL',
+            'HIGH': 'HIGH', 
+            'MEDIUM': 'MEDIUM',
+            'LOW': 'LOW'
+        }
+        priority = priority_map.get(severity, 'HIGH')
+        
+        # Publish the event
+        self.maintenance_event_bus.publish(
+            'protection_trip_occurred',
+            self.component_id,
+            {
+                'trip_type': trip_type,
+                'trip_value': trip_value,
+                'trip_setpoint': trip_setpoint,
+                'severity': severity,
+                'recommended_actions': recommended_actions,
+                'system_type': 'turbine_protection',
+                'emergency_actions_taken': list(self.emergency_actions.keys())
+            },
+            priority=priority
+        )
+        
+        print(f"TURBINE PROTECTION: Published trip event - {trip_type} ({severity})")
+    
+    def _publish_trip_events(self, trip_conditions: Dict[str, bool], 
+                            rotor_speed: float, vibration_level: float, 
+                            bearing_temperatures: List[float], thrust_displacement: float,
+                            vacuum_pressure: float, thermal_stress: float):
+        """
+        Publish maintenance events for all trips that occurred
+        
+        Args:
+            trip_conditions: Dictionary of trip conditions that are active
+            rotor_speed: Current rotor speed (RPM)
+            vibration_level: Current vibration level (mils)
+            bearing_temperatures: Current bearing temperatures (°C)
+            thrust_displacement: Current thrust displacement (mm)
+            vacuum_pressure: Current vacuum pressure (MPa)
+            thermal_stress: Current thermal stress (Pa)
+        """
+        if not self.maintenance_event_bus:
+            return
+        
+        for trip_type, is_active in trip_conditions.items():
+            if not is_active:
+                continue
+                
+            # Extract trip value and setpoint based on trip type
+            trip_value = 0.0
+            trip_setpoint = 0.0
+            severity = "HIGH"
+            
+            if trip_type == 'overspeed':
+                trip_value = rotor_speed
+                trip_setpoint = self.config.overspeed_trip
+                severity = "CRITICAL"
+            elif trip_type == 'vibration':
+                trip_value = vibration_level
+                trip_setpoint = self.config.vibration_trip
+                severity = "HIGH"
+            elif trip_type == 'bearing_temp':
+                trip_value = max(bearing_temperatures) if bearing_temperatures else 0.0
+                trip_setpoint = self.config.bearing_temp_trip
+                severity = "HIGH"
+            elif trip_type == 'thrust_bearing':
+                trip_value = thrust_displacement
+                trip_setpoint = self.config.thrust_bearing_trip
+                severity = "CRITICAL"
+            elif trip_type == 'low_vacuum':
+                trip_value = vacuum_pressure
+                trip_setpoint = self.config.low_vacuum_trip
+                severity = "MEDIUM"
+            elif trip_type == 'thermal_stress':
+                trip_value = thermal_stress
+                trip_setpoint = self.config.max_thermal_stress
+                severity = "CRITICAL"
+            
+            # Publish the event for this specific trip
+            self._publish_trip_event(trip_type, trip_value, trip_setpoint, severity)
         
     def check_trip_conditions(self,
                             rotor_speed: float,
@@ -386,7 +421,14 @@ class TurbineProtectionSystem:
                 self.trip_reasons.append('High Thermal Stress')
         
         # Overall trip status
+        previous_trip_state = self.trip_active
         self.trip_active = any(trips.values())
+        
+        # Publish trip events if new trips occurred
+        if self.trip_active and not previous_trip_state:
+            self._publish_trip_events(trips, rotor_speed, vibration_level, 
+                                    bearing_temperatures, thrust_displacement, 
+                                    vacuum_pressure, thermal_stress)
 
         if self.trip_active:
             print(f"Trip active: {self.trip_reasons}, time: {self.trip_time}")
@@ -460,27 +502,21 @@ class EnhancedTurbinePhysics(HeatFlowProvider):
     Implements StateProvider interface for automatic state collection.
     """
     
-    def __init__(self, config: Optional[EnhancedTurbineConfig] = None):
+    def __init__(self, config: Optional[TurbineConfig] = None):
         """Initialize enhanced turbine physics model"""
         if config is None:
-            config = EnhancedTurbineConfig()
+            config = TurbineConfig()
         
         self.config = config
         
         # Initialize subsystems
-        self.stage_system = TurbineStageSystem(config.stage_system_config)
-        self.rotor_dynamics = RotorDynamicsModel(config.rotor_dynamics_config)
-        self.thermal_tracker = MetalTemperatureTracker(config.thermal_stress_config)
-        self.protection_system = TurbineProtectionSystem(config.protection_config)
+        self.stage_system = TurbineStageSystem(config.stage_system)
+        self.rotor_dynamics = RotorDynamicsModel(config.rotor_dynamics)
+        self.thermal_tracker = MetalTemperatureTracker(config.thermal_stress)
+        self.protection_system = TurbineProtectionSystem(config.protection_system)
         
         # Create and integrate turbine bearing lubrication system
-        lubrication_config = TurbineBearingLubricationConfig(
-            system_id=f"{config.system_id}-LUB",
-            turbine_rated_power=config.rated_power_mwe,
-            turbine_rated_speed=3600.0,
-            steam_temperature=config.design_steam_temperature
-        )
-        self.bearing_lubrication_system = TurbineBearingLubricationSystem(lubrication_config)
+        self.bearing_lubrication_system = TurbineBearingLubricationSystem(config.lubrication_system)
         
         # Store reference to lubrication system for direct access
         self.rotor_dynamics.bearing_lubrication_system = self.bearing_lubrication_system
@@ -489,13 +525,8 @@ class EnhancedTurbinePhysics(HeatFlowProvider):
         integrate_lubrication_with_turbine(self, self.bearing_lubrication_system)
         
         # Create turbine governor system with lubrication
-        from .governor_system import TurbineGovernorSystem, GovernorControlConfig
-        governor_config = GovernorControlConfig(
-            system_id=f"{config.system_id}-GOV",
-            rated_speed=3600.0,
-            rated_load=config.rated_power_mwe
-        )
-        self.governor_system = TurbineGovernorSystem(governor_config)
+        from .governor_system import TurbineGovernorSystem
+        self.governor_system = TurbineGovernorSystem(config.governor_system)
         
         # Enhanced turbine state
         self.total_power_output = 0.0            # MW total electrical power
@@ -775,6 +806,300 @@ class EnhancedTurbinePhysics(HeatFlowProvider):
             'enthalpy_converted_to_work': heat_flows['steam_enthalpy_input'] - heat_flows['exhaust_enthalpy_output'] - heat_flows['extraction_enthalpy_output']
         }
     
+    def setup_maintenance_integration(self, maintenance_system, component_id: str):
+        """
+        Set up maintenance integration for enhanced turbine system
+        
+        Args:
+            maintenance_system: AutoMaintenanceSystem instance
+            component_id: Unique identifier for this turbine system
+        """
+        print(f"ENHANCED TURBINE {component_id}: Setting up maintenance integration")
+        
+        # Define monitoring configuration for turbine system parameters
+        monitoring_config = {
+            'turbine_efficiency': {
+                'attribute': 'overall_efficiency',
+                'threshold': 0.30,  # 30% efficiency threshold (below 90% of design)
+                'comparison': 'less_than',
+                'action': 'turbine_performance_test',
+                'cooldown_hours': 168.0  # Weekly cooldown
+            },
+            'performance_factor': {
+                'attribute': 'performance_factor',
+                'threshold': 0.85,  # 85% performance factor threshold
+                'comparison': 'less_than',
+                'action': 'turbine_system_optimization',
+                'cooldown_hours': 72.0  # 3-day cooldown
+            },
+            'availability_factor': {
+                'attribute': 'availability_factor',
+                'threshold': 0.95,  # 95% availability threshold
+                'comparison': 'less_than',
+                'action': 'turbine_protection_test',
+                'cooldown_hours': 48.0  # 2-day cooldown
+            },
+            'thermal_stress': {
+                'attribute': 'max_thermal_stress',
+                'threshold': 700e6,  # Pa thermal stress threshold (87.5% of limit)
+                'comparison': 'greater_than',
+                'action': 'thermal_stress_analysis',
+                'cooldown_hours': 24.0  # Daily cooldown
+            },
+            'vibration_level': {
+                'attribute': 'vibration_displacement',
+                'threshold': 20.0,  # mils vibration threshold (80% of trip)
+                'comparison': 'greater_than',
+                'action': 'vibration_analysis',
+                'cooldown_hours': 12.0  # 12-hour cooldown
+            }
+        }
+        
+        # Register with maintenance system using event bus
+        maintenance_system.register_component(component_id, self, monitoring_config)
+        
+        print(f"  Registered {component_id} with {len(monitoring_config)} monitoring parameters")
+        
+        # Set up maintenance integration for subsystems
+        print(f"  Setting up subsystem maintenance integration...")
+        
+        # Register individual bearings
+        for bearing_id, bearing in self.rotor_dynamics.bearings.items():
+            bearing.setup_maintenance_integration(maintenance_system, bearing_id)
+        
+        # Register lubrication system
+        if hasattr(self, 'bearing_lubrication_system'):
+            self.bearing_lubrication_system.setup_maintenance_integration(
+                maintenance_system, f"{component_id}-LUBRICATION"
+            )
+        
+        # Connect protection system to maintenance event bus for trip events
+        self.protection_system.set_maintenance_event_bus(
+            maintenance_system.event_bus, 
+            component_id
+        )
+        print(f"  Connected turbine protection system to maintenance event bus")
+        
+        # Store reference for coordination
+        self.maintenance_system = maintenance_system
+        self.component_id = component_id
+        
+        print(f"  Enhanced turbine maintenance integration complete")
+    
+    def perform_maintenance(self, maintenance_type: str = None, **kwargs):
+        """
+        Perform maintenance operations on enhanced turbine system
+        
+        Args:
+            maintenance_type: Type of maintenance to perform
+            **kwargs: Additional maintenance parameters
+            
+        Returns:
+            Dictionary with maintenance results compatible with MaintenanceResult
+        """
+        if maintenance_type == "turbine_performance_test":
+            # Perform comprehensive turbine performance test
+            current_efficiency = self.overall_efficiency
+            current_power = self.total_power_output
+            current_steam_rate = self.steam_rate
+            
+            # Simulate performance test and optimization
+            # Test identifies performance degradation sources
+            efficiency_improvement = 0.02  # 2% efficiency improvement
+            self.overall_efficiency = min(0.34, self.overall_efficiency + efficiency_improvement)
+            
+            # Improve performance factor
+            self.performance_factor = min(1.0, self.performance_factor + 0.05)
+            
+            # Calculate findings
+            findings = f"Efficiency: {current_efficiency:.1%} → {self.overall_efficiency:.1%}, "
+            findings += f"Steam rate: {current_steam_rate:.1f} kg/MWh, "
+            findings += f"Power output: {current_power:.1f} MW"
+            
+            recommendations = []
+            if current_efficiency < 0.32:
+                recommendations.append("Consider turbine overhaul")
+            if current_steam_rate > 3.5:
+                recommendations.append("Optimize steam conditions")
+            
+            return {
+                'success': True,
+                'duration_hours': 8.0,
+                'work_performed': 'Comprehensive turbine performance test and optimization',
+                'findings': findings,
+                'recommendations': recommendations,
+                'performance_improvement': (efficiency_improvement / max(0.1, current_efficiency)) * 100.0,
+                'effectiveness_score': 0.9,
+                'next_maintenance_due': 4380.0,  # Semi-annual
+                'parts_used': ['Test equipment', 'Calibration instruments']
+            }
+        
+        elif maintenance_type == "turbine_system_optimization":
+            # Perform system-wide optimization
+            original_performance = self.performance_factor
+            
+            # Optimize all subsystems
+            self.performance_factor = min(1.0, self.performance_factor + 0.08)
+            
+            # Optimize stage system efficiency
+            if hasattr(self.stage_system, 'system_efficiency'):
+                self.stage_system.system_efficiency = min(1.0, self.stage_system.system_efficiency + 0.03)
+            
+            # Optimize rotor dynamics
+            for bearing in self.rotor_dynamics.bearings.values():
+                bearing.efficiency_factor = min(1.0, bearing.efficiency_factor + 0.02)
+            
+            # Optimize lubrication system
+            if hasattr(self, 'bearing_lubrication_system'):
+                lubrication_system = self.bearing_lubrication_system
+                lubrication_system.lubrication_effectiveness = min(1.0, 
+                    lubrication_system.lubrication_effectiveness + 0.05)
+            
+            performance_improvement = ((self.performance_factor - original_performance) / 
+                                     max(0.1, original_performance)) * 100.0
+            
+            return {
+                'success': True,
+                'duration_hours': 12.0,
+                'work_performed': 'Complete turbine system optimization',
+                'findings': f"Performance factor improved from {original_performance:.3f} to {self.performance_factor:.3f}",
+                'performance_improvement': performance_improvement,
+                'effectiveness_score': 0.95,
+                'next_maintenance_due': 8760.0,  # Annual
+                'parts_used': ['Optimization software', 'Adjustment tools']
+            }
+        
+        elif maintenance_type == "turbine_protection_test":
+            # Test turbine protection systems
+            original_availability = self.availability_factor
+            
+            # Test and calibrate protection systems
+            self.protection_system.system_available = True
+            
+            # Reset any nuisance trips
+            if self.protection_system.trip_active:
+                self.protection_system.reset_protection_system()
+            
+            # Improve availability factor
+            self.availability_factor = min(1.0, self.availability_factor + 0.03)
+            
+            # Test findings
+            trip_systems_tested = ['Overspeed', 'Vibration', 'Bearing Temperature', 'Thermal Stress']
+            findings = f"Tested {len(trip_systems_tested)} protection systems. "
+            findings += f"Availability improved from {original_availability:.1%} to {self.availability_factor:.1%}"
+            
+            return {
+                'success': True,
+                'duration_hours': 6.0,
+                'work_performed': 'Turbine protection system test and calibration',
+                'findings': findings,
+                'performance_improvement': ((self.availability_factor - original_availability) / 
+                                          max(0.1, original_availability)) * 100.0,
+                'effectiveness_score': 0.9,
+                'next_maintenance_due': 4380.0,  # Semi-annual
+                'parts_used': ['Test equipment', 'Calibration tools']
+            }
+        
+        elif maintenance_type == "thermal_stress_analysis":
+            # Perform thermal stress analysis and mitigation
+            if hasattr(self, 'thermal_tracker'):
+                original_stress = self.thermal_tracker.max_thermal_stress
+                
+                # Thermal stress mitigation (simulated)
+                stress_reduction = min(100e6, original_stress * 0.1)  # 10% reduction
+                self.thermal_tracker.max_thermal_stress -= stress_reduction
+                
+                # Improve thermal shock risk
+                self.thermal_tracker.thermal_shock_risk *= 0.8  # 20% reduction
+                
+                findings = f"Reduced thermal stress from {original_stress/1e6:.1f} MPa to {self.thermal_tracker.max_thermal_stress/1e6:.1f} MPa"
+                
+                return {
+                    'success': True,
+                    'duration_hours': 4.0,
+                    'work_performed': 'Thermal stress analysis and mitigation',
+                    'findings': findings,
+                    'performance_improvement': (stress_reduction / max(1e6, original_stress)) * 100.0,
+                    'effectiveness_score': 0.85,
+                    'next_maintenance_due': 8760.0,  # Annual
+                    'parts_used': ['Thermal analysis equipment', 'Stress relief tools']
+                }
+            else:
+                return {
+                    'success': False,
+                    'duration_hours': 0.0,
+                    'work_performed': 'Thermal stress analysis not available',
+                    'error_message': 'Thermal tracker not available in this turbine configuration',
+                    'effectiveness_score': 0.0
+                }
+        
+        elif maintenance_type == "vibration_analysis":
+            # Perform comprehensive vibration analysis
+            current_vibration = self.last_update_results.get('vibration_displacement', 0.0)
+            
+            # Vibration analysis and correction
+            vibration_reduction = min(5.0, current_vibration * 0.3)  # 30% reduction up to 5 mils
+            
+            # Apply vibration reduction to rotor dynamics
+            for bearing in self.rotor_dynamics.bearings.values():
+                bearing.vibration_displacement = max(0.0, bearing.vibration_displacement - vibration_reduction)
+                bearing.vibration_velocity *= 0.8  # Reduce velocity
+            
+            # Improve rotor balance
+            if hasattr(self.rotor_dynamics, 'thermal_bow'):
+                self.rotor_dynamics.thermal_bow *= 0.7  # Reduce thermal bow
+            
+            findings = f"Reduced vibration from {current_vibration:.2f} mils to {current_vibration - vibration_reduction:.2f} mils"
+            
+            recommendations = []
+            if current_vibration > 15.0:
+                recommendations.append("Consider rotor balancing")
+            if current_vibration > 20.0:
+                recommendations.append("Schedule bearing inspection")
+            
+            return {
+                'success': True,
+                'duration_hours': 2.0,
+                'work_performed': 'Comprehensive vibration analysis and correction',
+                'findings': findings,
+                'recommendations': recommendations,
+                'performance_improvement': (vibration_reduction / max(1.0, current_vibration)) * 100.0,
+                'effectiveness_score': 0.85,
+                'next_maintenance_due': 2190.0,  # Quarterly
+                'parts_used': ['Vibration analysis equipment', 'Balancing weights']
+            }
+        
+        elif maintenance_type == "routine_maintenance":
+            # Perform routine turbine maintenance
+            # Minor improvements across all systems
+            self.performance_factor = min(1.0, self.performance_factor + 0.01)
+            self.overall_efficiency = min(0.34, self.overall_efficiency + 0.002)
+            
+            # Routine maintenance on subsystems
+            for bearing in self.rotor_dynamics.bearings.values():
+                bearing.efficiency_factor = min(1.0, bearing.efficiency_factor + 0.005)
+                bearing.metal_temperature = max(80.0, bearing.metal_temperature - 0.5)
+            
+            return {
+                'success': True,
+                'duration_hours': 4.0,
+                'work_performed': 'Routine turbine maintenance completed',
+                'findings': 'General maintenance activities completed across all turbine systems',
+                'effectiveness_score': 0.7,
+                'next_maintenance_due': 2190.0,  # Quarterly
+                'parts_used': ['General maintenance supplies', 'Lubricants', 'Filters']
+            }
+        
+        else:
+            # Unknown maintenance type
+            return {
+                'success': False,
+                'duration_hours': 0.0,
+                'work_performed': f'Unknown maintenance type: {maintenance_type}',
+                'error_message': f'Maintenance type {maintenance_type} not supported for enhanced turbine system',
+                'effectiveness_score': 0.0
+            }
+
     def reset(self) -> None:
         """Reset enhanced turbine to initial conditions"""
         self.stage_system.reset()

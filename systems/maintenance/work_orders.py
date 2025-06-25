@@ -227,8 +227,26 @@ class WorkOrder:
             'auto_generated': self.auto_generated,
             'trigger_id': self.trigger_id,
             'num_actions': len(self.maintenance_actions),
-            'num_notes': len(self.notes)
+            'num_notes': len(self.notes),
+            # Enhanced simulation time fields
+            'created_sim_time_hours': self.created_date / 60.0,
+            'created_sim_time_formatted': self._format_simulation_time(self.created_date),
+            'actual_start_sim_time_formatted': self._format_simulation_time(self.actual_start_date) if self.actual_start_date else None,
+            'actual_completion_sim_time_formatted': self._format_simulation_time(self.actual_completion_date) if self.actual_completion_date else None,
+            'time_to_execution_minutes': (self.actual_start_date - self.created_date) if self.actual_start_date else None
         }
+    
+    def _format_simulation_time(self, time_minutes: Optional[float]) -> Optional[str]:
+        """Format simulation time in minutes to HH:MM:SS format"""
+        if time_minutes is None:
+            return None
+        
+        total_seconds = int(time_minutes * 60)
+        hours = total_seconds // 3600
+        minutes = (total_seconds % 3600) // 60
+        seconds = total_seconds % 60
+        
+        return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
 
 class WorkOrderManager:
@@ -238,14 +256,15 @@ class WorkOrderManager:
         self.work_orders: Dict[str, WorkOrder] = {}
         self.work_order_counter = 1
         self.completed_work_orders: List[WorkOrder] = []
+        self.all_created_ids: set = set()  # Track all IDs ever created to prevent duplicates
     
     def create_work_order(self, component_id: str, work_type: WorkOrderType, 
                          priority: Priority, title: str, description: str = "",
                          auto_generated: bool = False, trigger_id: str = None) -> WorkOrder:
-        """Create a new work order"""
+        """Create a new work order with guaranteed unique ID"""
         
-        wo_id = f"WO-{self.work_order_counter:06d}"
-        self.work_order_counter += 1
+        # Generate unique work order ID with duplicate prevention
+        wo_id = self._generate_unique_work_order_id()
         
         work_order = WorkOrder(
             work_order_id=wo_id,
@@ -258,8 +277,45 @@ class WorkOrderManager:
             trigger_id=trigger_id
         )
         
+        # Double-check for duplicates before storing
+        if wo_id in self.work_orders:
+            print(f"WORK ORDER MANAGER: ERROR - Duplicate work order ID {wo_id} detected!")
+            # Generate a new ID with timestamp suffix
+            import time
+            timestamp_suffix = int(time.time() * 1000) % 10000  # Last 4 digits of timestamp
+            wo_id = f"{wo_id}-{timestamp_suffix}"
+            work_order.work_order_id = wo_id
+        
+        # Store the work order
         self.work_orders[wo_id] = work_order
+        self.all_created_ids.add(wo_id)
+        
         return work_order
+    
+    def _generate_unique_work_order_id(self) -> str:
+        """Generate a unique work order ID with fallback mechanisms"""
+        max_attempts = 1000  # Prevent infinite loops
+        
+        for attempt in range(max_attempts):
+            wo_id = f"WO-{self.work_order_counter:06d}"
+            
+            # Check if this ID has ever been used
+            if wo_id not in self.all_created_ids and wo_id not in self.work_orders:
+                self.work_order_counter += 1
+                return wo_id
+            
+            # ID collision detected, increment counter and try again
+            self.work_order_counter += 1
+            
+            if attempt > 0:  # Log after first collision
+                print(f"WORK ORDER MANAGER: ID collision detected for {wo_id}, trying next ID")
+        
+        # Fallback: Use timestamp-based ID if we can't find a unique counter-based ID
+        import time
+        timestamp = int(time.time() * 1000)  # Millisecond timestamp
+        fallback_id = f"WO-TS-{timestamp}"
+        print(f"WORK ORDER MANAGER: Using timestamp-based fallback ID: {fallback_id}")
+        return fallback_id
     
     def get_work_order(self, work_order_id: str) -> Optional[WorkOrder]:
         """Get work order by ID"""
@@ -318,4 +374,7 @@ class WorkOrderManager:
         """Reset work order manager"""
         self.work_orders.clear()
         self.completed_work_orders.clear()
-        self.work_order_counter = 1
+        # Don't reset the counter or ID tracking to prevent duplicates across resets
+        # self.work_order_counter = 1  # Keep incrementing from where we left off
+        # self.all_created_ids.clear()  # Keep tracking all IDs ever created
+        print(f"WORK ORDER MANAGER: Reset complete. Next work order will be WO-{self.work_order_counter:06d}")

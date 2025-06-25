@@ -211,7 +211,7 @@ EQUIPMENT_TYPE_KEYWORDS = {
     EquipmentType.PUMP: ['pump'],
     EquipmentType.TURBINE_STAGE: ['turbine', 'stage', 'hp', 'lp'],
     EquipmentType.BEARING: ['bearing'],
-    EquipmentType.STEAM_GENERATOR: ['steam', 'generator'],
+    EquipmentType.STEAM_GENERATOR: ['steam_generator', 'steamgenerator', 'tsp'],  # Fixed: single keywords for steam generators
     EquipmentType.CONDENSER: ['condenser'],
     EquipmentType.EJECTOR: ['ejector'],
     EquipmentType.LUBRICATION_SYSTEM: ['lubrication', 'lub'],

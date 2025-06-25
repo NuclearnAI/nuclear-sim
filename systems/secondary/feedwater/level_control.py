@@ -18,37 +18,10 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 import warnings
 
+# Import the new configuration from config.py
+from .config import ThreeElementControlConfig
+
 warnings.filterwarnings("ignore")
-
-
-@dataclass
-class ThreeElementConfig:
-    """Configuration for three-element control system"""
-    num_steam_generators: int = 3                    # Number of steam generators
-    
-    # Control gains
-    level_control_gain: float = 0.8                  # Level feedback gain
-    steam_flow_feedforward_gain: float = 1.0         # Steam flow feedforward gain
-    flow_feedback_gain: float = 0.2                  # Feedwater flow feedback gain
-    
-    # Steam quality compensation
-    quality_control_gain: float = 0.2                # Steam quality error gain
-    void_fraction_gain: float = 0.2                  # Void fraction compensation gain
-    
-    # Level swell compensation
-    enable_swell_compensation: bool = True           # Enable level swell compensation
-    nominal_void_fraction: float = 0.45              # Normal operating void fraction
-    
-    # Control limits
-    max_level_error: float = 2.0                     # m maximum level error
-    max_flow_change_rate: float = 100.0              # kg/s/min maximum flow change rate
-    min_flow_fraction: float = 0.18                  # Minimum flow as fraction of design (300 kg/s total minimum)
-    max_flow_fraction: float = 1.2                   # Maximum flow as fraction of design
-    
-    # Design parameters
-    design_sg_level: float = 12.5                    # m design steam generator level
-    design_flow_per_sg: float = 555.0                # kg/s design flow per SG
-    design_steam_quality: float = 0.99               # Design steam quality
 
 
 class SteamQualityCompensator:
@@ -61,18 +34,26 @@ class SteamQualityCompensator:
     3. Optimize steam generator performance
     """
     
-    def __init__(self, config: ThreeElementConfig):
+    def __init__(self, config: ThreeElementControlConfig):
         """Initialize steam quality compensator"""
         self.config = config
         
         # Quality tracking
-        self.target_quality = config.design_steam_quality
+        self.target_quality = 0.99  # Default design steam quality
         self.quality_error_history = []
         self.quality_integral_error = 0.0
         
         # Compensation parameters
         self.quality_deadband = 0.005                 # Quality deadband (±0.5%)
         self.max_quality_correction = 50.0            # kg/s maximum correction
+        
+        # Get quality control gain from config (handle both old and new attribute names)
+        if hasattr(config, 'quality_control_gain'):
+            self.quality_control_gain = config.quality_control_gain
+        elif hasattr(config, 'quality_compensation_gain'):
+            self.quality_control_gain = config.quality_compensation_gain
+        else:
+            self.quality_control_gain = 1.0  # Default value
         
     def calculate_quality_compensation(self,
                                      steam_qualities: List[float],
@@ -100,7 +81,7 @@ class SteamQualityCompensator:
                 quality_error = 0.0
             
             # Proportional correction
-            proportional_correction = quality_error * self.config.quality_control_gain * steam_flow
+            proportional_correction = quality_error * self.quality_control_gain * steam_flow
             
             # Integral correction (simplified)
             self.quality_integral_error += quality_error * dt
@@ -142,19 +123,24 @@ class ThreeElementControl:
     6. Load following capabilities
     """
     
-    def __init__(self, config: ThreeElementConfig):
+    def __init__(self, config: ThreeElementControlConfig, num_steam_generators: int = 3, design_sg_level: float = 12.5, design_flow_per_sg: float = 500.0):
         """Initialize three-element control system"""
         self.config = config
         
+        # Store design parameters that aren't in the new config
+        self.num_steam_generators = num_steam_generators
+        self.design_sg_level = design_sg_level
+        self.design_flow_per_sg = design_flow_per_sg
+        
         # Control state
-        self.target_levels = [config.design_sg_level] * config.num_steam_generators
-        self.level_errors = [0.0] * config.num_steam_generators
-        self.level_integral_errors = [0.0] * config.num_steam_generators
-        self.previous_level_errors = [0.0] * config.num_steam_generators
+        self.target_levels = [config.level_setpoint] * num_steam_generators
+        self.level_errors = [0.0] * num_steam_generators
+        self.level_integral_errors = [0.0] * num_steam_generators
+        self.previous_level_errors = [0.0] * num_steam_generators
         
         # Flow tracking
-        self.previous_steam_flows = [config.design_flow_per_sg] * config.num_steam_generators
-        self.previous_feedwater_flows = [config.design_flow_per_sg] * config.num_steam_generators
+        self.previous_steam_flows = [design_flow_per_sg] * num_steam_generators
+        self.previous_feedwater_flows = [design_flow_per_sg] * num_steam_generators
         self.flow_demand_history = []
         
         # Steam quality compensator
@@ -162,7 +148,7 @@ class ThreeElementControl:
         
         # Control mode
         self.auto_mode = True
-        self.manual_flow_setpoint = config.design_flow_per_sg * config.num_steam_generators
+        self.manual_flow_setpoint = design_flow_per_sg * num_steam_generators
         
         # Performance tracking
         self.control_performance = 1.0
@@ -199,8 +185,8 @@ class ThreeElementControl:
             # Manual mode - return manual setpoint
             return {
                 'total_flow_demand': self.manual_flow_setpoint,
-                'individual_demands': [self.manual_flow_setpoint / self.config.num_steam_generators] * self.config.num_steam_generators,
-                'level_errors': [0.0] * self.config.num_steam_generators,
+                'individual_demands': [self.manual_flow_setpoint / self.num_steam_generators] * self.num_steam_generators,
+                'level_errors': [0.0] * self.num_steam_generators,
                 'control_mode': 'manual'
             }
         
@@ -208,85 +194,128 @@ class ThreeElementControl:
         individual_demands = []
         level_errors = []
         
+        
         # Get steam quality compensation
         quality_corrections = self.quality_compensator.calculate_quality_compensation(
             sg_steam_qualities, sg_steam_flows, dt
         )
         
-        for i in range(self.config.num_steam_generators):
+        for i in range(self.num_steam_generators):
             # Ensure we have valid data
             if i < len(sg_levels) and i < len(sg_steam_flows) and i < len(sg_steam_qualities):
                 level = sg_levels[i]
                 steam_flow = sg_steam_flows[i]
                 steam_quality = sg_steam_qualities[i]
-                target_level = target_levels[i] if i < len(target_levels) else self.config.design_sg_level
+                design_sg_level = getattr(self.config, 'design_sg_level', self.design_sg_level)
+                target_level = target_levels[i] if i < len(target_levels) else design_sg_level
                 quality_correction = quality_corrections[i] if i < len(quality_corrections) else 0.0
             else:
                 # Use defaults if data is missing
-                level = self.config.design_sg_level
-                steam_flow = self.config.design_flow_per_sg * load_demand
-                steam_quality = self.config.design_steam_quality
-                target_level = self.config.design_sg_level
+                design_sg_level = getattr(self.config, 'design_sg_level', self.design_sg_level)
+                design_flow_per_sg = getattr(self.config, 'design_flow_per_sg', self.design_flow_per_sg)
+                design_steam_quality = getattr(self.config, 'design_steam_quality', 0.99)
+                level = design_sg_level
+                steam_flow = design_flow_per_sg * load_demand
+                steam_quality = design_steam_quality
+                target_level = design_sg_level
                 quality_correction = 0.0
             
             # === ELEMENT 1: LEVEL FEEDBACK CONTROL ===
             level_error = target_level - level
             level_errors.append(level_error)
             
-            # Level swell compensation
-            if self.config.enable_swell_compensation:
+            # Level swell compensation (check if enabled in config)
+            enable_swell_compensation = getattr(self.config, 'enable_swell_compensation', False)
+            if enable_swell_compensation:
                 # Estimate void fraction effect on apparent level
                 void_fraction = 0.3 + 0.3 * steam_quality  # Simplified relationship
-                void_error = void_fraction - self.config.nominal_void_fraction
-                swell_correction = void_error * self.config.void_fraction_gain * 2.0  # m correction
+                nominal_void_fraction = getattr(self.config, 'nominal_void_fraction', 0.45)
+                void_fraction_gain = getattr(self.config, 'void_fraction_gain', 1.0)
+                void_error = void_fraction - nominal_void_fraction
+                swell_correction = void_error * void_fraction_gain * 2.0  # m correction
                 
                 # Adjust target level based on void fraction
                 compensated_target_level = target_level + swell_correction
                 level_error = compensated_target_level - level
             
-            # PID control for level
-            # Proportional term
-            proportional_correction = self.config.level_control_gain * level_error * 50.0  # kg/s per meter error
+            # PID control for level - FIXED: Much more reasonable gains
+            # Proportional term - reduced from 50.0 to 10.0 kg/s per meter error
+            level_control_gain = getattr(self.config, 'level_control_gain', 1.0)
+            proportional_correction = level_control_gain * level_error * 10.0  # kg/s per meter error
             
-            # Integral term (simplified)
+            # Integral term (simplified) - reduced gain
             self.level_integral_errors[i] += level_error * dt
-            integral_correction = self.level_integral_errors[i] * 0.1 * 10.0  # kg/s
+            integral_correction = self.level_integral_errors[i] * 0.02 * 5.0  # kg/s
             
-            # Derivative term
+            # Derivative term - reduced gain
             if i < len(self.previous_level_errors):
                 level_error_rate = (level_error - self.previous_level_errors[i]) / dt
-                derivative_correction = level_error_rate * 0.05 * 20.0  # kg/s
+                derivative_correction = level_error_rate * 0.01 * 5.0  # kg/s
             else:
                 derivative_correction = 0.0
             
-            level_correction = proportional_correction + integral_correction + derivative_correction
-            
             # === ELEMENT 2: STEAM FLOW FEEDFORWARD ===
             # This is the key to making feedwater flow follow load changes
-            feedforward_demand = steam_flow * self.config.steam_flow_feedforward_gain
+            # MASS BALANCE PRINCIPLE: Feedwater flow must equal steam flow
+            
+            # CRITICAL FIX: Always use actual steam flow for proper mass balance
+            # The feedwater system must follow steam generator output exactly
+            feedforward_demand = steam_flow  # Direct 1:1 mass balance
+            
+            # Apply minimum flow only for pump protection (very low threshold)
+            design_flow_per_sg = getattr(self.config, 'design_flow_per_sg', self.design_flow_per_sg)
+            absolute_minimum = design_flow_per_sg * 0.05  # 5% minimum for pump protection only
+            
+            if steam_flow < absolute_minimum:
+                # Only override for pump protection at very low flows
+                feedforward_demand = absolute_minimum
+            else:
+                # Always follow actual steam flow for proper mass balance
+                feedforward_demand = steam_flow
+            
+            # Now that feedforward_demand is defined, limit level correction
+            level_correction = proportional_correction + integral_correction + derivative_correction
+            max_level_correction = feedforward_demand * 0.2  # Max 20% of feedforward demand
+            level_correction = np.clip(level_correction, -max_level_correction, max_level_correction)
             
             # === ELEMENT 3: FEEDWATER FLOW FEEDBACK ===
             # Compare actual feedwater flow to demand (simplified for now)
             if i < len(self.previous_feedwater_flows):
                 flow_error = feedforward_demand - self.previous_feedwater_flows[i]
-                flow_feedback_correction = flow_error * self.config.flow_feedback_gain
+                feedwater_flow_weight = getattr(self.config, 'feedwater_flow_weight', 0.1)
+                flow_feedback_correction = flow_error * feedwater_flow_weight
             else:
                 flow_feedback_correction = 0.0
             
             # === COMBINE ALL ELEMENTS ===
-            # Start with feedforward (steam flow demand)
-            base_demand = feedforward_demand
+            # FIXED: Proper three-element control combination for mass balance
+            # Steam flow feedforward should be the primary driver (mass balance requirement)
+            level_control_weight = getattr(self.config, 'level_control_weight', 0.4)
             
-            # Add level correction (small adjustment)
-            total_demand = base_demand + level_correction + flow_feedback_correction + quality_correction
+            # CRITICAL FIX: Steam flow feedforward should maintain mass balance
+            # Use full feedforward demand, then add corrections
+            base_demand = feedforward_demand  # Full steam flow demand for mass balance
             
-            # Apply load demand scaling
-            total_demand *= load_demand
+            # Level correction (weighted and limited)
+            level_contribution = level_correction * level_control_weight
             
-            # Apply limits
-            min_demand = self.config.design_flow_per_sg * self.config.min_flow_fraction
-            max_demand = self.config.design_flow_per_sg * self.config.max_flow_fraction
+            # Flow feedback (weighted)  
+            flow_contribution = flow_feedback_correction * feedwater_flow_weight
+            
+            # Combine: base demand + weighted corrections
+            total_demand = base_demand + level_contribution + flow_contribution + quality_correction
+            
+            # CRITICAL FIX: Do NOT apply load demand scaling to steam flow feedforward!
+            # The steam flow already reflects the actual load, so scaling it again breaks mass balance
+            # Only apply scaling to the correction terms if needed
+            
+            # Apply reasonable limits only for pump protection (much wider range)
+            design_flow_per_sg = getattr(self.config, 'design_flow_per_sg', self.design_flow_per_sg)
+            # Use much wider limits to allow proper load following
+            min_demand = design_flow_per_sg * 0.05  # 5% minimum for pump protection
+            max_demand = design_flow_per_sg * 2.0   # 200% maximum for transients
             total_demand = np.clip(total_demand, min_demand, max_demand)
+            
             
             individual_demands.append(total_demand)
             
@@ -303,6 +332,7 @@ class ThreeElementControl:
         
         # Calculate total demand
         total_flow_demand = sum(individual_demands)
+        
         
         # Track flow demand history
         if len(self.flow_demand_history) > 20:
@@ -337,12 +367,12 @@ class ThreeElementControl:
         self.auto_mode = True
         
         # Reset integral errors when switching to auto
-        self.level_integral_errors = [0.0] * self.config.num_steam_generators
+        self.level_integral_errors = [0.0] * self.num_steam_generators
         self.quality_compensator.reset()
     
     def set_target_levels(self, target_levels: List[float]):
         """Set target levels for all steam generators"""
-        if len(target_levels) == self.config.num_steam_generators:
+        if len(target_levels) == self.num_steam_generators:
             self.target_levels = target_levels.copy()
     
     def perform_calibration(self, **kwargs) -> Dict[str, float]:
@@ -353,12 +383,12 @@ class ThreeElementControl:
         
         if calibration_type == 'level_sensors':
             # Reset level integral errors
-            self.level_integral_errors = [0.0] * self.config.num_steam_generators
+            self.level_integral_errors = [0.0] * self.num_steam_generators
             results['level_calibration'] = True
             
         elif calibration_type == 'flow_sensors':
             # Reset flow tracking
-            self.previous_feedwater_flows = [self.config.design_flow_per_sg] * self.config.num_steam_generators
+            self.previous_feedwater_flows = [self.design_flow_per_sg] * self.num_steam_generators
             results['flow_calibration'] = True
             
         elif calibration_type == 'quality_compensation':
@@ -368,8 +398,8 @@ class ThreeElementControl:
             
         else:
             # Full calibration
-            self.level_integral_errors = [0.0] * self.config.num_steam_generators
-            self.previous_feedwater_flows = [self.config.design_flow_per_sg] * self.config.num_steam_generators
+            self.level_integral_errors = [0.0] * self.num_steam_generators
+            self.previous_feedwater_flows = [self.design_flow_per_sg] * self.num_steam_generators
             self.quality_compensator.reset()
             self.flow_demand_history = []
             results['full_calibration'] = True
@@ -401,15 +431,15 @@ class ThreeElementControl:
     
     def reset(self):
         """Reset three-element control system"""
-        self.level_errors = [0.0] * self.config.num_steam_generators
-        self.level_integral_errors = [0.0] * self.config.num_steam_generators
-        self.previous_level_errors = [0.0] * self.config.num_steam_generators
-        self.previous_steam_flows = [self.config.design_flow_per_sg] * self.config.num_steam_generators
-        self.previous_feedwater_flows = [self.config.design_flow_per_sg] * self.config.num_steam_generators
+        self.level_errors = [0.0] * self.num_steam_generators
+        self.level_integral_errors = [0.0] * self.num_steam_generators
+        self.previous_level_errors = [0.0] * self.num_steam_generators
+        self.previous_steam_flows = [self.design_flow_per_sg] * self.num_steam_generators
+        self.previous_feedwater_flows = [self.design_flow_per_sg] * self.num_steam_generators
         self.flow_demand_history = []
         self.quality_compensator.reset()
         self.auto_mode = True
-        self.manual_flow_setpoint = self.config.design_flow_per_sg * self.config.num_steam_generators
+        self.manual_flow_setpoint = self.design_flow_per_sg * self.num_steam_generators
         self.control_performance = 1.0
         self.last_calibration_time = 0.0
 

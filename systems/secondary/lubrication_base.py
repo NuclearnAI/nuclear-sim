@@ -452,9 +452,16 @@ class BaseLubricationSystem(ABC):
             **kwargs: Additional maintenance parameters
             
         Returns:
-            Dictionary with maintenance results
+            Dictionary with maintenance results compatible with MaintenanceResult
         """
-        results = {}
+        results = {
+            'success': True,
+            'duration_hours': 1.0,
+            'work_performed': f"Performed {maintenance_type} on lubrication system",
+            'findings': None,
+            'recommendations': [],
+            'effectiveness_score': 1.0
+        }
         
         if maintenance_type == "oil_change":
             # Complete oil change
@@ -474,22 +481,51 @@ class BaseLubricationSystem(ABC):
             self.oil_level = 95.0
             
             self.oil_changes_performed += 1
-            results['oil_hours_reset'] = old_hours
-            results['oil_change_completed'] = True
+            results.update({
+                'duration_hours': 4.0,
+                'work_performed': f"Complete oil change on {self.config.system_id}",
+                'findings': f"Replaced {old_hours:.1f} hour old oil",
+                'effectiveness_score': 1.0
+            })
+            
+        elif maintenance_type == "oil_top_off":
+            # Oil top-off maintenance
+            old_level = self.oil_level
+            target_level = kwargs.get('target_level', 95.0)
+            self.oil_level = min(100.0, target_level)
+            oil_added = self.oil_level - old_level
+            
+            results.update({
+                'duration_hours': 0.5,
+                'work_performed': f"Oil top-off on {self.config.system_id}",
+                'findings': f"Added {oil_added:.1f}% oil, level now {self.oil_level:.1f}%",
+                'effectiveness_score': 1.0
+            })
             
         elif maintenance_type == "filtration":
             # Enhanced filtration/cleaning
             contamination_removed = self.oil_contamination_level * 0.8
             self.oil_contamination_level *= 0.2  # Remove 80% of contamination
-            results['contamination_removed'] = contamination_removed
+            
+            results.update({
+                'duration_hours': 2.0,
+                'work_performed': f"Enhanced filtration on {self.config.system_id}",
+                'findings': f"Removed {contamination_removed:.1f} ppm contamination",
+                'effectiveness_score': 0.9
+            })
             
         elif maintenance_type == "filter_change":
             # Filter replacement
             contamination_removed = self.oil_contamination_level * 0.5
             self.oil_contamination_level *= 0.5  # Remove 50% of contamination
             self.filter_changes_performed += 1
-            results['filter_change_completed'] = True
-            results['contamination_removed'] = contamination_removed
+            
+            results.update({
+                'duration_hours': 1.5,
+                'work_performed': f"Filter replacement on {self.config.system_id}",
+                'findings': f"Replaced filters, removed {contamination_removed:.1f} ppm contamination",
+                'effectiveness_score': 0.8
+            })
             
         elif maintenance_type == "component_overhaul":
             # Component overhaul/replacement
@@ -498,24 +534,94 @@ class BaseLubricationSystem(ABC):
                 old_wear = self.component_wear[component_id]
                 self.component_wear[component_id] = 0.0
                 self.component_performance_factors[component_id] = 1.0
-                results[f'{component_id}_wear_reset'] = old_wear
+                
+                results.update({
+                    'duration_hours': 8.0,
+                    'work_performed': f"Component overhaul: {component_id}",
+                    'findings': f"Overhauled {component_id}, reset {old_wear:.1f}% wear",
+                    'effectiveness_score': 1.0
+                })
             else:
                 # Overhaul all components
+                total_wear_reset = 0.0
                 for comp_id in self.component_wear:
+                    total_wear_reset += self.component_wear[comp_id] * 0.9
                     self.component_wear[comp_id] *= 0.1  # Reduce wear by 90%
                     self.component_performance_factors[comp_id] = min(1.0, 
                         self.component_performance_factors[comp_id] + 0.2)
-                results['all_components_overhauled'] = True
+                
+                results.update({
+                    'duration_hours': 16.0,
+                    'work_performed': f"Complete system overhaul on {self.config.system_id}",
+                    'findings': f"Overhauled all components, reset {total_wear_reset:.1f}% total wear",
+                    'effectiveness_score': 1.0
+                })
         
         elif maintenance_type == "additive_treatment":
             # Add additive package
+            old_antioxidant = self.antioxidant_level
+            old_aw = self.anti_wear_additive_level
+            
             self.antioxidant_level = min(100.0, self.antioxidant_level + 50.0)
             self.anti_wear_additive_level = min(100.0, self.anti_wear_additive_level + 40.0)
             self.corrosion_inhibitor_level = min(100.0, self.corrosion_inhibitor_level + 30.0)
-            results['additive_treatment_completed'] = True
+            
+            results.update({
+                'duration_hours': 1.0,
+                'work_performed': f"Additive treatment on {self.config.system_id}",
+                'findings': f"Restored additives: AO {old_antioxidant:.0f}%->{self.antioxidant_level:.0f}%, AW {old_aw:.0f}%->{self.anti_wear_additive_level:.0f}%",
+                'effectiveness_score': 0.8
+            })
+            
+        elif maintenance_type == "efficiency_analysis":
+            # Efficiency analysis (inspection/diagnostic)
+            efficiency = self.lubrication_effectiveness * 100.0
+            health = self.system_health_factor * 100.0
+            
+            if efficiency > 90.0:
+                findings = f"Excellent lubrication efficiency: {efficiency:.1f}%"
+                recommendations = ["Continue normal operation"]
+            elif efficiency > 75.0:
+                findings = f"Good lubrication efficiency: {efficiency:.1f}%"
+                recommendations = ["Monitor oil quality", "Consider additive treatment"]
+            else:
+                findings = f"Poor lubrication efficiency: {efficiency:.1f}%"
+                recommendations = ["Oil change recommended", "Check filtration system", "Inspect components"]
+            
+            results.update({
+                'duration_hours': 2.0,
+                'work_performed': f"Efficiency analysis on {self.config.system_id}",
+                'findings': findings,
+                'recommendations': recommendations,
+                'effectiveness_score': 1.0  # Analysis is always effective
+            })
+            
+        elif maintenance_type == "routine_maintenance":
+            # Routine maintenance (general upkeep)
+            # Minor improvements from routine maintenance
+            self.oil_level = min(100.0, self.oil_level + 2.0)
+            self.oil_contamination_level = max(1.0, self.oil_contamination_level - 1.0)
+            
+            results.update({
+                'duration_hours': 3.0,
+                'work_performed': f"Routine maintenance on {self.config.system_id}",
+                'findings': "Performed standard maintenance tasks, minor improvements achieved",
+                'effectiveness_score': 0.7
+            })
+            
+        else:
+            # Unknown maintenance type - return failure
+            results.update({
+                'success': False,
+                'duration_hours': 0.0,
+                'work_performed': f"Unknown maintenance type: {maintenance_type}",
+                'findings': f"Maintenance type '{maintenance_type}' not supported by lubrication system",
+                'effectiveness_score': 0.0
+            })
         
-        # Recalculate lubrication effectiveness after maintenance
-        self.update_oil_quality(self.oil_temperature, 0.0, 0.0, 0.0)
+        # Recalculate lubrication effectiveness after maintenance (if successful)
+        if results['success']:
+            self.update_oil_quality(self.oil_temperature, 0.0, 0.0, 0.0)
         
         return results
     

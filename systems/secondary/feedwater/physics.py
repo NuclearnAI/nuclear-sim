@@ -35,52 +35,13 @@ from ..chemistry_flow_tracker import ChemistryFlowProvider, ChemicalSpecies
 
 from ..component_descriptions import FEEDWATER_COMPONENT_DESCRIPTIONS
 from .pump_system import FeedwaterPumpSystem, FeedwaterPumpSystemConfig
-from .level_control import ThreeElementControl, ThreeElementConfig
+from .level_control import ThreeElementControl
 from ..water_chemistry import WaterChemistry, WaterChemistryConfig
 from .performance_monitoring import PerformanceDiagnostics, PerformanceDiagnosticsConfig
 from .protection_system import FeedwaterProtectionSystem, FeedwaterProtectionConfig
+from .config import FeedwaterConfig, create_standard_feedwater_config
 
 warnings.filterwarnings("ignore")
-
-
-@dataclass
-class EnhancedFeedwaterConfig:
-    """
-    Enhanced feedwater configuration that integrates all subsystems
-    
-    References:
-    - Complete feedwater system specifications
-    - Integration requirements
-    - Performance optimization parameters
-    """
-    
-    # System configuration
-    system_id: str = "EFC-001"                           # Enhanced feedwater system identifier
-    num_steam_generators: int = 3                        # Number of steam generators
-    
-    # Design parameters
-    design_total_flow: float = 1665.0                    # kg/s total design flow
-    design_sg_level: float = 12.5                        # m design steam generator level
-    design_feedwater_temperature: float = 227.0          # °C design feedwater temperature
-    design_pressure: float = 8.0                         # MPa design system pressure
-    
-    # Subsystem configurations
-    pump_system_config: FeedwaterPumpSystemConfig = field(default_factory=FeedwaterPumpSystemConfig)
-    control_config: ThreeElementConfig = field(default_factory=ThreeElementConfig)
-    water_quality_config: WaterChemistryConfig = field(default_factory=WaterChemistryConfig)
-    diagnostics_config: PerformanceDiagnosticsConfig = field(default_factory=PerformanceDiagnosticsConfig)
-    protection_config: FeedwaterProtectionConfig = field(default_factory=FeedwaterProtectionConfig)
-    
-    # Performance parameters
-    design_efficiency: float = 0.85                      # Overall system design efficiency
-    minimum_flow_fraction: float = 0.1                   # Minimum flow as fraction of design
-    maximum_flow_fraction: float = 1.2                   # Maximum flow as fraction of design
-    
-    # Control parameters
-    auto_level_control: bool = True                      # Enable automatic level control
-    load_following_enabled: bool = True                  # Enable load following
-    steam_quality_compensation: bool = True              # Enable steam quality compensation
-    predictive_maintenance: bool = True                  # Enable predictive maintenance
 
 
 @auto_register("SECONDARY", "feedwater", allow_no_id=True,
@@ -108,33 +69,89 @@ class EnhancedFeedwaterPhysics(HeatFlowProvider, ChemistryFlowProvider):
     Uses @auto_register decorator for automatic state collection with proper naming.
     """
     
-    def __init__(self, config: Optional[EnhancedFeedwaterConfig] = None):
-        """Initialize enhanced feedwater physics model"""
-        if config is None:
-            config = EnhancedFeedwaterConfig()
+    def __init__(self, config: Optional[FeedwaterConfig] = None, config_dict: Optional[Dict[str, Any]] = None):
+        """
+        Initialize enhanced feedwater physics model
         
-        self.config = config
+        Args:
+            config: FeedwaterConfig object (supports dataclass-wizard)
+            config_dict: Configuration dictionary from unified configuration system
+        """
+        if config_dict is not None:
+            # Use unified configuration system with dataclass-wizard
+            try:
+                self.config = FeedwaterConfig.from_dict(config_dict)
+                print(f"FEEDWATER: Using unified configuration system with dataclass-wizard")
+            except Exception as e:
+                print(f"FEEDWATER: Failed to deserialize with dataclass-wizard: {e}")
+                print(f"FEEDWATER: Falling back to default configuration")
+                self.config = create_standard_feedwater_config()
+        elif config is not None:
+            # Use provided configuration
+            self.config = config
+            print(f"FEEDWATER: Using provided FeedwaterConfig")
+        else:
+            # Use defaults
+            self.config = create_standard_feedwater_config()
+            print(f"FEEDWATER: Using default configuration")
         
-        # Initialize subsystems with configurations
-        pump_config = config.pump_system_config or FeedwaterPumpSystemConfig(
-            num_steam_generators=config.num_steam_generators
+        print(f"FEEDWATER: Initialized with system_id={self.config.system_id}, "
+              f"design_flow={self.config.design_total_flow} kg/s")
+        
+        # Initialize subsystems with configurations from FeedwaterConfig
+        pump_config = self.config.pump_system
+        control_config = self.config.control_system
+        water_config = self.config.water_treatment
+        diagnostics_config = self.config.performance_monitoring
+        protection_config = self.config.protection_system
+        
+        # Create pump system config with proper parameters
+        from .pump_system import FeedwaterPumpSystemConfig, FeedwaterPumpConfig
+        
+        # Create individual pump config with correct flow rates from feedwater config
+        individual_pump_config = FeedwaterPumpConfig(
+            pump_id="FWP-TEMPLATE",  # Will be overridden for each pump
+            rated_flow=pump_config.design_flow_per_pump,
+            rated_power=pump_config.design_flow_per_pump * 0.02,  # Approximate 20 kW per kg/s
+            rated_head=pump_config.design_head_per_pump
         )
         
-        control_config = config.control_config or ThreeElementConfig(
-            num_steam_generators=config.num_steam_generators
+        pump_system_config = FeedwaterPumpSystemConfig(
+            num_steam_generators=self.config.num_steam_generators,
+            pumps_per_sg=1,
+            spare_pumps=1,
+            pump_config=individual_pump_config,  # Now properly configured
+            auto_sequencing=True,
+            load_sharing=True,
+            auto_start_enabled=True,
+            startup_sequence_enabled=True,
+            min_running_pumps=3,
+            max_running_pumps=4
         )
-        
-        water_config = config.water_quality_config or WaterChemistryConfig()
-        
-        diagnostics_config = config.diagnostics_config or PerformanceDiagnosticsConfig()
-        
-        protection_config = config.protection_config or FeedwaterProtectionConfig()
         
         # Create subsystems
-        self.pump_system = FeedwaterPumpSystem(pump_config)
-        self.level_control = ThreeElementControl(control_config)
-        self.water_quality = WaterChemistry(water_config)
-        self.diagnostics = PerformanceDiagnostics(diagnostics_config)
+        self.pump_system = FeedwaterPumpSystem(pump_system_config)
+        self.level_control = ThreeElementControl(
+            control_config, 
+            num_steam_generators=self.config.num_steam_generators,
+            design_sg_level=self.config.design_sg_level,
+            design_flow_per_sg=self.config.design_total_flow / self.config.num_steam_generators
+        )
+        
+        # Use unified water chemistry system instead of creating our own
+        # The water chemistry is managed at the secondary system level
+        self.water_quality = None  # Will be set by parent system if needed
+        
+        # Create compatible diagnostics config from new config structure
+        from .performance_monitoring import PerformanceDiagnosticsConfig, CavitationConfig, WearTrackingConfig
+        compatible_diagnostics_config = PerformanceDiagnosticsConfig(
+            cavitation_config=CavitationConfig(),
+            wear_tracking_config=WearTrackingConfig(),
+            continuous_monitoring_enabled=diagnostics_config.enable_performance_monitoring,
+            detailed_analysis_interval=diagnostics_config.efficiency_monitoring_interval,
+            predictive_maintenance_horizon=diagnostics_config.performance_trend_window
+        )
+        self.diagnostics = PerformanceDiagnostics(compatible_diagnostics_config)
         self.protection_system = FeedwaterProtectionSystem(protection_config)
         
         # Enhanced feedwater state
@@ -144,10 +161,10 @@ class EnhancedFeedwaterPhysics(HeatFlowProvider, ChemistryFlowProvider):
         self.system_availability = True                  # System availability status
         
         # Steam generator conditions
-        self.sg_levels = [12.5] * config.num_steam_generators      # m SG levels
-        self.sg_pressures = [6.895] * config.num_steam_generators  # MPa SG pressures
-        self.sg_steam_flows = [555.0] * config.num_steam_generators # kg/s steam flows
-        self.sg_steam_qualities = [0.99] * config.num_steam_generators # Steam qualities
+        self.sg_levels = [12.5] * self.config.num_steam_generators      # m SG levels
+        self.sg_pressures = [6.895] * self.config.num_steam_generators  # MPa SG pressures
+        self.sg_steam_flows = [555.0] * self.config.num_steam_generators # kg/s steam flows
+        self.sg_steam_qualities = [0.99] * self.config.num_steam_generators # Steam qualities
         
         # Performance tracking
         self.performance_factor = 1.0                    # Overall performance factor
@@ -202,13 +219,24 @@ class EnhancedFeedwaterPhysics(HeatFlowProvider, ChemistryFlowProvider):
             'biocide': 0.0
         })
         
-        water_quality_results = self.water_quality.update_chemistry(
-            system_conditions={
-                'makeup_water_quality': makeup_water_quality,
-                'blowdown_rate': 0.02  # 2% blowdown rate
-            },
-            dt=dt
-        )
+        # Use unified water chemistry system if available, otherwise use defaults
+        if self.water_quality is not None:
+            water_quality_results = self.water_quality.update_chemistry(
+                system_conditions={
+                    'makeup_water_quality': makeup_water_quality,
+                    'blowdown_rate': 0.02  # 2% blowdown rate
+                },
+                dt=dt
+            )
+        else:
+            # Default water quality results when unified system is not available
+            water_quality_results = {
+                'water_chemistry_ph': 9.2,
+                'water_chemistry_hardness': 100.0,
+                'water_chemistry_tds': 300.0,
+                'water_chemistry_aggressiveness': 1.0,
+                'water_chemistry_treatment_efficiency': 0.95
+            }
         
         # Update three-element control system
         if self.config.auto_level_control:
@@ -245,12 +273,9 @@ class EnhancedFeedwaterPhysics(HeatFlowProvider, ChemistryFlowProvider):
             'individual_demands': control_demands['individual_demands']
         })
         
-        # Convert dt from minutes to hours for pump system
-        # The feedwater physics receives dt in minutes, but pump system expects hours
-        dt_hours = dt / 60.0
-        
+        # Use dt directly - pump system should handle the same time units as the calling system
         pump_results = self.pump_system.update_system(
-            dt=dt_hours,
+            dt=dt,
             system_conditions=pump_system_conditions,
             control_inputs=pump_control_inputs
         )
@@ -399,6 +424,13 @@ class EnhancedFeedwaterPhysics(HeatFlowProvider, ChemistryFlowProvider):
         
         # Set up pump system maintenance integration (primary integration point)
         self.pump_system.setup_maintenance_integration(maintenance_system)
+        
+        # Connect protection system to maintenance event bus for trip events
+        self.protection_system.set_maintenance_event_bus(
+            maintenance_system.event_bus, 
+            "FEEDWATER_SYSTEM"
+        )
+        print(f"  Connected feedwater protection system to maintenance event bus")
         
         # Register protection system for maintenance monitoring
         protection_monitoring_config = {
@@ -629,7 +661,8 @@ class EnhancedFeedwaterPhysics(HeatFlowProvider, ChemistryFlowProvider):
         
         # Add subsystem states
         state_dict.update(self.level_control.get_state_dict())
-        state_dict.update(self.water_quality.get_state_dict())
+        if self.water_quality is not None:
+            state_dict.update(self.water_quality.get_state_dict())
         state_dict.update(self.diagnostics.get_state_dict())
         state_dict.update(self.protection_system.get_state_dict())
         

@@ -352,6 +352,253 @@ class TurbineBearingLubricationSystem(BaseLubricationSystem):
         lubrication_temp_increase = (1.0 - self.lubrication_effectiveness) * 15.0  # °C
         self.bearing_housing_temperature = 80.0 + lubrication_temp_increase
     
+    def setup_maintenance_integration(self, maintenance_system, component_id: str):
+        """
+        Set up maintenance integration for turbine lubrication system
+        
+        Args:
+            maintenance_system: AutoMaintenanceSystem instance
+            component_id: Unique identifier for this lubrication system
+        """
+        print(f"TURBINE LUBRICATION {component_id}: Setting up maintenance integration")
+        
+        # Define monitoring configuration for lubrication parameters
+        monitoring_config = {
+            'oil_contamination': {
+                'attribute': 'oil_contamination_level',
+                'threshold': 8.0,  # ppm contamination threshold
+                'comparison': 'greater_than',
+                'action': 'turbine_oil_change',
+                'cooldown_hours': 48.0  # 2-day cooldown
+            },
+            'oil_level': {
+                'attribute': 'oil_level',
+                'threshold': 30.0,  # % minimum oil level
+                'comparison': 'less_than',
+                'action': 'turbine_oil_top_off',
+                'cooldown_hours': 12.0  # 12-hour cooldown
+            },
+            'oil_acidity': {
+                'attribute': 'oil_acidity_number',
+                'threshold': 0.3,  # mg KOH/g acidity limit
+                'comparison': 'greater_than',
+                'action': 'turbine_oil_change',
+                'cooldown_hours': 72.0  # 3-day cooldown
+            },
+            'oil_temperature': {
+                'attribute': 'oil_temperature',
+                'threshold': 90.0,  # °C temperature threshold
+                'comparison': 'greater_than',
+                'action': 'oil_cooler_cleaning',
+                'cooldown_hours': 24.0  # Daily cooldown
+            },
+            'lubrication_effectiveness': {
+                'attribute': 'lubrication_effectiveness',
+                'threshold': 0.8,  # 80% effectiveness threshold
+                'comparison': 'less_than',
+                'action': 'lubrication_system_test',
+                'cooldown_hours': 168.0  # Weekly cooldown
+            }
+        }
+        
+        # Register with maintenance system using event bus
+        maintenance_system.register_component(component_id, self, monitoring_config)
+        
+        print(f"  Registered {component_id} with {len(monitoring_config)} monitoring parameters")
+        
+        # Store reference for coordination
+        self.maintenance_system = maintenance_system
+        self.component_id = component_id
+    
+    def perform_maintenance(self, maintenance_type: str = None, **kwargs):
+        """
+        Perform maintenance operations on turbine lubrication system
+        
+        Args:
+            maintenance_type: Type of maintenance to perform
+            **kwargs: Additional maintenance parameters
+            
+        Returns:
+            Dictionary with maintenance results compatible with MaintenanceResult
+        """
+        if maintenance_type == "turbine_oil_change":
+            # Perform complete oil change
+            original_contamination = self.oil_contamination_level
+            original_acidity = self.oil_acidity_number
+            original_moisture = self.oil_moisture_content
+            
+            # Reset oil quality to new oil standards
+            self.oil_contamination_level = 1.0  # Clean oil
+            self.oil_acidity_number = 0.05      # Fresh oil acidity
+            self.oil_moisture_content = 0.01    # Dry oil
+            self.oil_level = 100.0              # Full reservoir
+            
+            # Improve lubrication effectiveness
+            self.lubrication_effectiveness = min(1.0, self.lubrication_effectiveness + 0.15)
+            
+            # Reduce oil temperature slightly
+            self.oil_temperature = max(45.0, self.oil_temperature - 5.0)
+            
+            # Calculate performance improvement
+            contamination_improvement = (original_contamination - self.oil_contamination_level) / max(1.0, original_contamination) * 100.0
+            
+            return {
+                'success': True,
+                'duration_hours': 6.0,
+                'work_performed': 'Complete turbine oil change and system flush',
+                'findings': f"Reduced contamination from {original_contamination:.1f}ppm to {self.oil_contamination_level:.1f}ppm, "
+                           f"acidity from {original_acidity:.2f} to {self.oil_acidity_number:.2f} mg KOH/g",
+                'performance_improvement': contamination_improvement,
+                'effectiveness_score': 0.95,
+                'next_maintenance_due': 8760.0,  # Annual
+                'parts_used': ['Turbine oil (800L)', 'Oil filters', 'Drain plugs', 'Gaskets']
+            }
+        
+        elif maintenance_type == "turbine_oil_top_off":
+            # Perform oil top-off
+            original_level = self.oil_level
+            oil_added = min(100.0 - self.oil_level, 50.0)  # Add up to 50% or to full
+            
+            self.oil_level += oil_added
+            
+            # Slightly improve oil quality with fresh oil addition
+            dilution_factor = oil_added / 100.0
+            self.oil_contamination_level = max(1.0, self.oil_contamination_level - dilution_factor * 2.0)
+            self.oil_acidity_number = max(0.05, self.oil_acidity_number - dilution_factor * 0.1)
+            
+            return {
+                'success': True,
+                'duration_hours': 1.0,
+                'work_performed': 'Turbine oil top-off completed',
+                'findings': f"Added {oil_added:.1f}% oil, level increased from {original_level:.1f}% to {self.oil_level:.1f}%",
+                'performance_improvement': (oil_added / max(1.0, original_level)) * 100.0,
+                'effectiveness_score': 0.8,
+                'next_maintenance_due': 720.0,  # Monthly
+                'parts_used': [f'Turbine oil ({oil_added * 8:.0f}L)']
+            }
+        
+        elif maintenance_type == "oil_filter_replacement":
+            # Replace oil filters
+            original_contamination = self.oil_contamination_level
+            
+            # Improve filtration effectiveness
+            contamination_reduction = min(5.0, self.oil_contamination_level * 0.6)
+            self.oil_contamination_level -= contamination_reduction
+            self.oil_contamination_level = max(1.0, self.oil_contamination_level)
+            
+            # Improve lubrication effectiveness
+            self.lubrication_effectiveness = min(1.0, self.lubrication_effectiveness + 0.05)
+            
+            return {
+                'success': True,
+                'duration_hours': 2.0,
+                'work_performed': 'Oil filter replacement completed',
+                'findings': f"Reduced contamination from {original_contamination:.1f}ppm to {self.oil_contamination_level:.1f}ppm",
+                'performance_improvement': (contamination_reduction / max(1.0, original_contamination)) * 100.0,
+                'effectiveness_score': 0.9,
+                'next_maintenance_due': 2190.0,  # Quarterly
+                'parts_used': ['Oil filter elements (5 units)', 'O-rings', 'Filter housing gaskets']
+            }
+        
+        elif maintenance_type == "oil_cooler_cleaning":
+            # Clean oil coolers
+            original_temperature = self.oil_temperature
+            original_effectiveness = self.oil_cooling_effectiveness
+            
+            # Improve cooling effectiveness
+            self.oil_cooling_effectiveness = min(1.0, self.oil_cooling_effectiveness + 0.15)
+            
+            # Reduce oil temperature
+            temp_reduction = (1.0 - original_effectiveness) * 15.0  # Up to 15°C reduction
+            self.oil_temperature = max(45.0, self.oil_temperature - temp_reduction)
+            
+            # Improve component wear for oil coolers
+            if 'oil_coolers' in self.component_wear:
+                self.component_wear['oil_coolers'] = max(0.0, self.component_wear['oil_coolers'] - 5.0)
+            
+            return {
+                'success': True,
+                'duration_hours': 4.0,
+                'work_performed': 'Oil cooler cleaning and inspection completed',
+                'findings': f"Improved cooling effectiveness from {original_effectiveness:.2f} to {self.oil_cooling_effectiveness:.2f}, "
+                           f"reduced oil temperature by {original_temperature - self.oil_temperature:.1f}°C",
+                'performance_improvement': ((self.oil_cooling_effectiveness - original_effectiveness) / max(0.1, original_effectiveness)) * 100.0,
+                'effectiveness_score': 0.85,
+                'next_maintenance_due': 4380.0,  # Semi-annual
+                'parts_used': ['Cleaning chemicals', 'Tube brushes', 'Gaskets']
+            }
+        
+        elif maintenance_type == "lubrication_system_test":
+            # Perform comprehensive lubrication system test
+            # Test all components and optimize performance
+            original_effectiveness = self.lubrication_effectiveness
+            
+            # Optimize system performance
+            self.lubrication_effectiveness = min(1.0, self.lubrication_effectiveness + 0.1)
+            
+            # Check and adjust oil flow rates (simulated)
+            flow_optimization = 0.05  # 5% flow optimization
+            
+            # Identify any component issues
+            issues_found = []
+            recommendations = []
+            
+            for component_id, wear in self.component_wear.items():
+                if wear > 15.0:
+                    issues_found.append(f"{component_id}: {wear:.1f}% wear")
+                    recommendations.append(f"Schedule {component_id} maintenance")
+            
+            if self.oil_contamination_level > 6.0:
+                issues_found.append(f"Oil contamination: {self.oil_contamination_level:.1f}ppm")
+                recommendations.append("Consider oil change")
+            
+            findings = f"System effectiveness improved from {original_effectiveness:.2f} to {self.lubrication_effectiveness:.2f}"
+            if issues_found:
+                findings += f". Issues found: {'; '.join(issues_found)}"
+            
+            return {
+                'success': True,
+                'duration_hours': 3.0,
+                'work_performed': 'Comprehensive lubrication system test and optimization',
+                'findings': findings,
+                'recommendations': recommendations,
+                'performance_improvement': ((self.lubrication_effectiveness - original_effectiveness) / max(0.1, original_effectiveness)) * 100.0,
+                'effectiveness_score': 0.9,
+                'next_maintenance_due': 2190.0,  # Quarterly
+                'parts_used': ['Test equipment', 'Calibration fluids']
+            }
+        
+        elif maintenance_type == "routine_maintenance":
+            # Perform routine lubrication system maintenance
+            # Minor improvements across all parameters
+            self.lubrication_effectiveness = min(1.0, self.lubrication_effectiveness + 0.02)
+            self.oil_contamination_level = max(1.0, self.oil_contamination_level - 0.5)
+            self.oil_temperature = max(45.0, self.oil_temperature - 1.0)
+            
+            # Minor component wear reduction
+            for component_id in self.component_wear:
+                self.component_wear[component_id] = max(0.0, self.component_wear[component_id] - 0.5)
+            
+            return {
+                'success': True,
+                'duration_hours': 2.0,
+                'work_performed': 'Routine lubrication system maintenance completed',
+                'findings': 'General maintenance activities completed, minor improvements achieved',
+                'effectiveness_score': 0.7,
+                'next_maintenance_due': 2190.0,  # Quarterly
+                'parts_used': ['General maintenance supplies', 'Lubricants']
+            }
+        
+        else:
+            # Unknown maintenance type
+            return {
+                'success': False,
+                'duration_hours': 0.0,
+                'work_performed': f'Unknown maintenance type: {maintenance_type}',
+                'error_message': f'Maintenance type {maintenance_type} not supported for turbine lubrication system',
+                'effectiveness_score': 0.0
+            }
+
     def get_state_dict(self) -> Dict[str, float]:
         """Get turbine-specific lubrication state for integration with turbine models"""
         return {

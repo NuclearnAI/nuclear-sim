@@ -28,131 +28,14 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 import numpy as np
 
+from .config import TurbineGovernorConfig
 from ..lubrication_base import BaseLubricationSystem, BaseLubricationConfig, LubricationComponent
 
 warnings.filterwarnings("ignore")
 
 
-@dataclass
-class GovernorValveConfig:
-    """
-    Configuration for governor valve system
-    
-    References:
-    - Woodward Governor Valve Specifications
-    - Steam turbine control valve design standards
-    - Hydraulic actuator performance specifications
-    """
-    
-    # Valve identification
-    valve_id: str = "GV-001"                    # Governor valve identifier
-    valve_type: str = "hydraulic"               # "hydraulic", "pneumatic", "electric"
-    
-    # Physical parameters
-    valve_stroke: float = 100.0                 # mm full valve stroke
-    valve_area: float = 0.1                     # m² valve flow area at full open
-    valve_cv: float = 500.0                     # Flow coefficient
-    
-    # Dynamic parameters
-    valve_response_time: float = 0.2            # seconds for 63% response
-    valve_stroke_time: float = 5.0              # seconds for full stroke
-    valve_deadband: float = 0.1                 # % deadband
-    valve_hysteresis: float = 0.05              # % hysteresis
-    
-    # Operating limits
-    min_position: float = 0.0                   # % minimum valve position
-    max_position: float = 100.0                 # % maximum valve position
-    max_stroke_rate: float = 20.0               # %/s maximum stroke rate
-    
-    # Actuator parameters
-    actuator_pressure: float = 3.5              # MPa hydraulic pressure
-    actuator_force: float = 50000.0             # N maximum actuator force
-    actuator_oil_flow: float = 10.0             # L/min oil flow requirement
-
-
-@dataclass
-class GovernorControlConfig:
-    """
-    Configuration for governor control system
-    
-    References:
-    - IEEE Std 421.2: Dynamic Performance of Excitation Control Systems
-    - ASME PTC 6: Steam Turbines Performance Test Codes
-    - Modern turbine control system specifications
-    """
-    
-    # Control system identification
-    system_id: str = "GCS-001"                  # Governor control system identifier
-    
-    # Control modes
-    primary_control_mode: str = "speed"         # "speed", "load", "pressure"
-    secondary_control_mode: str = "load"        # Secondary control mode
-    
-    # Speed control parameters
-    rated_speed: float = 3600.0                 # RPM rated turbine speed
-    speed_droop: float = 0.04                   # 4% speed droop (typical)
-    speed_deadband: float = 0.1                 # % speed deadband
-    max_speed_error: float = 5.0                # % maximum speed error
-    
-    # PID controller parameters for speed control
-    speed_kp: float = 1.0                       # Proportional gain
-    speed_ki: float = 0.5                       # Integral gain
-    speed_kd: float = 0.1                       # Derivative gain
-    speed_integral_limit: float = 10.0          # % integral windup limit
-    
-    # Load control parameters
-    rated_load: float = 1100.0                  # MW rated electrical load
-    load_ramp_rate: float = 5.0                 # %/min load ramp rate
-    max_load_error: float = 2.0                 # % maximum load error
-    
-    # PID controller parameters for load control
-    load_kp: float = 0.8                        # Proportional gain
-    load_ki: float = 0.3                        # Integral gain
-    load_kd: float = 0.05                       # Derivative gain
-    load_integral_limit: float = 5.0            # % integral windup limit
-    
-    # Protection parameters
-    overspeed_trip: float = 3780.0              # RPM overspeed trip (105%)
-    underspeed_alarm: float = 3420.0            # RPM underspeed alarm (95%)
-    load_rejection_rate: float = 100.0          # %/s emergency load rejection rate
-    
-    # Response characteristics
-    governor_response_time: float = 0.1         # seconds governor response time
-    control_update_rate: float = 100.0          # Hz control system update rate
-
-
-@dataclass
-class GovernorLubricationConfig(BaseLubricationConfig):
-    """
-    Configuration for governor lubrication system
-    
-    References:
-    - Turbine governor lubrication specifications
-    - Hydraulic system design standards
-    - Oil analysis requirements for control systems
-    """
-    
-    # Override base class defaults for governor-specific values
-    system_id: str = "GOV-LUB-001"
-    system_type: str = "governor"
-    oil_reservoir_capacity: float = 200.0       # liters (smaller than main turbine)
-    oil_operating_pressure: float = 3.5         # MPa (higher pressure for hydraulics)
-    oil_temperature_range: Tuple[float, float] = (35.0, 75.0)  # °C tighter range
-    oil_viscosity_grade: str = "ISO VG 46"      # Higher viscosity for hydraulics
-    
-    # Governor-specific parameters
-    hydraulic_system_pressure: float = 3.5      # MPa hydraulic operating pressure
-    servo_valve_flow_rate: float = 20.0         # L/min servo valve flow
-    pilot_valve_flow_rate: float = 5.0          # L/min pilot valve flow
-    accumulator_capacity: float = 50.0          # liters hydraulic accumulator
-    
-    # Filtration requirements (tighter for control systems)
-    filter_micron_rating: float = 5.0           # microns (finer filtration)
-    contamination_limit: float = 10.0           # ppm (stricter limit)
-    
-    # Maintenance intervals (more frequent for critical control)
-    oil_change_interval: float = 4380.0         # hours (6 months)
-    oil_analysis_interval: float = 360.0        # hours (bi-weekly)
+# GovernorLubricationConfig is now integrated into the unified TurbineLubricationConfig
+# Governor lubrication parameters are accessed from the unified config system
 
 
 class GovernorLubricationSystem(BaseLubricationSystem):
@@ -172,8 +55,36 @@ class GovernorLubricationSystem(BaseLubricationSystem):
     - Precision component lubrication requirements
     """
     
-    def __init__(self, config: GovernorLubricationConfig):
-        """Initialize governor lubrication system"""
+    def __init__(self, lubrication_config):
+        """Initialize governor lubrication system from unified config"""
+        
+        # Create a BaseLubricationConfig-compatible object from unified config
+        class GovernorLubricationConfig(BaseLubricationConfig):
+            def __init__(self, unified_config):
+                # Map unified config parameters to base lubrication config
+                super().__init__(
+                    system_id=unified_config.governor_system_id,
+                    system_type="governor",
+                    oil_reservoir_capacity=unified_config.governor_oil_reservoir_capacity,
+                    oil_operating_pressure=unified_config.governor_oil_operating_pressure,
+                    oil_temperature_range=unified_config.governor_oil_temperature_range,
+                    oil_viscosity_grade=unified_config.governor_oil_viscosity_grade,
+                    filter_micron_rating=unified_config.governor_filter_micron_rating,
+                    contamination_limit=unified_config.governor_contamination_limit,
+                    oil_change_interval=unified_config.governor_oil_change_interval,
+                    oil_analysis_interval=unified_config.governor_oil_analysis_interval
+                )
+                
+                # Governor-specific parameters
+                self.hydraulic_system_pressure = unified_config.hydraulic_system_pressure
+                self.servo_valve_flow_rate = unified_config.servo_valve_flow_rate
+                self.pilot_valve_flow_rate = unified_config.pilot_valve_flow_rate
+                self.accumulator_capacity = unified_config.accumulator_capacity
+                
+                # Store reference to original config for test access
+                self.governor_oil_reservoir_capacity = unified_config.governor_oil_reservoir_capacity
+        
+        config = GovernorLubricationConfig(lubrication_config)
         
         # Define governor-specific lubricated components
         governor_components = [
@@ -447,7 +358,7 @@ class GovernorValveModel:
     5. Lubrication effects on valve operation
     """
     
-    def __init__(self, config: GovernorValveConfig):
+    def __init__(self, config):
         """Initialize governor valve model"""
         self.config = config
         
@@ -668,28 +579,55 @@ class TurbineGovernorSystem:
     - System performance degradation
     """
     
-    def __init__(self, 
-                 control_config: Optional[GovernorControlConfig] = None,
-                 valve_config: Optional[GovernorValveConfig] = None,
-                 lubrication_config: Optional[GovernorLubricationConfig] = None):
+    def __init__(self, config: Optional[TurbineGovernorConfig] = None):
         """Initialize complete turbine governor system"""
         
-        # Initialize configurations
-        self.control_config = control_config if control_config else GovernorControlConfig()
-        self.valve_config = valve_config if valve_config else GovernorValveConfig()
-        self.lubrication_config = lubrication_config if lubrication_config else GovernorLubricationConfig()
+        # Initialize configuration
+        if config is None:
+            config = TurbineGovernorConfig()
         
-        # Initialize subsystems
-        self.lubrication_system = GovernorLubricationSystem(self.lubrication_config)
-        self.governor_valve = GovernorValveModel(self.valve_config)
+        self.config = config
+        
+        # Initialize subsystems using unified config structure
+        # Use the lubrication config from the unified config if available
+        if hasattr(config, 'lubrication_system'):
+            lubrication_config = config.lubrication_system
+        else:
+            # Fallback to default lubrication config
+            from .config import TurbineLubricationConfig
+            lubrication_config = TurbineLubricationConfig()
+        self.lubrication_system = GovernorLubricationSystem(lubrication_config)
+        
+        # Create governor valve model using config parameters
+        # Create a simple valve config object from the unified config
+        class GovernorValveConfig:
+            def __init__(self, config):
+                self.valve_id = "GOV-VALVE-001"
+                self.valve_type = "control"
+                self.valve_stroke = config.valve_stroke
+                self.valve_area = config.valve_area
+                self.valve_cv = config.valve_cv
+                self.valve_response_time = config.valve_response_time
+                self.valve_stroke_time = config.valve_stroke_time
+                self.valve_deadband = config.valve_deadband
+                self.valve_hysteresis = 0.5  # Default hysteresis
+                self.min_position = 0.0
+                self.max_position = 100.0
+                self.max_stroke_rate = 20.0  # %/s
+                self.actuator_pressure = config.actuator_pressure
+                self.actuator_force = config.actuator_force
+                self.actuator_oil_flow = config.actuator_oil_flow
+        
+        valve_config = GovernorValveConfig(config)
+        self.governor_valve = GovernorValveModel(valve_config)
         
         # Governor control state
-        self.control_mode = self.control_config.primary_control_mode  # "speed", "load", "pressure"
+        self.control_mode = config.primary_control_mode  # "speed", "load", "pressure"
         self.governor_enabled = True                    # Governor system enabled
         self.manual_mode = False                        # Manual control mode
         
         # Speed control state
-        self.speed_setpoint = self.control_config.rated_speed  # RPM speed setpoint
+        self.speed_setpoint = config.rated_speed  # RPM speed setpoint
         self.speed_actual = 0.0                         # RPM actual turbine speed
         self.speed_error = 0.0                          # RPM speed error
         self.speed_error_integral = 0.0                 # RPM⋅s integral error
@@ -697,7 +635,7 @@ class TurbineGovernorSystem:
         self.speed_error_previous = 0.0                 # RPM previous error for derivative
         
         # Load control state
-        self.load_setpoint = self.control_config.rated_load  # MW load setpoint
+        self.load_setpoint = config.rated_load  # MW load setpoint
         self.load_actual = 0.0                          # MW actual electrical load
         self.load_error = 0.0                           # MW load error
         self.load_error_integral = 0.0                  # MW⋅s integral error
@@ -714,7 +652,7 @@ class TurbineGovernorSystem:
         self.trip_reasons = []                          # List of active trip reasons
         
         # Performance tracking
-        self.governor_response_time = self.control_config.governor_response_time  # seconds
+        self.governor_response_time = config.governor_response_time  # seconds
         self.control_accuracy = 1.0                     # Control accuracy factor
         self.system_availability = 1.0                  # System availability factor
         
@@ -747,30 +685,30 @@ class TurbineGovernorSystem:
         self.speed_error = speed_setpoint - actual_speed
         
         # Apply speed droop (permanent droop characteristic)
-        droop_correction = self.speed_error * self.control_config.speed_droop
+        droop_correction = self.speed_error * self.config.speed_droop
         corrected_error = self.speed_error - droop_correction
         
         # Apply deadband
-        if abs(corrected_error) < self.control_config.speed_deadband:
+        if abs(corrected_error) < self.config.speed_deadband:
             corrected_error = 0.0
         
         # PID controller calculations
         # Proportional term
-        proportional = self.control_config.speed_kp * corrected_error
+        proportional = self.config.speed_kp * corrected_error
         
         # Integral term with windup protection
         self.speed_error_integral += corrected_error * dt
-        integral_limit = self.control_config.speed_integral_limit
+        integral_limit = self.config.speed_integral_limit
         self.speed_error_integral = np.clip(self.speed_error_integral, 
                                           -integral_limit, integral_limit)
-        integral = self.control_config.speed_ki * self.speed_error_integral
+        integral = self.config.speed_ki * self.speed_error_integral
         
         # Derivative term
         if dt > 0:
             self.speed_error_derivative = (corrected_error - self.speed_error_previous) / dt
         else:
             self.speed_error_derivative = 0.0
-        derivative = self.control_config.speed_kd * self.speed_error_derivative
+        derivative = self.config.speed_kd * self.speed_error_derivative
         
         # Total PID output
         pid_output = proportional + integral + derivative
@@ -809,33 +747,33 @@ class TurbineGovernorSystem:
         self.load_error = load_setpoint - actual_load
         
         # Apply deadband
-        deadband = self.control_config.max_load_error * self.control_config.rated_load / 100.0
+        deadband = self.config.max_load_error * self.config.rated_load / 100.0
         if abs(self.load_error) < deadband:
             self.load_error = 0.0
         
         # PID controller calculations
         # Proportional term
-        proportional = self.control_config.load_kp * self.load_error
+        proportional = self.config.load_kp * self.load_error
         
         # Integral term with windup protection
         self.load_error_integral += self.load_error * dt
-        integral_limit = self.control_config.load_integral_limit * self.control_config.rated_load
+        integral_limit = self.config.load_integral_limit * self.config.rated_load
         self.load_error_integral = np.clip(self.load_error_integral, 
                                          -integral_limit, integral_limit)
-        integral = self.control_config.load_ki * self.load_error_integral
+        integral = self.config.load_ki * self.load_error_integral
         
         # Derivative term
         if dt > 0:
             self.load_error_derivative = (self.load_error - self.load_error_previous) / dt
         else:
             self.load_error_derivative = 0.0
-        derivative = self.control_config.load_kd * self.load_error_derivative
+        derivative = self.config.load_kd * self.load_error_derivative
         
         # Total PID output
         pid_output = proportional + integral + derivative
         
         # Apply load ramp rate limiting
-        max_ramp_rate = self.control_config.load_ramp_rate / 60.0 * dt  # %/s to %/timestep
+        max_ramp_rate = self.config.load_ramp_rate / 60.0 * dt  # %/s to %/timestep
         if abs(pid_output) > max_ramp_rate:
             pid_output = np.sign(pid_output) * max_ramp_rate
         
@@ -867,7 +805,7 @@ class TurbineGovernorSystem:
         alarms = []
         
         # Overspeed protection
-        if turbine_speed > self.control_config.overspeed_trip:
+        if turbine_speed > self.config.overspeed_trip:
             trips['overspeed'] = True
             if 'Overspeed Trip' not in self.trip_reasons:
                 self.trip_reasons.append('Overspeed Trip')
@@ -876,7 +814,7 @@ class TurbineGovernorSystem:
             trips['overspeed'] = False
         
         # Underspeed alarm
-        if turbine_speed < self.control_config.underspeed_alarm:
+        if turbine_speed < self.config.underspeed_alarm:
             alarms.append('Underspeed Alarm')
         
         # Lubrication system trips
@@ -1067,7 +1005,7 @@ class TurbineGovernorSystem:
         performance_results = self.lubrication_system.calculate_performance_degradation()
         
         # Update system performance metrics
-        self.governor_response_time = (self.control_config.governor_response_time * 
+        self.governor_response_time = (self.config.governor_response_time * 
                                      (1.0 + performance_results['valve_response_degradation']))
         self.control_accuracy = 1.0 - performance_results['control_accuracy_degradation']
         self.system_availability = 0.0 if self.protection_trip_active else 1.0
@@ -1296,19 +1234,19 @@ class TurbineGovernorSystem:
     def reset(self) -> None:
         """Reset governor system to initial conditions"""
         # Reset control state
-        self.control_mode = self.control_config.primary_control_mode
+        self.control_mode = self.config.primary_control_mode
         self.governor_enabled = True
         self.manual_mode = False
         
         # Reset control variables
-        self.speed_setpoint = self.control_config.rated_speed
+        self.speed_setpoint = self.config.rated_speed
         self.speed_actual = 0.0
         self.speed_error = 0.0
         self.speed_error_integral = 0.0
         self.speed_error_derivative = 0.0
         self.speed_error_previous = 0.0
         
-        self.load_setpoint = self.control_config.rated_load
+        self.load_setpoint = self.config.rated_load
         self.load_actual = 0.0
         self.load_error = 0.0
         self.load_error_integral = 0.0
@@ -1324,7 +1262,7 @@ class TurbineGovernorSystem:
         self.trip_reasons = []
         
         # Reset performance metrics
-        self.governor_response_time = self.control_config.governor_response_time
+        self.governor_response_time = self.config.governor_response_time
         self.control_accuracy = 1.0
         self.system_availability = 1.0
         

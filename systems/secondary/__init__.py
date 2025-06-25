@@ -20,32 +20,43 @@ from .heat_flow_tracker import HeatFlowTracker, HeatFlowProvider, ThermodynamicP
 from .chemistry_flow_tracker import ChemistryFlowTracker, ChemistryFlowProvider, ChemicalSpecies, ChemistryProperties
 from .water_chemistry import WaterChemistry, WaterChemistryConfig, DegradationCalculator
 from .ph_control_system import PHControlSystem, PHControllerConfig
+from .config import SecondarySystemConfig
 
 from .steam_generator import (
     SteamGenerator, 
     SteamGeneratorConfig,
-    EnhancedSteamGeneratorPhysics,
-    EnhancedSteamGeneratorConfig
+    EnhancedSteamGeneratorPhysics
 )
 from .turbine import (
+    # New unified configuration classes
+    TurbineConfig,
+    TurbineStageSystemConfig,
+    RotorDynamicsConfig,
+    TurbineThermalStressConfig,
+    TurbineProtectionConfig,
+    TurbineGovernorConfig,
+    TurbineBearingConfig,
+    
     # Enhanced turbine physics
     EnhancedTurbinePhysics,
-    EnhancedTurbineConfig,
+    MetalTemperatureTracker,
+    TurbineProtectionSystem,
     
     # Individual component systems
     TurbineStageSystem,
     TurbineStage,
-    TurbineStageConfig,
+    TurbineStageSystemConfig,
     RotorDynamicsModel,
-    RotorDynamicsConfig
-)
+    VibrationMonitor,
+    BearingModel,
+    )
 
-# Legacy turbine removed - now using enhanced turbine physics
-from .condenser import EnhancedCondenserPhysics, EnhancedCondenserConfig
+# Enhanced condenser physics (now uses centralized config)
+from .condenser import EnhancedCondenserPhysics, CondenserConfig
 from .feedwater import (
     # Enhanced feedwater physics
     EnhancedFeedwaterPhysics,
-    EnhancedFeedwaterConfig,
+    FeedwaterConfig,
     
     # Individual component systems
     FeedwaterPumpSystem,
@@ -53,7 +64,6 @@ from .feedwater import (
     FeedwaterPumpState,
     FeedwaterPumpConfig,
     ThreeElementControl,
-    ThreeElementConfig,
     # WaterQualityModel,  # Moved to unified water chemistry
     # WaterQualityConfig,  # Moved to unified water chemistry
     PerformanceDiagnostics,
@@ -66,32 +76,40 @@ __all__ = [
     'SteamGenerator',
     'SteamGeneratorConfig',
     'EnhancedSteamGeneratorPhysics',
-    'EnhancedSteamGeneratorConfig',
+    
+    # New unified turbine configuration classes
+    'TurbineConfig',
+    'TurbineStageSystemConfig',
+    'RotorDynamicsConfig',
+    'TurbineThermalStressConfig',
+    'TurbineProtectionConfig',
+    'TurbineGovernorConfig',
+    'TurbineBearingConfig',
     
     # Enhanced Turbine System
     'EnhancedTurbinePhysics',
-    'EnhancedTurbineConfig',
+    'MetalTemperatureTracker',
+    'TurbineProtectionSystem',
     'TurbineStageSystem',
     'TurbineStage',
-    'TurbineStageConfig',
+    'TurbineStageSystemConfig',
     'RotorDynamicsModel',
-    'RotorDynamicsConfig',
-    
-    # Legacy turbine removed - now using enhanced turbine physics only
+    'VibrationMonitor',
+    'BearingModel',
+    'TurbineBearingConfig',
     
     # Enhanced Condenser
     'EnhancedCondenserPhysics',
-    'EnhancedCondenserConfig',
+    'CondenserConfig',
     
     # Enhanced Feedwater System
     'EnhancedFeedwaterPhysics',
-    'EnhancedFeedwaterConfig',
+    'FeedwaterConfig',
     'FeedwaterPumpSystem',
     'FeedwaterPump',
     'FeedwaterPumpState',
     'FeedwaterPumpConfig',
     'ThreeElementControl',
-    'ThreeElementConfig',
     # 'WaterQualityModel',  # Moved to unified water chemistry
     # 'WaterQualityConfig',  # Moved to unified water chemistry
     'PerformanceDiagnostics',
@@ -133,41 +151,149 @@ class SecondaryReactorPhysics:
     6. Comprehensive state management for all subsystems
     
     Implements StateProvider interface for automatic state collection.
+    
+    NEW: Now supports modular configuration through PWR3000Config for easy
+    user configuration via YAML/JSON/TOML files.
     """
     
     def __init__(self, 
-                 num_steam_generators: int = 3,
-                 sg_config: SteamGeneratorConfig = None,
-                 turbine_config: EnhancedTurbineConfig = None,
-                 condenser_config: EnhancedCondenserConfig = None):
+                 # NEW: Primary configuration options
+                 config: Optional['PWR3000Config'] = None,
+                 config_file: Optional[str] = None,
+                 # Legacy parameters for backward compatibility
+                 num_steam_generators: Optional[int] = None,
+                 sg_config: Optional[SteamGeneratorConfig] = None,
+                 turbine_config: Optional[TurbineConfig] = None,
+                 condenser_config: Optional[CondenserConfig] = None):
         """
         Initialize integrated secondary reactor physics
         
         Args:
+            config: PWR3000Config object for complete system configuration
+            config_file: Path to YAML/JSON/TOML configuration file
+            # Legacy parameters (for backward compatibility):
             num_steam_generators: Number of steam generators (typically 2-4)
             sg_config: Steam generator configuration
             turbine_config: Enhanced turbine configuration  
             condenser_config: Condenser configuration
         """
-        self.num_steam_generators = num_steam_generators
+        # Load configuration using new modular system
+        if config_file:
+            # SIMPLE APPROACH: Check if config has secondary_system key and extract it
+            import yaml
+            import os
+            
+            # Handle relative paths
+            if not os.path.isabs(config_file):
+                # If the path starts with "systems/secondary/", it's already relative to project root
+                if config_file.startswith("systems/secondary/"):
+                    # Use as-is, it's relative to project root
+                    pass
+                else:
+                    # It's relative to the secondary directory
+                    config_dir = os.path.dirname(__file__)
+                    config_file = os.path.join(config_dir, config_file)
+            
+            # Load YAML file
+            with open(config_file, 'r') as f:
+                config_data = yaml.safe_load(f)
+            
+            # Simple extraction: if secondary_system exists, use it as root
+            if 'secondary_system' in config_data:
+                config_data = config_data['secondary_system']  # Drop down one level
+                print(f"[SECONDARY CONFIG] Extracted secondary_system section from comprehensive config")
+            else:
+                print(f"[SECONDARY CONFIG] Using flat config structure (legacy format)")
+            
+            # Now treat config_data as if it were the old flat structure
+            # Convert to SecondarySystemConfig object
+            try:
+                # Try to create SecondarySystemConfig from the extracted data
+                if hasattr(SecondarySystemConfig, 'from_dict'):
+                    self.config = SecondarySystemConfig.from_dict(config_data)
+                else:
+                    # Fallback: create with main parameters and let subsystems handle their own configs
+                    self.config = SecondarySystemConfig(
+                        system_id=config_data.get('system_id', 'SECONDARY-001'),
+                        plant_id=config_data.get('plant_id', 'PWR-PLANT-001'),
+                        rated_thermal_power=config_data.get('rated_thermal_power', 3000.0e6),
+                        rated_electrical_power=config_data.get('rated_electrical_power', 1000.0),
+                        design_efficiency=config_data.get('design_efficiency', 0.33),
+                        num_loops=config_data.get('num_loops', 3)
+                    )
+                    # Store the raw config data for subsystem access
+                    self.config._raw_config_data = config_data
+            except Exception as e:
+                print(f"[SECONDARY CONFIG] Warning: Could not create SecondarySystemConfig object: {e}")
+                print(f"[SECONDARY CONFIG] Using raw config data directly")
+                # Store raw config data as a simple object for subsystem access
+                class SimpleConfig:
+                    def __init__(self, data):
+                        self.__dict__.update(data)
+                        self._raw_config_data = data
+                    
+                    def get(self, key, default=None):
+                        return self._raw_config_data.get(key, default)
+                
+                self.config = SimpleConfig(config_data)
+                
+        elif config:
+            self.config = SecondarySystemConfig.from_dict(config)
+        else:
+            # Create default 3000 MW PWR configuration
+            from .config import PWR3000ConfigFactory
+            self.config = PWR3000ConfigFactory.create_standard_pwr3000()
+        # Apply legacy parameter overrides for backward compatibility
+        if num_steam_generators is not None:
+            self.config.num_loops = num_steam_generators
+            self.config._configure_subsystems()  # Reconfigure with new parameters
         
-        # Initialize enhanced steam generator system
-        enhanced_sg_config = EnhancedSteamGeneratorConfig(
-            num_steam_generators=num_steam_generators
-        )
+        # Extract key parameters from configuration
+        # For PWR plants, typically 1 steam generator per loop
+        steam_generators_per_loop = getattr(self.config, 'steam_generators_per_loop', 1)
+        self.num_steam_generators = self.config.num_loops * steam_generators_per_loop
+        
+        # Initialize subsystems using configuration from PWR3000Config
+        # Apply legacy overrides if provided
         if sg_config is not None:
-            enhanced_sg_config.sg_system_config.sg_config = sg_config
+            # Override steam generator config with legacy parameter
+            self.config.steam_generator_config = sg_config
+        if turbine_config is not None:
+            # Override turbine config with legacy parameter
+            self.config.turbine_config = turbine_config
+        if condenser_config is not None:
+            # Override condenser config with legacy parameter
+            self.config.condenser_config = condenser_config
         
-        self.steam_generator_system = EnhancedSteamGeneratorPhysics(enhanced_sg_config)
-        
-        # Use enhanced turbine physics instead of legacy
-        self.turbine = EnhancedTurbinePhysics(turbine_config)
-        self.condenser = EnhancedCondenserPhysics(condenser_config)
-        
-        # Initialize enhanced feedwater system
-        from .feedwater import EnhancedFeedwaterPhysics, EnhancedFeedwaterConfig
-        feedwater_config = EnhancedFeedwaterConfig(num_steam_generators=num_steam_generators)
-        self.feedwater_system = EnhancedFeedwaterPhysics(feedwater_config)
+        # Initialize subsystems using the configuration
+        # Handle both SecondarySystemConfig objects and raw config data
+        if hasattr(self.config, '_raw_config_data'):
+            # Use raw config data extracted from comprehensive config
+            raw_config = self.config._raw_config_data
+            print(f"[SECONDARY CONFIG] Using raw config data for subsystem initialization")
+            
+            # Initialize each subsystem with its section from the raw config
+            self.steam_generator_system = EnhancedSteamGeneratorPhysics(raw_config.get('steam_generator', {}))
+            self.turbine = EnhancedTurbinePhysics(raw_config.get('turbine', {}))
+            self.condenser = EnhancedCondenserPhysics(raw_config.get('condenser', {}))
+            self.feedwater_system = EnhancedFeedwaterPhysics(config_dict=raw_config.get('feedwater', {}))
+            
+        elif hasattr(self.config, 'get') and callable(self.config.get):
+            # Config is a simple dictionary-like object
+            print(f"[SECONDARY CONFIG] Using dictionary-like config for subsystem initialization")
+            feedwater_config_dict = self.config.get('feedwater', {})
+            self.steam_generator_system = EnhancedSteamGeneratorPhysics(self.config.get('steam_generator', {}))
+            self.turbine = EnhancedTurbinePhysics(self.config.get('turbine', {}))
+            self.condenser = EnhancedCondenserPhysics(self.config.get('condenser', {}))
+            self.feedwater_system = EnhancedFeedwaterPhysics(config_dict=feedwater_config_dict)
+            
+        else:
+            # Config is a SecondarySystemConfig object (legacy format)
+            print(f"[SECONDARY CONFIG] Using SecondarySystemConfig object for subsystem initialization")
+            self.steam_generator_system = EnhancedSteamGeneratorPhysics(self.config.steam_generator)
+            self.turbine = EnhancedTurbinePhysics(self.config.turbine)
+            self.condenser = EnhancedCondenserPhysics(self.config.condenser)
+            self.feedwater_system = EnhancedFeedwaterPhysics(self.config.feedwater)
         
         # System state variables
         self.total_steam_flow = 0.0
@@ -187,6 +313,10 @@ class SecondaryReactorPhysics:
         # Initialize chemistry flow tracker and water chemistry system
         self.water_chemistry = WaterChemistry()
         self.ph_control_system = PHControlSystem()
+        
+        # CRITICAL FIX: Inject unified water chemistry into feedwater system
+        # The feedwater system expects this to be provided by the parent system
+        self.feedwater_system.water_quality = self.water_chemistry
         
         # Create chemistry flow providers dictionary for integration
         chemistry_providers = {
@@ -279,11 +409,52 @@ class SecondaryReactorPhysics:
             }
         
         # Phase 3: Use new simplified interface - provide load demand fraction instead of steam flow
-        load_demand_fraction = self.load_demand / 100.0
+        # CRITICAL FIX: Calculate load demand from actual thermal power, not feedwater availability
+        # This breaks the chicken-and-egg problem between feedwater flow and steam demand
         
-        # FIXED: Ensure minimum reasonable load demand even with feedwater issues
-        if not feedwater_system_available:
-            load_demand_fraction = max(load_demand_fraction * 0.5, 0.3)
+        # Calculate load demand fraction from actual thermal power
+        # FIXED: Calculate thermal power correctly for each steam generator
+        total_thermal_power_mw = 0.0
+        for i in range(self.num_steam_generators):
+            inlet_temp = enhanced_primary_conditions['inlet_temps'][i]
+            outlet_temp = enhanced_primary_conditions['outlet_temps'][i]
+            flow_rate = enhanced_primary_conditions['flow_rates'][i]
+            delta_t = inlet_temp - outlet_temp
+            # Q = m_dot * cp * delta_T (convert to MW)
+            sg_thermal_power = flow_rate * 5.2 * delta_t / 1000.0  # MW
+            total_thermal_power_mw += sg_thermal_power
+        
+        # If we have thermal power data directly, use it (this takes precedence)
+        if f'sg_1_thermal_power' in primary_conditions:
+            total_thermal_power_mw = sum(primary_conditions.get(f'sg_{i+1}_thermal_power', 1000.0) for i in range(self.num_steam_generators))
+        
+        # FEEDWATER FLOW STABILIZATION FIX:
+        # Calculate load demand fraction from thermal power (3000 MW = 100% load)
+        # This should be the PRIMARY driver, not feedwater availability
+        load_demand_fraction = min(1.0, total_thermal_power_mw / 3000.0)
+        
+        # Ensure minimum reasonable load demand for stable operation
+        load_demand_fraction = max(load_demand_fraction, 0.2)  # Minimum 20% load
+        
+        # CRITICAL FIX: Remove feedwater availability reduction from load demand calculation
+        # The feedwater system has automatic pump sequencing and maintenance triggers
+        # that should handle degradation without reducing steam demand
+        
+        # Only apply severe feedwater reduction for complete system failure (all pumps tripped)
+        # CRITICAL FIX: Check actual pump statuses instead of running_pumps list
+        # The running_pumps list is only populated during update_system() call
+        feedwater_pumps_available = 0
+        if hasattr(self.feedwater_system, 'pump_system') and hasattr(self.feedwater_system.pump_system, 'pumps'):
+            from systems.primary.coolant.pump_models import PumpStatus
+            for pump_id, pump in self.feedwater_system.pump_system.pumps.items():
+                if pump.state.status == PumpStatus.RUNNING and pump.state.available:
+                    feedwater_pumps_available += 1
+        
+        if feedwater_pumps_available == 0:
+            # Complete feedwater system failure - emergency load reduction only
+            load_demand_fraction = max(load_demand_fraction * 0.3, 0.2)  # Emergency reduction to 30%
+            print(f"[FEEDWATER EMERGENCY] Complete feedwater failure - emergency load reduction to {load_demand_fraction*100:.1f}%")
+        # For partial degradation, let the automatic pump systems handle it without load reduction
         
         steam_demands = {
             'load_demand_fraction': load_demand_fraction,
@@ -571,35 +742,33 @@ class SecondaryReactorPhysics:
         self.total_steam_flow = total_steam_flow
         self.total_heat_transfer = total_heat_transfer
         
-        # ENHANCED THERMAL POWER VALIDATION FOR ELECTRICAL GENERATION
-        # Calculate actual thermal power from steam generators
-        thermal_power_mw = total_heat_transfer / 1e6  # Convert to MW
-        
-        # Calculate primary thermal power from primary conditions
-        # FIXED: Support both new simplified interface (thermal_power) and old interface (inlet/outlet temps)
+        # ENERGY CONSERVATION FIX: Use primary thermal power directly instead of recalculating
+        # This eliminates the double calculation that was causing energy conservation violations
         primary_thermal_power = 0.0
         
         # Check if using new simplified interface (thermal power directly provided)
         if f'sg_1_thermal_power' in primary_conditions:
-            # NEW INTERFACE: Use directly provided thermal power
+            # NEW INTERFACE: Use directly provided thermal power (PREFERRED)
             for i in range(self.num_steam_generators):
                 sg_key = f'sg_{i+1}'
                 loop_thermal_power = primary_conditions.get(f'{sg_key}_thermal_power', 0.0)  # MW
                 primary_thermal_power += loop_thermal_power
         else:
-            # OLD INTERFACE: Calculate from temperatures and flow
+            # OLD INTERFACE: Calculate from temperatures (FALLBACK ONLY)
             for i in range(self.num_steam_generators):
                 sg_key = f'sg_{i+1}'
-                primary_inlet_temp = primary_conditions.get(f'{sg_key}_inlet_temp', 327.0)  # Use realistic default
-                primary_outlet_temp = primary_conditions.get(f'{sg_key}_outlet_temp', 293.0)  # Use realistic default
-                primary_flow = primary_conditions.get(f'{sg_key}_flow', 5700.0)  # Use realistic default
+                primary_inlet_temp = primary_conditions.get(f'{sg_key}_inlet_temp', 327.0)
+                primary_outlet_temp = primary_conditions.get(f'{sg_key}_outlet_temp', 293.0)
+                primary_flow = primary_conditions.get(f'{sg_key}_flow', 5700.0)
                 
-                # Calculate thermal power for this loop: Q = m_dot * cp * delta_T
                 if primary_flow > 0 and primary_inlet_temp > primary_outlet_temp:
                     cp_primary = 5.2  # kJ/kg/K at PWR conditions
                     delta_t = primary_inlet_temp - primary_outlet_temp
                     loop_thermal_power = primary_flow * cp_primary * delta_t / 1000.0  # MW
                     primary_thermal_power += loop_thermal_power
+        
+        # USE PRIMARY THERMAL POWER FOR ALL CALCULATIONS (Single source of truth)
+        thermal_power_mw = primary_thermal_power  # No more secondary recalculation
         
         # ENERGY CONSERVATION APPROACH: Calculate total system heat rejection
         # Use the first law of thermodynamics: Energy In = Energy Out
@@ -640,10 +809,11 @@ class SecondaryReactorPhysics:
         MIN_TEMPERATURE_DELTA = 5.0        # Minimum primary-secondary temp difference (°C)
         
         # Calculate average primary-secondary temperature difference
+        # FIXED: Use the same temperature source as the steam generators (enhanced_primary_conditions)
         avg_primary_temp = 0.0
         for i in range(self.num_steam_generators):
-            sg_key = f'sg_{i+1}'
-            primary_inlet_temp = primary_conditions.get(f'{sg_key}_inlet_temp', 0.0)
+            # Use enhanced_primary_conditions which has the correct temperatures
+            primary_inlet_temp = enhanced_primary_conditions['inlet_temps'][i]
             avg_primary_temp += primary_inlet_temp
         avg_primary_temp /= self.num_steam_generators if self.num_steam_generators > 0 else 1
         
@@ -693,10 +863,11 @@ class SecondaryReactorPhysics:
         if actual_feedwater_flow < MIN_FEEDWATER_FLOW_KGS:
             power_reduction_factor = 0.0  # Complete shutdown for no feedwater
             power_reduction_reasons.append(f"FEEDWATER_FLOW_TOO_LOW: {actual_feedwater_flow:.1f} kg/s < {MIN_FEEDWATER_FLOW_KGS} kg/s")
+            '''
             print(f"[SECONDARY DEBUG] ELECTRICAL POWER REDUCTION: Complete shutdown due to insufficient feedwater flow")
             print(f"[SECONDARY DEBUG]   Actual feedwater flow: {actual_feedwater_flow:.1f} kg/s")
             print(f"[SECONDARY DEBUG]   Minimum required: {MIN_FEEDWATER_FLOW_KGS} kg/s")
-        
+            '''
         # Check other critical operating conditions only if feedwater is available
         if power_reduction_factor > 0.0:
             # Only apply severe reductions for safety-critical conditions
@@ -1156,15 +1327,23 @@ class SecondaryReactorPhysics:
                     pump.state.power_consumption = 0.0
             
             # Now start the required pumps using proper startup sequence
-            # This will transition them from STOPPED -> STARTING -> RUNNING
+            # For steady-state initialization, bypass dynamics and go directly to RUNNING
             for i in range(pumps_to_start):
                 pump_id = pump_ids[i]
                 pump = pump_system.pumps[pump_id]
                 
-                # Use proper startup method - this will put pump in STARTING state
-                success = pump.start_pump()
-                if not success:
-                    print(f"Warning: Failed to start pump {pump_id} during equilibrium initialization")
+                # CRITICAL FIX: For steady-state initialization, bypass startup dynamics
+                # This represents a plant that's already at operating conditions
+                from systems.primary.coolant.pump_models import PumpStatus
+                
+                # Set pump directly to RUNNING state with proper conditions
+                pump.state.status = PumpStatus.RUNNING
+                pump.state.available = True
+                pump.state.auto_control = True
+                pump.state.trip_active = False
+                pump.state.trip_reason = ""
+                
+                print(f"Pump {pump_id} initialized directly to RUNNING state for steady-state operation")
             
             # Initialize system state (will be updated properly on first update cycle)
             pump_system.running_pumps = []  # Will be populated during first update
