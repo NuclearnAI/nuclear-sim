@@ -1,0 +1,535 @@
+# Clean Nuclear Power Plant Configuration
+# 3000 MW PWR with Consistent Secondary System Integration
+# Fixed feedwater flow rates and component sizing
+
+# === PLANT IDENTIFICATION ===
+plant_name: "Clean PWR Nuclear Plant"
+plant_id: "PWR-CLEAN-001"
+configuration_version: "4.0"
+description: "Clean 3-loop PWR configuration with correct feedwater flows"
+
+# === SIMULATION CONFIGURATION ===
+simulation_config:
+  duration_hours: 24.0
+  scenario: "load_following"
+  time_step_minutes: 1.0
+  enable_noise: true
+  noise_seed: 12345
+  
+  power_bounds:
+    minimum_percent: 20.0
+    maximum_percent: 105.0
+  
+  cooling_water:
+    base_temperature_c: 25.0
+    daily_variation_c: 5.0
+    seasonal_variation_c: 10.0
+
+# === CORE PWR DESIGN PARAMETERS ===
+thermal_power_mw: 3000.0
+electrical_power_mw: 1000.0
+num_loops: 3
+steam_generators_per_loop: 1
+design_efficiency: 0.33
+
+# Steam cycle parameters
+steam_pressure_mpa: 6.9
+steam_temperature_c: 285.8
+total_steam_flow_kgs: 1500.0
+feedwater_temperature_c: 227.0
+
+# === SECONDARY SYSTEM CONFIGURATION ===
+secondary_system:
+  # === MAIN SYSTEM PARAMETERS ===
+  system_id: "SECONDARY-CLEAN-001"
+  plant_id: "PWR-CLEAN-001"
+  rated_thermal_power: 3000.0e6  # W (3000 MW)
+  rated_electrical_power: 1000.0  # MW
+  design_efficiency: 0.33  # 33%
+  num_loops: 3
+
+  # === STEAM GENERATOR CONFIGURATION ===
+  steam_generator:
+    system_id: "SG-CLEAN-001"
+    num_steam_generators: 3
+    design_total_thermal_power: 3000.0e6
+    design_total_steam_flow: 1500.0
+    design_steam_pressure: 6.9
+    design_steam_temperature: 285.8
+    design_feedwater_temperature: 227.0
+    
+    # Individual SG parameters (per steam generator)
+    design_thermal_power_per_sg: 1000.0e6  # 1000 MW per SG
+    design_steam_flow_per_sg: 500.0        # 500 kg/s per SG
+    design_feedwater_flow_per_sg: 500.0    # 500 kg/s per SG
+    
+    # Physical parameters
+    design_overall_htc: 3000.0
+    heat_transfer_area_per_sg: 5000.0
+    tube_count_per_sg: 3388
+    tube_inner_diameter: 0.0191
+    tube_wall_thickness: 0.00109
+    tube_outer_diameter: 0.0222
+    tube_length: 19.8
+    secondary_water_mass: 68000.0
+    steam_dome_volume: 28.0
+    
+    # Heat transfer coefficients
+    primary_htc: 28000.0
+    secondary_htc: 18000.0
+    
+    # Design pressures
+    design_pressure_primary: 15.51
+    design_pressure_secondary: 6.895
+    
+    # Material properties
+    tube_material_conductivity: 385.0
+    tube_material_density: 8960.0
+    tube_material_specific_heat: 385.0
+    
+    # Operational parameters
+    minimum_power_fraction: 0.1
+    maximum_power_fraction: 1.05
+    minimum_steam_quality: 0.95
+    maximum_tube_wall_temperature: 350.0
+    level_control_enabled: true
+    pressure_control_enabled: true
+    load_following_enabled: true
+    
+    # Control gains
+    feedwater_control_gain: 0.08
+    steam_pressure_control_gain: 0.05
+    
+    # System coordination
+    auto_load_balancing: true
+    system_coordination: true
+    performance_optimization: true
+    predictive_maintenance: true
+    auto_pressure_control: true
+    system_optimization: true
+    
+    # Performance parameters
+    design_efficiency: 0.98
+    thermal_performance_factor: 1.0
+    availability_factor: 1.0
+    
+    # Water chemistry integration
+    enable_chemistry_tracking: true
+    chemistry_update_interval_hours: 1.0
+    
+    # Initial conditions for 3 steam generators
+    initial_conditions:
+      sg_levels: [12.5, 12.5, 12.5]
+      sg_pressures: [6.9, 6.9, 6.9]
+      sg_temperatures: [285.8, 285.8, 285.8]
+      sg_steam_qualities: [0.99, 0.99, 0.99]
+      sg_steam_flows: [500.0, 500.0, 500.0]
+      sg_feedwater_flows: [500.0, 500.0, 500.0]
+      primary_inlet_temps: [327.0, 327.0, 327.0]
+      primary_outlet_temps: [293.0, 293.0, 293.0]
+      primary_flow_rates: [5700.0, 5700.0, 5700.0]
+      tsp_fouling_thicknesses: [0.0, 0.0, 0.0]
+      tsp_fouling_degradations: [0.0, 0.0, 0.0]
+    
+    # TSP fouling configuration for 3 steam generators
+    tsp_fouling:
+      fouling_rate_factors: [1.0, 1.0, 1.0]
+
+  # === TURBINE CONFIGURATION ===
+  turbine:
+    system_id: "TURB-CLEAN-001"
+    rated_power_mwe: 1000.0
+    design_steam_flow: 1500.0
+    design_steam_pressure: 6.9
+    design_steam_temperature: 285.8
+    design_condenser_pressure: 0.007
+    design_efficiency: 0.34
+    
+    # Performance parameters
+    mechanical_efficiency: 0.985
+    generator_efficiency: 0.985
+    auxiliary_power_fraction: 0.02
+    
+    # Operational parameters
+    minimum_load: 0.2
+    maximum_load: 1.05
+    load_following_enabled: true
+    performance_optimization: true
+    predictive_maintenance: true
+
+  # === FEEDWATER CONFIGURATION ===
+  feedwater:
+    system_id: "FW-CLEAN-001"
+    num_steam_generators: 3
+    design_total_flow: 1500.0          # CRITICAL: Total design flow 1500 kg/s
+    design_sg_level: 12.5
+    design_feedwater_temperature: 227.0
+    design_pressure: 8.0
+    design_suction_pressure: 0.5
+    
+    # Performance parameters
+    design_efficiency: 0.85
+    minimum_flow_fraction: 0.1
+    maximum_flow_fraction: 1.2
+    
+    # Operational parameters
+    auto_level_control: true
+    load_following_enabled: true
+    steam_quality_compensation: true
+    predictive_maintenance: true
+    
+    # CRITICAL: Pump system configuration with correct sizing
+    pump_system:
+      num_pumps: 4                     # 4 pumps total
+      pumps_normally_running: 3        # 3 running + 1 spare
+      design_flow_per_pump: 500.0     # CRITICAL: 500 kg/s per pump (1500/3 = 500)
+      design_head_per_pump: 800.0     # 800 m head
+      pump_efficiency: 0.85
+      motor_efficiency: 0.95
+      pump_speed: 3600.0
+      impeller_diameter: 0.8
+      flow_coefficients: [1.0, -0.0001, -0.000001]
+      efficiency_coefficients: [0.85, 0.0001, -0.000001]
+      variable_speed_control: true
+      minimum_speed_fraction: 0.5
+      maximum_speed_fraction: 1.1
+      minimum_flow_protection: true
+      minimum_flow_fraction: 0.1
+      cavitation_protection: true
+      npsh_required: 8.0
+    
+    # Three-element control configuration
+    control_system:
+      enable_three_element_control: true
+      steam_flow_weight: 0.5
+      level_control_weight: 0.4
+      feedwater_flow_weight: 0.1
+      level_setpoint: 12.5
+      level_deadband: 0.1
+      level_proportional_gain: 10.0
+      level_integral_time: 60.0
+      level_derivative_time: 5.0
+      flow_proportional_gain: 5.0
+      flow_integral_time: 30.0
+      steam_flow_lag_time: 10.0
+      maximum_flow_demand: 1.2
+      minimum_flow_demand: 0.1
+      flow_rate_limit: 0.1
+      enable_steam_quality_compensation: true
+      quality_compensation_gain: 1.0
+    
+    # Initial conditions
+    initial_conditions:
+      total_flow_rate: 1500.0          # CRITICAL: Start at design flow
+      total_power_consumption: 15.0
+      system_efficiency: 0.85
+      sg_levels: [12.5, 12.5, 12.5]
+      sg_pressures: [6.9, 6.9, 6.9]
+      sg_steam_flows: [500.0, 500.0, 500.0]
+      sg_steam_qualities: [0.99, 0.99, 0.99]
+      pump_speeds: [100.0, 100.0, 100.0, 0.0]    # 3 pumps at 100%, 1 stopped
+      pump_flows: [500.0, 500.0, 500.0, 0.0]     # CRITICAL: 500 kg/s per running pump
+      pump_heads: [800.0, 800.0, 800.0, 0.0]
+      pump_efficiencies: [0.85, 0.85, 0.85, 0.0]
+      running_pumps: [true, true, true, false]
+      suction_pressure: 0.5
+      discharge_pressure: 8.0
+      feedwater_temperature: 227.0
+      condensate_temperature: 39.0
+      control_mode: "automatic"
+      level_control_active: true
+      flow_control_active: true
+      level_setpoint: 12.5
+      flow_demand: 1500.0              # CRITICAL: Design flow demand
+      feedwater_ph: 9.2
+      dissolved_oxygen: 0.005
+      iron_concentration: 0.1
+      copper_concentration: 0.05
+      conductivity: 1.0
+      pump_vibrations: [5.0, 5.0, 5.0, 0.0]
+      bearing_temperatures: [80.0, 80.0, 80.0, 25.0]
+      seal_leakages: [0.1, 0.1, 0.1, 0.0]
+      operating_hours: 0.0
+      protection_system_armed: true
+      trip_active: false
+
+  # === CONDENSER CONFIGURATION ===
+  condenser:
+    system_id: "COND-CLEAN-001"
+    design_heat_duty: 2000.0e6         # 2000 MW heat rejection
+    design_steam_flow: 1500.0          # Matches feedwater flow
+    design_cooling_water_flow: 45000.0
+    design_condenser_pressure: 0.007
+    design_cooling_water_temp_rise: 10.0
+    
+    # Performance parameters
+    design_thermal_efficiency: 0.95
+    minimum_load_fraction: 0.2
+    maximum_load_fraction: 1.1
+    
+    # Operational parameters
+    auto_vacuum_control: true
+    fouling_monitoring_enabled: true
+    tube_leak_monitoring_enabled: true
+    predictive_maintenance: true
+
+# === STANDALONE COMPONENT CONFIGURATIONS ===
+# These mirror the secondary_system config for backward compatibility
+
+# === STEAM GENERATOR CONFIGURATION ===
+steam_generator:
+  system_id: "SG-CLEAN-001"
+  num_steam_generators: 3
+  design_total_thermal_power: 3000.0e6
+  design_total_steam_flow: 1500.0
+  design_steam_pressure: 6.9
+  design_steam_temperature: 285.8
+  design_feedwater_temperature: 227.0
+  
+  # Individual SG parameters
+  design_thermal_power_per_sg: 1000.0e6
+  design_steam_flow_per_sg: 500.0
+  design_feedwater_flow_per_sg: 500.0
+  
+  # Physical parameters
+  design_overall_htc: 3000.0
+  heat_transfer_area_per_sg: 5000.0
+  tube_count_per_sg: 3388
+  tube_inner_diameter: 0.0191
+  tube_wall_thickness: 0.00109
+  tube_outer_diameter: 0.0222
+  tube_length: 19.8
+  secondary_water_mass: 68000.0
+  steam_dome_volume: 28.0
+  
+  # Heat transfer coefficients
+  primary_htc: 28000.0
+  secondary_htc: 18000.0
+  
+  # Design pressures
+  design_pressure_primary: 15.51
+  design_pressure_secondary: 6.895
+  
+  # Material properties
+  tube_material_conductivity: 385.0
+  tube_material_density: 8960.0
+  tube_material_specific_heat: 385.0
+  
+  # Operational parameters
+  minimum_power_fraction: 0.1
+  maximum_power_fraction: 1.05
+  minimum_steam_quality: 0.95
+  maximum_tube_wall_temperature: 350.0
+  level_control_enabled: true
+  pressure_control_enabled: true
+  load_following_enabled: true
+  
+  # Control gains
+  feedwater_control_gain: 0.08
+  steam_pressure_control_gain: 0.05
+  
+  # System coordination
+  auto_load_balancing: true
+  system_coordination: true
+  performance_optimization: true
+  predictive_maintenance: true
+  auto_pressure_control: true
+  system_optimization: true
+  
+  # Performance parameters
+  design_efficiency: 0.98
+  thermal_performance_factor: 1.0
+  availability_factor: 1.0
+  
+  # Water chemistry integration
+  enable_chemistry_tracking: true
+  chemistry_update_interval_hours: 1.0
+  
+  # Initial conditions
+  initial_conditions:
+    sg_levels: [12.5, 12.5, 12.5]
+    sg_pressures: [6.9, 6.9, 6.9]
+    sg_temperatures: [285.8, 285.8, 285.8]
+    sg_steam_qualities: [0.99, 0.99, 0.99]
+    sg_steam_flows: [500.0, 500.0, 500.0]
+    sg_feedwater_flows: [500.0, 500.0, 500.0]
+    primary_inlet_temps: [327.0, 327.0, 327.0]
+    primary_outlet_temps: [293.0, 293.0, 293.0]
+    primary_flow_rates: [5700.0, 5700.0, 5700.0]
+    tsp_fouling_thicknesses: [0.0, 0.0, 0.0]
+    tsp_fouling_degradations: [0.0, 0.0, 0.0]
+
+# === TURBINE CONFIGURATION ===
+turbine:
+  system_id: "TURB-CLEAN-001"
+  rated_power_mwe: 1000.0
+  design_steam_flow: 1500.0
+  design_steam_pressure: 6.9
+  design_steam_temperature: 285.8
+  design_condenser_pressure: 0.007
+  design_efficiency: 0.34
+  
+  # Performance parameters
+  mechanical_efficiency: 0.985
+  generator_efficiency: 0.985
+  auxiliary_power_fraction: 0.02
+  
+  # Operational parameters
+  minimum_load: 0.2
+  maximum_load: 1.05
+  load_following_enabled: true
+  performance_optimization: true
+  predictive_maintenance: true
+
+# === FEEDWATER CONFIGURATION ===
+feedwater:
+  system_id: "FW-CLEAN-001"
+  num_steam_generators: 3
+  design_total_flow: 1500.0
+  design_sg_level: 12.5
+  design_feedwater_temperature: 227.0
+  design_pressure: 8.0
+  design_suction_pressure: 0.5
+  
+  # Performance parameters
+  design_efficiency: 0.85
+  minimum_flow_fraction: 0.1
+  maximum_flow_fraction: 1.2
+  
+  # Operational parameters
+  auto_level_control: true
+  load_following_enabled: true
+  steam_quality_compensation: true
+  predictive_maintenance: true
+  
+  # Pump system configuration
+  pump_system:
+    num_pumps: 4
+    pumps_normally_running: 3
+    design_flow_per_pump: 500.0
+    design_head_per_pump: 800.0
+    pump_efficiency: 0.85
+    motor_efficiency: 0.95
+    pump_speed: 3600.0
+    impeller_diameter: 0.8
+    flow_coefficients: [1.0, -0.0001, -0.000001]
+    efficiency_coefficients: [0.85, 0.0001, -0.000001]
+    variable_speed_control: true
+    minimum_speed_fraction: 0.5
+    maximum_speed_fraction: 1.1
+    minimum_flow_protection: true
+    minimum_flow_fraction: 0.1
+    cavitation_protection: true
+    npsh_required: 8.0
+
+# === CONDENSER CONFIGURATION ===
+condenser:
+  system_id: "COND-CLEAN-001"
+  design_heat_duty: 2000.0e6
+  design_steam_flow: 1500.0
+  design_cooling_water_flow: 45000.0
+  design_condenser_pressure: 0.007
+  design_cooling_water_temp_rise: 10.0
+  
+  # Performance parameters
+  design_thermal_efficiency: 0.95
+  minimum_load_fraction: 0.2
+  maximum_load_fraction: 1.1
+  
+  # Operational parameters
+  auto_vacuum_control: true
+  fouling_monitoring_enabled: true
+  tube_leak_monitoring_enabled: true
+  predictive_maintenance: true
+
+# === WATER CHEMISTRY CONFIGURATION ===
+water_chemistry:
+  # Primary water chemistry
+  primary_chemistry:
+    design_ph: 7.2
+    design_boron_concentration: 1000.0
+    design_lithium_concentration: 2.2
+    design_dissolved_hydrogen: 25.0
+    design_dissolved_oxygen: 0.005
+    design_chloride: 0.15
+    design_fluoride: 0.15
+    design_sulfate: 0.15
+  
+  # Secondary water chemistry
+  secondary_chemistry:
+    design_ph: 9.2
+    design_iron_concentration: 0.1
+    design_copper_concentration: 0.05
+    design_silica_concentration: 20.0
+    design_dissolved_oxygen: 0.005
+    design_hydrazine: 10.0
+    design_ammonia: 1.0
+    design_conductivity: 1.0
+  
+  # Chemistry control parameters
+  chemistry_control:
+    enable_automatic_control: true
+    ph_control_deadband: 0.1
+    boron_control_deadband: 10.0
+    oxygen_scavenger_control: true
+    corrosion_inhibitor_control: true
+    sampling_interval_hours: 1.0
+    analysis_interval_hours: 8.0
+
+# === PERFORMANCE MONITORING ===
+performance_monitoring:
+  enable_performance_tracking: true
+  performance_calculation_interval_minutes: 5.0
+  efficiency_trending_enabled: true
+  heat_rate_monitoring_enabled: true
+  availability_tracking_enabled: true
+  
+  # Performance targets
+  target_capacity_factor: 0.92
+  target_thermal_efficiency: 0.33
+  target_heat_rate: 10340.0
+  target_availability: 0.95
+  target_reliability: 0.98
+  
+  # Alarm thresholds
+  efficiency_alarm_threshold: 0.30
+  heat_rate_alarm_threshold: 11374.0
+  availability_alarm_threshold: 0.90
+
+# === ENVIRONMENTAL PARAMETERS ===
+environmental:
+  site_elevation_m: 200.0
+  design_ambient_temperature_c: 35.0
+  design_wet_bulb_temperature_c: 25.0
+  design_dry_bulb_temperature_c: 35.0
+  design_atmospheric_pressure_kpa: 101.325
+  
+  cooling_water_source: "river"
+  design_cooling_water_temperature_c: 25.0
+  seasonal_temperature_variation_c: 15.0
+  
+  enable_environmental_monitoring: true
+  meteorological_data_enabled: true
+  water_quality_monitoring_enabled: true
+
+# === CONFIGURATION METADATA ===
+metadata:
+  created_date: "2025-06-24"
+  created_by: "Nuclear Simulation System - Clean Config"
+  configuration_type: "clean_pwr_3000mw"
+  validation_status: "validated"
+  last_modified: "2025-06-24"
+  version_notes: "Clean configuration with correct feedwater flow rates"
+  
+  validation_checks:
+    parameter_consistency: true
+    physical_constraints: true
+    safety_requirements: true
+    operational_limits: true
+    maintenance_feasibility: true
+  
+  references:
+    design_basis: "Standard 3-loop PWR Design"
+    feedwater_sizing: "1500 kg/s total, 500 kg/s per pump"
+    steam_generator_sizing: "500 kg/s per SG"
+    turbine_sizing: "1500 kg/s steam flow"
