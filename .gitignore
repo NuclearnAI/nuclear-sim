@@ -15,7 +15,7 @@ runs/
 # Generated configs and simulation data in data_gen
 data_gen/generated_configs/
 data_gen/simulation_runs/
-
+simulation_runs
 sim_env
 examples
 .DS_Store
