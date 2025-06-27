@@ -1,6 +1,7 @@
 # Comprehensive Nuclear Power Plant Configuration
 # 3000 MW PWR with Full Secondary System Integration
 # Demonstrates all configuration capabilities of the nuclear simulation system
+# CLEANED VERSION - Removed duplicate standalone component sections
 
 # === PLANT IDENTIFICATION ===
 plant_name: "Comprehensive PWR Nuclear Plant"
@@ -13,7 +14,7 @@ simulation_config:
   # Primary simulation parameters
   duration_hours: 24.0
   scenario: "load_following_with_maintenance"
-  time_step_minutes: 1.0
+  time_step_minutes: 10.0
   
   # Environment settings
   enable_noise: true
@@ -160,18 +161,25 @@ secondary_system:
     chemistry_update_interval_hours: 1.0
     
     # Initial conditions for 3 steam generators
+    # CLEANED VERSION - Only parameters that map to actual physics model state variables
     initial_conditions:
-      sg_levels: [12.5, 12.5, 12.5]
-      sg_pressures: [6.9, 6.9, 6.9]
-      sg_temperatures: [285.8, 285.8, 285.8]
-      sg_steam_qualities: [0.99, 0.99, 0.99]
-      sg_steam_flows: [500.0, 500.0, 500.0]
-      sg_feedwater_flows: [500.0, 500.0, 500.0]
-      primary_inlet_temps: [327.0, 327.0, 327.0]
-      primary_outlet_temps: [293.0, 293.0, 293.0]
-      primary_flow_rates: [5700.0, 5700.0, 5700.0]
-      tsp_fouling_thicknesses: [0.0, 0.0, 0.0]
-      tsp_heat_transfer_degradations: [0.0, 0.0, 0.0]
+      # Basic SG operational parameters (map to SteamGenerator class state)
+      sg_levels: [12.5, 12.5, 12.5]                    # → water_level
+      sg_pressures: [6.9, 6.9, 6.9]                    # → secondary_pressure
+      sg_temperatures: [285.8, 285.8, 285.8]           # → secondary_temperature
+      sg_steam_qualities: [0.99, 0.99, 0.99]           # → steam_quality
+      sg_steam_flows: [500.0, 500.0, 500.0]            # → steam_flow_rate
+      sg_feedwater_flows: [500.0, 500.0, 500.0]        # → feedwater_flow_rate
+      primary_inlet_temps: [327.0, 327.0, 327.0]       # → primary_inlet_temp
+      primary_outlet_temps: [293.0, 293.0, 293.0]      # → primary_outlet_temp
+      primary_flow_rates: [5700.0, 5700.0, 5700.0]     # → primary flow parameter
+      
+      # TSP fouling parameters (map to TSPFoulingModel class state)
+      tsp_fouling_thicknesses: [0.0, 0.0, 0.0]         # → deposits.get_total_thickness()
+      tsp_heat_transfer_degradations: [0.0, 0.0, 0.0]  # → heat_transfer_degradation
+      
+      # Heat transfer parameters (map to SteamGenerator class state)
+      tube_wall_temperature: [300.0, 300.0, 300.0]     # → tube_wall_temp
     
     # TSP fouling configuration for 3 steam generators
     tsp_fouling:
@@ -198,6 +206,183 @@ secondary_system:
     load_following_enabled: true
     performance_optimization: true
     predictive_maintenance: true
+    
+    # Complete initial conditions matching TurbineInitialConditions dataclass
+    initial_conditions:
+      # Rotor conditions
+      rotor_speed: 3600.0                           # RPM initial rotor speed
+      rotor_acceleration: 0.0                       # RPM/s initial acceleration
+      rotor_temperature: 350.0                      # °C initial rotor temperature - REDUCED to prevent thermal expansion trips
+      
+      # Load conditions
+      load_demand: 1.0                              # Initial load demand (0-1)
+      electrical_power_output: 1000.0               # MW initial electrical power
+      mechanical_power_output: 1015.0               # MW initial mechanical power
+      
+      # Steam conditions
+      steam_inlet_pressure: 6.9                     # MPa steam inlet pressure
+      steam_inlet_temperature: 285.8                # °C steam inlet temperature
+      steam_inlet_flow: 1500.0                      # kg/s steam inlet flow
+      steam_quality: 0.99                           # Steam quality
+      
+      # Extraction conditions
+      extraction_pressures:
+        HP-3: 1.5
+        HP-4: 1.2
+        HP-5: 1.0
+        LP-1: 0.3
+        LP-2: 0.1
+      
+      extraction_temperatures:
+        HP-3: 200.0
+        HP-4: 185.0
+        HP-5: 180.0
+        LP-1: 120.0
+        LP-2: 80.0
+      
+      # Governor and control
+      governor_valve_position: 100.0                # % governor valve position
+      control_valve_positions: [100.0, 100.0, 100.0, 100.0]
+      
+      # Bearing conditions (4 bearings) - SAFETY: Reduced temps to prevent thrust bearing displacement trips
+      bearing_temperatures: [70.0, 68.0, 72.0, 69.0]  # °C - Reduced from 80°C to prevent thermal expansion trips
+      bearing_vibrations: [5.0, 5.0, 5.0, 5.0]        # mils - Keep low vibrations
+      bearing_oil_pressures: [0.2, 0.2, 0.2, 0.2]  # MPa
+      
+      # Extended Bearing Parameters
+      bearing_clearances: [0.05, 0.05, 0.05, 0.05]  # mm bearing clearances
+      bearing_oil_flow: [1.0, 1.0, 1.0, 1.0]        # Fraction of design flow
+      bearing_wear: [0.3, 0.3, 0.3, 0.3]            # Fraction of life used
+      bearing_metal_temperature: [75.0, 75.0, 75.0, 75.0]  # °C metal temperature
+      bearing_eccentricity: [0.4, 0.4, 0.4, 0.4]    # Bearing eccentricity fraction
+      shaft_position: [0.02, 0.02, 0.02, 0.02]      # mm from center
+      bearing_misalignment: [0.03, 0.03, 0.03, 0.03]  # mm misalignment
+      shaft_runout: [0.02, 0.02, 0.02, 0.02]        # mm shaft runout
+      coupling_offset: [0.02, 0.02, 0.02, 0.02]     # mm coupling offset
+      bearing_load_distribution: [0.9, 0.9, 0.9, 0.9]  # Load uniformity index
+      
+      # Thrust Bearing Parameters
+      thrust_bearing_temperature: 75.0              # °C thrust bearing temperature
+      thrust_bearing_displacement: 15.0             # mm displacement (well below 50mm trip)
+      axial_position: 0.02                          # mm from nominal position
+      thrust_load: 500.0                            # kN thrust load
+      
+      # Lubrication system conditions
+      oil_contamination: 5.0                        # ppm oil contamination level
+      oil_level: 100.0                              # % oil level
+      oil_temperature: 45.0                         # °C oil temperature
+      
+      # Extended Oil & Lubrication Parameters
+      oil_viscosity: 32.0                           # cSt oil viscosity
+      oil_acid_number: 0.5                          # mg KOH/g acid number
+      oil_water_content: 0.02                       # % water content
+      oil_consumption_rate: [0.3, 0.3, 0.3, 0.3]   # L/day consumption rate
+      filter_pressure_drop: 0.1                     # MPa filter pressure drop
+      filter_contamination: 30.0                    # % filter capacity used
+      filter_bypass_flow: 0.05                      # % bypass flow
+      cooler_effectiveness: 0.9                     # Heat transfer effectiveness
+      cooling_water_temperature_rise: 10.0          # °C temperature rise
+      fouling_factor: 0.1                           # m²K/W fouling factor
+      oil_pressure: 0.25                            # MPa oil pressure
+      oil_flow_rate: 1.0                            # Fraction of design flow
+      pump_efficiency: 0.9                          # Oil pump efficiency
+      system_response_time: 1.5                     # seconds response time
+      
+      # Rotor & Vibration Parameters
+      rotor_vibration: 8.0                          # mils rotor vibration
+      rotor_expansion: 8.0                          # mm thermal expansion
+      blade_tip_clearance: 0.5                      # mm blade tip clearance
+      rotor_bow: 0.03                               # mm rotor bow
+      thermal_gradient: 15.0                        # °C/m thermal gradient
+      startup_vibration: 12.0                       # mils startup vibration
+      critical_speed_shift: 0.02                    # % critical speed shift
+      critical_speed_1: 1800.0                      # rpm first critical speed
+      critical_speed_2: 3600.0                      # rpm second critical speed
+      resonance_amplitude: 8.0                      # mils resonance amplitude
+      damping_ratio: 0.12                           # Damping ratio
+      
+      # Overspeed & Protection Parameters
+      overspeed_trip_setting: 3600.0                # rpm overspeed trip setting
+      governor_response_time: 0.1                   # seconds governor response
+      trip_valve_closure_time: 0.05                 # seconds trip valve closure
+      
+      # Vibration Monitoring Parameters
+      sensor_drift: 0.3                             # % sensor drift
+      sensor_sensitivity: 0.98                      # Fraction of specification
+      frequency_response: 0.95                      # Fraction of specification
+      
+      # Dynamic Balancing Parameters
+      rotor_unbalance: 80.0                         # g·mm rotor unbalance
+      vibration_1x: 8.0                             # mils at 1x frequency
+      vibration_2x: 4.0                             # mils at 2x frequency
+      phase_angle: 45.0                             # degrees phase angle
+      overall_vibration: 10.0                       # mils overall vibration
+      casing_vibrations: 6.0                        # mils casing vibration
+      frequency_spectrum: 0.9                       # Spectral content index
+      
+      # Performance & Efficiency Parameters
+      heat_rate: 10500.0                            # kJ/kWh heat rate
+      steam_consumption: 1.0                        # Fraction of design
+      power_output: 1.0                             # Fraction of rated power
+      isentropic_efficiency: 0.9                    # Isentropic efficiency
+      mechanical_efficiency: 0.985                  # Mechanical efficiency
+      generator_efficiency: 0.985                   # Generator efficiency
+      
+      # System performance conditions
+      total_power_output: 1000.0                    # MW total power output
+      overall_efficiency: 0.34                      # Overall efficiency
+      
+      # Protection System Parameters
+      trip_system_response: 0.08                    # seconds trip response
+      protection_logic_integrity: 0.98              # Protection logic integrity
+      sensor_redundancy: 0.95                       # Available sensor redundancy
+      
+      # Thermal Stress Parameters
+      thermal_stress: 120.0                         # MPa thermal stress
+      temperature_gradient: 15.0                    # °C/cm temperature gradient
+      thermal_fatigue_cycles: 5000                  # Thermal fatigue cycles
+      creep_strain: 0.02                            # % creep strain
+      
+      # System Optimization Parameters
+      system_efficiency: 0.95                       # Overall system efficiency
+      heat_balance: 0.98                            # Heat balance closure
+      performance_degradation: 0.05                 # % degradation from new
+      optimization_potential: 0.1                   # % improvement potential
+      
+      # Blade Parameters
+      blade_vibration: 6.0                          # mils blade vibration
+      blade_temperature: 450.0                      # °C blade temperature
+      blade_stress: 100.0                           # MPa blade stress
+      blade_wear: 0.2                               # Fraction of blade life used
+      blade_cracking: 0.05                          # Crack density index
+      blade_erosion: 0.1                            # mm material loss
+      blade_efficiency_loss: 0.03                   # Efficiency reduction
+      
+      # Governor System Parameters
+      speed_regulation: 0.04                        # % speed droop
+      load_rejection_response: 0.15                 # seconds load rejection response
+      control_valve_position: 0.9                   # Fraction valve open
+      
+      # Vacuum System Parameters
+      turbine_back_pressure: 0.007                  # MPa back pressure
+      condenser_vacuum: 0.9                         # Fraction of perfect vacuum
+      air_ejector_performance: 0.95                 # Air ejector efficiency
+      
+      # Startup/Shutdown Parameters
+      warmup_time: 90.0                             # minutes warmup time
+      thermal_stress_rate: 2.0                      # °C/min thermal stress rate
+      synchronization_time: 5.0                     # minutes synchronization time
+      cooldown_rate: 1.2                            # °C/min cooldown rate
+      turning_gear_engagement: 1.5                  # minutes turning gear time
+      residual_vibration: 3.0                       # mils residual vibration
+      
+      # Thermal conditions
+      casing_temperatures: [380.0, 360.0, 340.0, 320.0, 300.0, 280.0]
+      blade_temperatures: [500.0, 480.0, 460.0, 440.0, 420.0, 400.0, 380.0, 360.0, 340.0, 320.0, 300.0, 280.0, 260.0, 240.0]
+      
+      # Protection system
+      protection_system_armed: true                 # Protection system status
+      trip_active: false                            # Trip status
 
   # === FEEDWATER CONFIGURATION ===
   feedwater:
@@ -220,12 +405,123 @@ secondary_system:
     steam_quality_compensation: true
     predictive_maintenance: true
     
-    # Initial conditions for 3 steam generators
+    # Initial conditions for 3 steam generators and 4 feedwater pumps
     initial_conditions:
-      sg_levels: [12.5, 12.5, 12.5]
-      sg_pressures: [6.9, 6.9, 6.9]
-      sg_steam_flows: [500.0, 500.0, 500.0]
-      sg_steam_qualities: [0.99, 0.99, 0.99]
+      # System flow conditions
+      total_flow_rate: 1500.0                 # kg/s total system flow rate
+      total_power_consumption: 15.0           # MW total power consumption
+      system_efficiency: 0.85                 # System efficiency
+      
+      # Steam generator conditions
+      sg_levels: [12.5, 12.5, 12.5]          # m SG levels
+      sg_pressures: [6.9, 6.9, 6.9]          # MPa SG pressures
+      sg_steam_flows: [500.0, 500.0, 500.0]  # kg/s steam flows
+      sg_steam_qualities: [0.99, 0.99, 0.99] # Steam qualities
+      
+      # Pump conditions
+      pump_speeds: [3600.0, 3600.0, 3600.0, 0.0]  # RPM pump speeds
+      pump_flows: [500.0, 500.0, 500.0, 0.0]      # kg/s pump flows
+      pump_heads: [800.0, 800.0, 800.0, 0.0]      # m pump heads
+      pump_efficiencies: [0.85, 0.85, 0.85, 0.0]  # Pump efficiencies
+      running_pumps: [true, true, true, false]     # Pump running status
+      
+      # System pressures and temperatures
+      suction_pressure: 0.5                   # MPa suction pressure
+      discharge_pressure: 8.0                 # MPa discharge pressure
+      feedwater_temperature: 227.0            # °C feedwater temperature
+      condensate_temperature: 39.0            # °C condensate temperature
+      
+      # Control system conditions
+      control_mode: "automatic"               # Control mode
+      level_control_active: true              # Level control status
+      flow_control_active: true               # Flow control status
+      level_setpoint: 12.5                    # m level setpoint
+      flow_demand: 1500.0                     # kg/s flow demand
+      
+      # Water quality conditions
+      feedwater_ph: 9.2                       # Feedwater pH
+      dissolved_oxygen: 0.005                 # mg/L dissolved oxygen
+      iron_concentration: 0.1                 # mg/L iron concentration
+      copper_concentration: 0.05              # mg/L copper concentration
+      conductivity: 1.0                       # µS/cm conductivity
+      
+      # Performance monitoring
+      pump_vibrations: [5.0, 5.0, 5.0, 0.0]  # mm/s pump vibrations
+      bearing_temperatures: [80.0, 80.0, 80.0, 25.0]  # °C bearing temps
+      seal_leakages: [0.1, 0.1, 0.1, 0.0]    # L/min seal leakages
+      pump_oil_levels: [100.0, 100.0, 100.0, 100.0]  # % pump oil levels
+      
+      # === EXTENDED OIL & LUBRICATION PARAMETERS ===
+      # Oil quality parameters (system-wide parameters)
+      pump_oil_contamination: 5.0             # ppm oil contamination
+      pump_oil_viscosity: 46.0                # cSt oil viscosity
+      pump_oil_water_content: 0.05            # % water content
+      pump_oil_acid_number: 1.0               # mg KOH/g acid number
+      oil_temperature: 45.0                   # °C oil temperature
+      oil_system_debris_count: 200.0          # particles/ml debris count
+      
+      # Oil filtration parameters (system-wide parameters)
+      oil_filter_pressure_drop: 0.15          # MPa filter pressure drop
+      oil_filter_contamination: 50.0          # % filter capacity used
+      
+      # Lubrication system parameters (system-wide parameter)
+      lubrication_system_pressure: 0.25       # MPa lubrication system pressure
+      oil_pressure: [0.25, 0.25, 0.25, 0.25] # MPa oil pressure per pump
+      oil_flow_rate: [1.0, 1.0, 1.0, 1.0]    # Fraction of design flow per pump
+      oil_cooler_effectiveness: [0.95, 0.95, 0.95, 0.95]  # Heat transfer effectiveness per pump
+      
+      # === EXTENDED MECHANICAL PARAMETERS ===
+      # Enhanced bearing parameters
+      bearing_vibrations: [10.0, 10.0, 10.0, 10.0]  # mm/s bearing vibrations per pump
+      bearing_wear: [0., 0., 0., 0.]     # Fraction of bearing life used per pump
+      bearing_noise_level: [70.0, 70.0, 70.0, 70.0]  # dB bearing noise per pump
+      
+      # Enhanced seal parameters
+      seal_face_wear: [0., 0., 0., 0.]   # Fraction of seal life used per pump
+      seal_temperature: [70.0, 70.0, 70.0, 70.0]  # °C seal temperature per pump
+      seal_pressure_drop: [0.0, 0.0, 0.0, 0.0]  # MPa seal pressure drop per pump
+      seal_leakage_rate: [0.0, 0.0, 0.0, 0.0]  # L/min seal leakage rate per pump
+      
+      # Enhanced impeller parameters
+      impeller_wear: [0.0, 0.0, 0.0, 0.0]    # Fraction of impeller life used per pump
+      impeller_cavitation_damage: [0.0, 0.0, 0.0, 0.0]  # Cavitation damage fraction per pump
+      impeller_vibration: [8.0, 8.0, 8.0, 8.0]  # mm/s impeller vibration per pump
+      impeller_damage: [0.0, 0.0, 0.0, 0.0]  # Impeller damage fraction per pump
+      
+      # Motor parameters
+      motor_temperature: [70.0, 70.0, 70.0, 70.0]  # °C motor temperature per pump
+      
+      # === EXTENDED PERFORMANCE & SYSTEM PARAMETERS ===
+      # Performance parameters (as fractions of design values)
+      pump_head: [1.0, 1.0, 1.0, 1.0]        # Fraction of design head per pump
+      pump_flow: [1.0, 1.0, 1.0, 1.0]        # Fraction of design flow per pump
+      pump_power: [1.0, 1.0, 1.0, 1.0]       # Fraction of design power per pump
+      
+      # NPSH and cavitation parameters
+      npsh_available: [12.0, 12.0, 12.0, 12.0]  # m NPSH available per pump
+      cavitation_inception: [1.0, 1.0, 1.0, 1.0]  # Fraction of design flow for cavitation per pump
+      cavitation_intensity: [0.05, 0.05, 0.05, 0.05]  # Cavitation intensity index per pump
+      noise_level: [75.0, 75.0, 75.0, 75.0]  # dB noise level per pump
+      
+      # === SYSTEM CHECK PARAMETERS ===
+      # Suction system parameters
+      suction_line_pressure_drop: [0.03, 0.03, 0.03, 0.03]  # MPa suction line pressure drop per pump
+      suction_strainer_dp: [0.01, 0.01, 0.01, 0.01]  # MPa suction strainer pressure drop per pump
+      suction_line_air_content: [1.0, 1.0, 1.0, 1.0]  # % air content by volume per pump
+      
+      # Discharge system parameters
+      discharge_valve_position: [1.0, 1.0, 1.0, 1.0]  # Fraction valve open per pump
+      discharge_line_vibration: [8.0, 8.0, 8.0, 8.0]  # mm/s discharge line vibration per pump
+      
+      # === COOLING SYSTEM PARAMETERS ===
+      # Cooling water parameters
+      cooling_water_temperature: [25.0, 25.0, 25.0, 25.0]  # °C cooling water temperature per pump
+      cooling_water_flow: [1.0, 1.0, 1.0, 1.0]  # Fraction of design flow per pump
+      heat_exchanger_fouling: [0.1, 0.1, 0.1, 0.1]  # Fouling factor per pump
+      
+      # Protection system
+      protection_system_armed: true            # Protection system status
+      trip_active: false                       # Trip status
 
   # === CONDENSER CONFIGURATION ===
   condenser:
@@ -246,6 +542,61 @@ secondary_system:
     fouling_monitoring_enabled: true
     tube_leak_monitoring_enabled: true
     predictive_maintenance: true
+    
+    # Initial conditions - CLEANED VERSION (only parameters used by condenser physics)
+    initial_conditions:
+      # Steam conditions
+      steam_inlet_pressure: 0.007                   # MPa steam inlet pressure
+      steam_inlet_temperature: 39.0                 # °C steam inlet temperature
+      steam_inlet_flow: 1500.0                      # kg/s steam inlet flow
+      steam_inlet_quality: 0.90                     # Steam quality at inlet
+      
+      # Condensate conditions
+      condensate_temperature: 39.0                  # °C condensate temperature
+      condensate_flow: 1500.0                       # kg/s condensate flow
+      condensate_subcooling: 0.0                    # °C condensate subcooling
+      
+      # Cooling water conditions
+      cooling_water_inlet_temp: 25.0                # °C cooling water inlet temperature
+      cooling_water_outlet_temp: 35.0               # °C cooling water outlet temperature
+      cooling_water_flow: 45000.0                   # kg/s cooling water flow
+      cooling_water_velocity: 2.0                   # m/s cooling water velocity
+      
+      # Heat transfer conditions
+      heat_rejection_rate: 2000.0e6                 # W heat rejection rate
+      overall_htc: 3000.0                           # W/m²/K overall heat transfer coefficient
+      lmtd: 10.0                                    # °C log mean temperature difference
+      thermal_performance_factor: 1.0               # Thermal performance factor
+      
+      # Vacuum system conditions
+      condenser_pressure: 0.007                     # MPa condenser pressure
+      air_partial_pressure: 0.0005                  # MPa air partial pressure
+      air_removal_rate: 0.1                         # kg/s air removal rate
+      vacuum_steam_consumption: 0.3                 # kg/s vacuum steam consumption
+      
+      # Tube conditions
+      active_tube_count: 84000                      # Active tube count
+      plugged_tube_count: 0                         # Plugged tube count
+      average_wall_thickness: 0.00159               # m average wall thickness
+      tube_leak_rate: 0.0                           # kg/s tube leak rate
+      
+      # Fouling conditions
+      biofouling_thickness: 0.0                     # mm biofouling thickness
+      scale_thickness: 0.0                          # mm scale thickness
+      corrosion_thickness: 0.0                      # mm corrosion product thickness
+      total_fouling_resistance: 0.0                 # m²K/W total fouling resistance
+      time_since_cleaning: 0.0                      # hours since last cleaning
+      
+      # Water quality conditions
+      water_ph: 7.5                                 # Water pH
+      water_hardness: 150.0                         # mg/L water hardness
+      chlorine_residual: 1.0                        # mg/L chlorine residual
+      dissolved_oxygen: 8.0                         # mg/L dissolved oxygen
+      water_temperature: 30.0                       # °C average water temperature
+      
+      # Operating conditions
+      operating_hours: 0.0                          # Total operating hours
+      system_availability: true                     # System availability status
 
   # === INTEGRATION CONFIGURATION ===
   integration:
@@ -321,1175 +672,447 @@ secondary_system:
     integrated_leak_test_cooldown_hours: 8760.0
     system_calibration_cooldown_hours: 4380.0
 
-# === STEAM GENERATOR CONFIGURATION ===
-steam_generator:
-  # System identification
-  system_id: "SG-COMP-001"
-  
-  # Design parameters
-  num_steam_generators: 3
-  design_total_thermal_power: 3000000000.0
-  design_total_steam_flow: 1500.0
-  design_steam_pressure: 6.9
-  design_steam_temperature: 285.8
-  design_feedwater_temperature: 227.0
-  
-  # Individual SG parameters
-  design_thermal_power_per_sg: 1000000000.0
-  design_steam_flow_per_sg: 500.0
-  design_feedwater_flow_per_sg: 500.0
-  
-  # Physical parameters
-  design_overall_htc: 3000.0
-  heat_transfer_area_per_sg: 5000.0
-  tube_count_per_sg: 3388
-  tube_inner_diameter: 0.0191
-  tube_wall_thickness: 0.00109
-  
-  # MIGRATED: Missing physical design parameters from old system
-  tube_outer_diameter: 0.0222             # m tube outer diameter (from old config)
-  tube_length: 19.8                       # m effective heat transfer length (from old config)
-  secondary_water_mass: 68000.0           # kg total water inventory per SG (from old config)
-  steam_dome_volume: 28.0                 # m³ steam space volume (from old config)
-  
-  # MIGRATED: Heat transfer coefficients from old system
-  primary_htc: 28000.0                    # W/m²/K primary side heat transfer coefficient (from old config)
-  secondary_htc: 18000.0                  # W/m²/K secondary side heat transfer coefficient (from old config)
-  
-  # MIGRATED: Design pressures from old system
-  design_pressure_primary: 15.51          # MPa design pressure primary side (from old config)
-  design_pressure_secondary: 6.895        # MPa design pressure secondary side (from old config)
-  
-  # Material properties
-  tube_material_conductivity: 385.0
-  tube_material_density: 8960.0
-  tube_material_specific_heat: 385.0
-  
-  # Operational parameters
-  minimum_power_fraction: 0.1
-  maximum_power_fraction: 1.05
-  minimum_steam_quality: 0.95
-  maximum_tube_wall_temperature: 350.0
-  level_control_enabled: true
-  pressure_control_enabled: true
-  load_following_enabled: true
-  
-  # MIGRATED: Control gains from old system
-  feedwater_control_gain: 0.08            # Proportional gain for level control (from old config)
-  steam_pressure_control_gain: 0.05       # Proportional gain for pressure control (from old config)
-  
-  # MIGRATED: System coordination parameters from enhanced physics
-  auto_load_balancing: true                # Enable automatic load balancing (from enhanced config)
-  system_coordination: true               # Enable system-level coordination (from enhanced config)
-  performance_optimization: true          # Enable performance optimization (from enhanced config)
-  predictive_maintenance: true            # Enable predictive maintenance (from enhanced config)
-  auto_pressure_control: true             # Enable automatic pressure control (from enhanced config)
-  system_optimization: true               # Enable system optimization (from enhanced config)
-  
-  # Performance parameters
-  design_efficiency: 0.98
-  thermal_performance_factor: 1.0
-  availability_factor: 1.0
-  
-  # Water chemistry integration
-  enable_chemistry_tracking: true
-  chemistry_update_interval_hours: 1.0
-  
-  # Initial conditions
-  initial_conditions:
-    sg_levels: [12.5, 12.5, 12.5]
-    sg_pressures: [6.9, 6.9, 6.9]
-    sg_temperatures: [285.8, 285.8, 285.8]
-    sg_steam_qualities: [0.99, 0.99, 0.99]
-    sg_steam_flows: [500.0, 500.0, 500.0]
-    sg_feedwater_flows: [500.0, 500.0, 500.0]
-    primary_inlet_temps: [327.0, 327.0, 327.0]
-    primary_outlet_temps: [293.0, 293.0, 293.0]
-    primary_flow_rates: [5700.0, 5700.0, 5700.0]
-    tsp_fouling_thicknesses: [0.0, 0.0, 0.0]
-    tsp_heat_transfer_degradations: [0.0, 0.0, 0.0]
-  
-  # TSP fouling configuration
-  tsp_fouling:
-    # Identification
-    fouling_model_id: "TSP-FOULING-001"
-    
-    # Enable/disable fouling simulation
-    enable_fouling: true
-    
-    # MIGRATED: Physical TSP parameters from tsp_fouling_model.py
-    tsp_count: 7                              # Number of TSP elevations (typical PWR)
-    tsp_hole_diameter: 0.023                  # m (23mm typical hole diameter)
-    tsp_thickness: 0.025                      # m (25mm typical TSP thickness)
-    tsp_open_area_fraction: 0.06              # 6% open area (typical PWR design)
-    
-    # Initial fouling conditions
-    initial_fouling_thickness: 0.0
-    initial_heat_transfer_degradation: 0.0
-    
-    # MIGRATED: Deposit formation rates from tsp_fouling_model.py (mg/cm²/year)
-    magnetite_base_rate: 2.5                 # Base magnetite deposition rate
-    copper_base_rate: 0.8                    # Base copper deposition rate  
-    silica_base_rate: 1.2                    # Base silica deposition rate
-    biological_base_rate: 0.5                # Base biological fouling rate
-    
-    # MIGRATED: Water chemistry effects on fouling rates from tsp_fouling_model.py
-    iron_concentration_factor: 1.5            # Multiplier per ppm Fe
-    copper_concentration_factor: 2.0          # Multiplier per ppm Cu
-    silica_concentration_factor: 1.8          # Multiplier per ppm SiO2
-    ph_optimal: 9.2                          # Optimal pH for minimal fouling
-    temperature_activation_energy: 45000.0    # J/mol (Arrhenius activation energy)
-    
-    # MIGRATED: Flow and heat transfer impact parameters from tsp_fouling_model.py
-    flow_restriction_exponent: 2.0            # Flow restriction vs. fouling relationship
-    heat_transfer_degradation_factor: 0.6     # HTC reduction factor
-    mixing_degradation_exponent: 1.5          # Mixing reduction vs. fouling
-    
-    # MIGRATED: Cleaning effectiveness parameters from tsp_fouling_model.py
-    chemical_cleaning_effectiveness: 0.75      # 75% deposit removal
-    mechanical_cleaning_effectiveness: 0.85    # 85% deposit removal
-    
-    # MIGRATED: Lifecycle and replacement parameters from tsp_fouling_model.py
-    design_life_years: 40.0                   # Design life (years)
-    fouling_replacement_threshold: 0.80       # 80% fouling triggers replacement consideration
-    
-    # MIGRATED: Shutdown protection thresholds from tsp_fouling_model.py
-    fouling_trip_threshold: 0.85              # 85% fouling triggers automatic trip
-    heat_transfer_trip_threshold: 0.60        # 60% HTC triggers trip
-    pressure_drop_trip_threshold: 5.0         # 5x normal ΔP triggers trip
-    flow_maldistribution_limit: 0.30          # 30% flow imbalance limit
-    
-    # Legacy fouling rate parameters (for backward compatibility)
-    base_fouling_rate: 0.001
-    temperature_coefficient: 0.1
-    chemistry_coefficient: 0.05
-    flow_coefficient: 0.02
-    max_fouling_thickness: 5.0
-    cleaning_threshold: 2.0
-    performance_degradation_threshold: 0.1
-    fouling_rate_factors: [1.0, 1.0, 1.0]
-  
-  # Maintenance configuration
-  maintenance:
-    tube_wall_temperature_threshold: 280.0
-    tube_wall_temperature_action: "scale_removal"
-    tube_wall_temperature_priority: "HIGH"
-    tube_wall_temperature_cooldown_hours: 24.0
-    
-    steam_quality_threshold: 0.98
-    steam_quality_action: "moisture_separator_maintenance"
-    steam_quality_priority: "MEDIUM"
-    steam_quality_cooldown_hours: 48.0
-    
-    tsp_fouling_threshold: 2.0
-    tsp_fouling_action: "tsp_chemical_cleaning"
-    tsp_fouling_priority: "HIGH"
-    tsp_fouling_cooldown_hours: 168.0
-    
-    heat_transfer_degradation_threshold: 0.05
-    heat_transfer_degradation_action: "heat_transfer_optimization"
-    heat_transfer_degradation_priority: "MEDIUM"
-    heat_transfer_degradation_cooldown_hours: 72.0
-    
-    system_availability_threshold: 0.95
-    system_coordination_action: "system_coordination_maintenance"
-    system_coordination_cooldown_hours: 24.0
-    
-    individual_sg_check_interval_hours: 0.25
-    system_check_interval_hours: 1.0
-
-# === TURBINE CONFIGURATION ===
-turbine:
-  # System identification
-  system_id: "TURB-COMP-001"
-  
-  # Design parameters
-  rated_power_mwe: 1000.0
-  design_steam_flow: 1500.0
-  design_steam_pressure: 6.9
-  design_steam_temperature: 285.8
-  design_condenser_pressure: 0.007
-  
-  # Performance parameters
-  design_efficiency: 0.34
-  mechanical_efficiency: 0.985
-  generator_efficiency: 0.985
-  auxiliary_power_fraction: 0.02
-  
-  # Operational parameters
-  minimum_load: 0.2
-  maximum_load: 1.05
-  load_following_enabled: true
-  performance_optimization: true
-  predictive_maintenance: true
-  
-  # Stage system configuration
-  stage_system:
-    system_id: "TSS-001"
-    hp_stages: 8
-    lp_stages: 6
-    stage_loading_strategy: "optimal"
-    extraction_control_mode: "pressure"
-    performance_optimization: true
-    max_stage_loading: 1.2
-    min_stage_efficiency: 0.7
-    max_extraction_variation: 0.1
-    
-    # Physical parameters
-    blade_height: 0.05
-    blade_chord: 0.03
-    blade_count: 120
-    nozzle_area: 0.1
-    reaction_ratio: 0.5
-    velocity_coefficient: 0.95
-    blade_speed_ratio: 0.47
-    
-    # Degradation parameters
-    fouling_rate: 0.00001
-    erosion_rate: 0.000001
-    deposit_buildup_rate: 0.00005
-    
-    # Extraction configuration
-    extraction_pressures: [4.0, 2.5, 1.5, 0.8, 0.4, 0.15]
-    extraction_flows:
-      HP-3: 25.0
-      HP-4: 30.0
-      HP-5: 20.0
-      LP-1: 15.0
-      LP-2: 10.0
-  
-  # Rotor dynamics configuration
-  rotor_dynamics:
-    system_id: "RDS-001"
-    rotor_mass: 15000.0
-    rotor_inertia: 15000.0
-    rotor_length: 8.0
-    shaft_diameter: 0.5
-    rated_speed: 3600.0
-    max_speed: 3780.0
-    startup_acceleration: 300.0
-    emergency_deceleration: 600.0
-    unbalance_tolerance: 6.35
-    thermal_bow_limit: 0.025
-    shaft_deflection_limit: 0.1
-    shaft_material_density: 7850.0
-    elastic_modulus: 200000000000.0
-    thermal_expansion_coeff: 0.000012
-    
-    # Vibration monitoring
-    first_critical_speed: 1800.0
-    second_critical_speed: 5400.0
-    critical_speed_margin: 0.15
-    displacement_alarm: 15.0
-    displacement_trip: 25.0
-    velocity_alarm: 0.3
-    velocity_trip: 0.5
-    acceleration_alarm: 5.0
-    acceleration_trip: 10.0
-    sampling_frequency: 1000.0
-    frequency_range: [0.1, 500.0]
-  
-  # Thermal stress configuration
-  thermal_stress:
-    system_id: "TSC-001"
-    thermal_conductivity: 45.0
-    thermal_expansion_coeff: 0.000012
-    elastic_modulus: 200000000000.0
-    poisson_ratio: 0.3
-    max_metal_temperature: 600.0
-    max_thermal_gradient: 5.0
-    max_thermal_stress: 800000000.0
-    thermal_time_constant: 300.0
-    stress_relaxation_time: 3600.0
-  
-  # Protection system configuration
-  protection_system:
-    system_id: "TPC-001"
-    overspeed_trip: 3780.0
-    vibration_trip: 25.0
-    bearing_temp_trip: 120.0
-    thrust_bearing_trip: 50.0
-    low_vacuum_trip: 0.012
-    max_thermal_stress: 800000000.0
-    overspeed_delay: 0.1
-    vibration_delay: 2.0
-    bearing_temp_delay: 10.0
-    enable_steam_dump: true
-    enable_turning_gear: true
-    emergency_seal_steam: true
-  
-  # Governor system configuration
-  governor_system:
-    system_id: "GCS-001"
-    valve_id: "GV-001"
-    valve_type: "hydraulic"
-    primary_control_mode: "speed"
-    secondary_control_mode: "load"
-    rated_speed: 3600.0
-    rated_load: 1100.0
-    speed_droop: 0.04
-    speed_deadband: 0.1
-    max_speed_error: 5.0
-    
-    # PID parameters for speed control
-    speed_kp: 1.0
-    speed_ki: 0.5
-    speed_kd: 0.1
-    speed_integral_limit: 10.0
-    
-    # PID parameters for load control
-    load_kp: 0.8
-    load_ki: 0.3
-    load_kd: 0.05
-    load_integral_limit: 5.0
-    max_load_error: 2.0
-    load_ramp_rate: 5.0
-    
-    # Valve parameters
-    valve_stroke: 100.0
-    valve_area: 0.1
-    valve_cv: 500.0
-    valve_response_time: 0.2
-    valve_stroke_time: 5.0
-    valve_deadband: 0.1
-    valve_hysteresis: 0.05
-    min_position: 0.0
-    max_position: 100.0
-    max_stroke_rate: 20.0
-    
-    # Actuator parameters
-    actuator_pressure: 3.5
-    actuator_force: 50000.0
-    actuator_oil_flow: 10.0
-    
-    # Protection parameters
-    overspeed_trip: 3780.0
-    underspeed_alarm: 3420.0
-    load_rejection_rate: 100.0
-    governor_response_time: 0.1
-    control_update_rate: 100.0
-  
-  # Lubrication system configuration
-  lubrication_system:
-    system_id: "TB-LUB-001"
-    system_type: "turbine_bearing"
-    oil_reservoir_capacity: 800.0
-    oil_operating_pressure: 0.15
-    oil_temperature_range: [45.0, 95.0]
-    oil_viscosity_grade: "ISO VG 46"
-    turbine_rated_power: 1100.0
-    turbine_rated_speed: 3600.0
-    steam_temperature: 280.0
-    bearing_housing_temperature: 80.0
-    filter_micron_rating: 5.0
-    contamination_limit: 8.0
-    acidity_limit: 0.3
-    oil_change_interval: 8760.0
-    oil_analysis_interval: 720.0
-  
-  # Initial conditions
-  initial_conditions:
-    rotor_speed: 3600.0
-    rotor_acceleration: 0.0
-    rotor_temperature: 450.0
-    load_demand: 1.0
-    electrical_power_output: 1000.0
-    mechanical_power_output: 1015.0
-    steam_inlet_pressure: 6.9
-    steam_inlet_temperature: 285.8
-    steam_inlet_flow: 1500.0
-    steam_quality: 0.99
-    extraction_pressures:
-      HP-3: 1.5
-      HP-4: 1.2
-      HP-5: 1.0
-      LP-1: 0.3
-      LP-2: 0.1
-    extraction_temperatures:
-      HP-3: 200.0
-      HP-4: 185.0
-      HP-5: 180.0
-      LP-1: 120.0
-      LP-2: 80.0
-    governor_valve_position: 100.0
-    control_valve_positions: [100.0, 100.0, 100.0, 100.0]
-    bearing_temperatures: [80.0, 80.0, 80.0, 80.0]
-    bearing_vibrations: [5.0, 5.0, 5.0, 5.0]
-    bearing_oil_pressures: [0.2, 0.2, 0.2, 0.2]
-    casing_temperatures: [380.0, 360.0, 340.0, 320.0, 300.0, 280.0]
-    blade_temperatures: [500.0, 480.0, 460.0, 440.0, 420.0, 400.0, 380.0, 360.0, 340.0, 320.0, 300.0, 280.0, 260.0, 240.0]
-    protection_system_armed: true
-    trip_active: false
-  
-  # Maintenance configuration
-  maintenance:
-    efficiency_threshold: 0.30
-    performance_factor_threshold: 0.85
-    availability_threshold: 0.95
-    thermal_stress_threshold: 700000000.0
-    metal_temperature_threshold: 550.0
-    thermal_gradient_threshold: 4.0
-    vibration_alarm_threshold: 15.0
-    vibration_trend_threshold: 2.0
-    bearing_temperature_threshold: 100.0
-    bearing_wear_threshold: 0.1
-    oil_contamination_threshold: 10.0
-    
-    # Maintenance actions
-    performance_test_action: "turbine_performance_test"
-    system_optimization_action: "turbine_system_optimization"
-    protection_test_action: "turbine_protection_test"
-    thermal_analysis_action: "thermal_stress_analysis"
-    vibration_analysis_action: "vibration_analysis"
-    bearing_inspection_action: "bearing_inspection"
-    
-    # Maintenance intervals
-    performance_test_interval_hours: 168.0
-    system_optimization_interval_hours: 72.0
-    protection_test_interval_hours: 48.0
-    thermal_analysis_interval_hours: 24.0
-    vibration_analysis_interval_hours: 12.0
-    bearing_inspection_interval_hours: 720.0
-    
-    # Cooldown periods
-    performance_test_cooldown_hours: 168.0
-    system_optimization_cooldown_hours: 8760.0
-    protection_test_cooldown_hours: 4380.0
-    thermal_analysis_cooldown_hours: 8760.0
-    vibration_analysis_cooldown_hours: 2190.0
-    bearing_inspection_cooldown_hours: 2190.0
-
-# === FEEDWATER CONFIGURATION ===
-feedwater:
-  # System identification
-  system_id: "FW-COMP-001"
-  
-  # Design parameters
-  num_steam_generators: 3
-  design_total_flow: 1500.0
-  design_sg_level: 12.5
-  design_feedwater_temperature: 227.0
-  design_pressure: 8.0
-  design_suction_pressure: 0.5
-  
-  # Performance parameters
-  design_efficiency: 0.85
-  minimum_flow_fraction: 0.1
-  maximum_flow_fraction: 1.2
-  
-  # Operational parameters
-  auto_level_control: true
-  load_following_enabled: true
-  steam_quality_compensation: true
-  predictive_maintenance: true
-  
-  # Pump system configuration
-  pump_system:
-    num_pumps: 4
-    pumps_normally_running: 3
-    design_flow_per_pump: 500.0
-    design_head_per_pump: 800.0
-    pump_efficiency: 0.85
-    motor_efficiency: 0.95
-    pump_speed: 3600.0
-    impeller_diameter: 0.8
-    flow_coefficients: [1.0, -0.0001, -0.000001]
-    efficiency_coefficients: [0.85, 0.0001, -0.000001]
-    variable_speed_control: true
-    minimum_speed_fraction: 0.5
-    maximum_speed_fraction: 1.1
-    minimum_flow_protection: true
-    minimum_flow_fraction: 0.1
-    cavitation_protection: true
-    npsh_required: 8.0
-  
-  # Three-element control configuration
-  control_system:
-    enable_three_element_control: true
-    steam_flow_weight: 0.5
-    level_control_weight: 0.4
-    feedwater_flow_weight: 0.1
-    level_setpoint: 12.5
-    level_deadband: 0.1
-    level_proportional_gain: 10.0
-    level_integral_time: 60.0
-    level_derivative_time: 5.0
-    flow_proportional_gain: 5.0
-    flow_integral_time: 30.0
-    steam_flow_lag_time: 10.0
-    maximum_flow_demand: 1.2
-    minimum_flow_demand: 0.1
-    flow_rate_limit: 0.1
-    enable_steam_quality_compensation: true
-    quality_compensation_gain: 1.0
-  
-  # Water treatment configuration
-  water_treatment:
-    enable_chemical_treatment: true
-    oxygen_scavenger_dose: 10.0
-    ph_control_agent_dose: 5.0
-    corrosion_inhibitor_dose: 2.0
-    target_ph: 9.2
-    target_dissolved_oxygen: 0.005
-    target_iron_concentration: 0.1
-    target_copper_concentration: 0.05
-    chemical_injection_rate: 1.0
-    mixing_time: 300.0
-    treatment_efficiency: 0.95
-    ph_measurement_accuracy: 0.1
-    dissolved_oxygen_accuracy: 0.001
-    conductivity_accuracy: 0.1
-  
-  # Performance monitoring configuration
-  performance_monitoring:
-    enable_performance_monitoring: true
-    efficiency_monitoring_interval: 60.0
-    cavitation_monitoring_interval: 10.0
-    pump_efficiency_threshold: 0.80
-    system_efficiency_threshold: 0.75
-    cavitation_threshold: 0.1
-    vibration_threshold: 10.0
-    enable_wear_monitoring: true
-    impeller_wear_threshold: 2.0
-    bearing_wear_threshold: 0.5
-    seal_leakage_threshold: 1.0
-    performance_trend_window: 168.0
-    efficiency_trend_threshold: 0.02
-    vibration_trend_threshold: 1.0
-  
-  # Protection system configuration
-  protection_system:
-    low_suction_pressure_trip: 0.1
-    high_discharge_pressure_trip: 10.0
-    low_flow_trip: 0.05
-    high_vibration_trip: 25.0
-    high_bearing_temperature_trip: 120.0
-    low_sg_level_trip: 10.0
-    high_sg_level_trip: 15.0
-    feedwater_line_break_trip: 2.0
-    low_suction_pressure_delay: 5.0
-    high_discharge_pressure_delay: 2.0
-    low_flow_delay: 10.0
-    high_vibration_delay: 5.0
-    enable_pump_runback: true
-    enable_backup_pump_start: true
-    enable_emergency_feedwater: true
-    test_interval_hours: 168.0
-    calibration_interval_hours: 4380.0
-  
-  # Initial conditions
-  initial_conditions:
-    total_flow_rate: 1500.0
-    total_power_consumption: 15.0
-    system_efficiency: 0.85
-    sg_levels: [12.5, 12.5, 12.5]
-    sg_pressures: [6.9, 6.9, 6.9]
-    sg_steam_flows: [500.0, 500.0, 500.0]
-    sg_steam_qualities: [0.99, 0.99, 0.99]
-    pump_speeds: [3600.0, 3600.0, 3600.0, 0.0]
-    pump_flows: [500.0, 500.0, 500.0, 0.0]
-    pump_heads: [800.0, 800.0, 800.0, 0.0]
-    pump_efficiencies: [0.85, 0.85, 0.85, 0.0]
-    running_pumps: [true, true, true, false]
-    suction_pressure: 0.5
-    discharge_pressure: 8.0
-    feedwater_temperature: 227.0
-    condensate_temperature: 39.0
-    control_mode: "automatic"
-    level_control_active: true
-    flow_control_active: true
-    level_setpoint: 12.5
-    flow_demand: 1500.0
-    feedwater_ph: 9.2
-    dissolved_oxygen: 0.005
-    iron_concentration: 0.1
-    copper_concentration: 0.05
-    conductivity: 1.0
-    pump_vibrations: [5.0, 5.0, 5.0, 0.0]
-    bearing_temperatures: [80.0, 80.0, 80.0, 25.0]
-    seal_leakages: [0.1, 0.1, 0.1, 0.0]
-    operating_hours: 0.0
-    protection_system_armed: true
-    trip_active: false
-  
-  # Maintenance configuration
-  maintenance:
-    pump_efficiency_threshold: 0.80
-    system_efficiency_threshold: 0.75
-    performance_factor_threshold: 0.85
-    vibration_threshold: 15.0
-    bearing_temperature_threshold: 100.0
-    seal_leakage_threshold: 0.5
-    impeller_wear_threshold: 1.5
-    ph_deviation_threshold: 0.3
-    dissolved_oxygen_threshold: 0.01
-    iron_concentration_threshold: 0.2
-    conductivity_threshold: 2.0
-    cavitation_index_threshold: 0.2
-    npsh_margin_threshold: 2.0
-    suction_pressure_threshold: 0.2
-    
-    # Maintenance actions
-    pump_maintenance_action: "pump_maintenance"
-    oil_change_action: "oil_change"
-    oil_top_off_action: "oil_top_off"
-    impeller_inspection_action: "impeller_inspection"
-    bearing_replacement_action: "bearing_replacement"
-    seal_replacement_action: "seal_replacement"
-    vibration_analysis_action: "vibration_analysis"
-    component_overhaul_action: "component_overhaul"
-    water_treatment_action: "water_treatment"
-    control_calibration_action: "control_calibration"
-    system_cleaning_action: "system_cleaning"
-    
-    # Maintenance intervals
-    pump_maintenance_interval_hours: 2190.0
-    oil_change_interval_hours: 4380.0
-    oil_top_off_interval_hours: 720.0
-    impeller_inspection_interval_hours: 8760.0
-    bearing_replacement_interval_hours: 17520.0
-    seal_replacement_interval_hours: 8760.0
-    vibration_analysis_interval_hours: 168.0
-    component_overhaul_interval_hours: 43800.0
-    water_treatment_interval_hours: 720.0
-    control_calibration_interval_hours: 4380.0
-    system_cleaning_interval_hours: 2190.0
-    
-    # Cooldown periods
-    pump_maintenance_cooldown_hours: 2190.0
-    oil_change_cooldown_hours: 4380.0
-    oil_top_off_cooldown_hours: 168.0
-    impeller_inspection_cooldown_hours: 8760.0
-    bearing_replacement_cooldown_hours: 17520.0
-    seal_replacement_cooldown_hours: 8760.0
-    vibration_analysis_cooldown_hours: 168.0
-    component_overhaul_cooldown_hours: 43800.0
-    water_treatment_cooldown_hours: 720.0
-    control_calibration_cooldown_hours: 4380.0
-    system_cleaning_cooldown_hours: 2190.0
-
-# === CONDENSER CONFIGURATION ===
-condenser:
-  # System identification
-  system_id: "COND-COMP-001"
-  
-  # Design parameters
-  design_heat_duty: 2000000000.0
-  design_steam_flow: 1500.0
-  design_cooling_water_flow: 45000.0
-  design_condenser_pressure: 0.007
-  design_cooling_water_temp_rise: 10.0
-  
-  # Performance parameters
-  design_thermal_efficiency: 0.95
-  minimum_load_fraction: 0.2
-  maximum_load_fraction: 1.1
-  
-  # Operational parameters
-  auto_vacuum_control: true
-  fouling_monitoring_enabled: true
-  tube_leak_monitoring_enabled: true
-  predictive_maintenance: true
-  
-  # Heat transfer configuration
-  heat_transfer:
-    design_heat_duty: 2000000000.0
-    heat_transfer_area: 75000.0
-    tube_count: 84000
-    tube_inner_diameter: 0.0254
-    tube_wall_thickness: 0.00159
-    tube_length: 12.0
-    steam_side_htc: 12000.0
-    water_side_htc: 5000.0
-    tube_wall_conductivity: 385.0
-    tube_material: "copper"
-    tube_material_density: 8960.0
-    tube_material_specific_heat: 385.0
-    design_overall_htc: 3000.0
-    design_lmtd: 10.0
-    fouling_resistance_design: 0.0001
-  
-  # Vacuum system configuration
-  vacuum_system:
-    system_id: "VS-001"
-    target_pressure: 0.007
-    design_air_leakage: 0.1
-    base_air_leakage: 0.05
-    num_ejectors: 2
-    ejector_capacity: 25.0
-    ejector_efficiency: 0.85
-    motive_steam_pressure: 1.2
-    motive_steam_temperature: 185.0
-    suction_pressure: 0.007
-    discharge_pressure: 0.02
-    air_removal_efficiency: 0.95
-    steam_consumption_rate: 3.0
-    nozzle_efficiency: 0.9
-    diffuser_efficiency: 0.8
-    
-    # Control parameters (from vacuum_system.py)
-    auto_start_pressure: 0.008
-    auto_stop_pressure: 0.006
-    rotation_interval: 168.0
-    control_strategy: "lead_lag"
-    
-    # Air leakage parameters
-    leakage_degradation_rate: 0.00001
-    
-    # System performance
-    condenser_volume: 500.0
-    air_holdup_time: 60.0
-    
-    # Motive steam supply
-    motive_steam_header_pressure: 1.2
-    steam_pressure_drop: 0.1
-    
-    # Alarm and trip settings
-    high_pressure_alarm: 0.010
-    high_pressure_trip: 0.012
-    low_motive_pressure_alarm: 0.9
-  
-  # Steam ejector configurations
-  steam_ejectors:
-    - ejector_id: "SJE-001"
-      ejector_type: "two_stage"
-      design_capacity: 25.0
-      design_suction_pressure: 0.007
-      design_compression_ratio: 14.3
-      motive_steam_pressure: 1.0
-      motive_steam_temperature: 180.0
-      design_steam_consumption: 2.5
-      base_steam_consumption: 2.5
-      steam_consumption_exponent: 0.8
-      pressure_effect_coefficient: 1.5
-      min_suction_pressure: 0.003
-      max_suction_pressure: 0.015
-      min_motive_pressure: 0.8
-      max_capacity_factor: 1.2
-      has_intercondenser: true
-      intercondenser_pressure: 0.02
-      intercondenser_cooling_water: 50.0
-      has_aftercondenser: true
-      aftercondenser_cooling_water: 25.0
-      nozzle_fouling_rate: 0.00001
-      diffuser_fouling_rate: 0.00002
-      erosion_rate: 0.000001
-    - ejector_id: "SJE-002"
-      ejector_type: "two_stage"
-      design_capacity: 25.0
-      design_suction_pressure: 0.007
-      design_compression_ratio: 14.3
-      motive_steam_pressure: 1.0
-      motive_steam_temperature: 180.0
-      design_steam_consumption: 2.5
-      base_steam_consumption: 2.5
-      steam_consumption_exponent: 0.8
-      pressure_effect_coefficient: 1.5
-      min_suction_pressure: 0.003
-      max_suction_pressure: 0.015
-      min_motive_pressure: 0.8
-      max_capacity_factor: 1.2
-      has_intercondenser: true
-      intercondenser_pressure: 0.02
-      intercondenser_cooling_water: 50.0
-      has_aftercondenser: true
-      aftercondenser_cooling_water: 25.0
-      nozzle_fouling_rate: 0.00001
-      diffuser_fouling_rate: 0.00002
-      erosion_rate: 0.000001
-  
-  # Tube degradation configuration
-  tube_degradation:
-    initial_tube_count: 84000
-    tube_failure_rate: 0.000001
-    vibration_damage_threshold: 3.0
-    wall_thickness_initial: 0.00159
-    wall_thickness_minimum: 0.001
-    corrosion_rate: 0.0000001
-    leak_detection_threshold: 0.01
-    chemistry_degradation_factor: 1.0
-    temperature_degradation_factor: 1.0
-    flow_degradation_factor: 1.0
-    plugging_threshold: 0.005
-    inspection_interval_hours: 8760.0
-    replacement_threshold: 0.8
-  
-  # Fouling configuration
-  fouling_system:
-    biofouling_base_rate: 0.001
-    biofouling_temp_coefficient: 0.1
-    biofouling_nutrient_factor: 1.0
-    biofouling_chlorine_kill_rate: 2.0
-    scale_base_rate: 0.0005
-    scale_hardness_coefficient: 0.002
-    scale_temp_coefficient: 0.15
-    scale_ph_optimum: 7.5
-    corrosion_base_rate: 0.0002
-    corrosion_oxygen_coefficient: 0.01
-    corrosion_ph_optimum: 7.5
-    corrosion_velocity_factor: 0.5
-    max_fouling_thickness: 5.0
-    cleaning_threshold: 2.0
-    cleaning_effectiveness:
-      chemical: 0.8
-      mechanical: 0.6
-      hydroblast: 0.9
-  
-  # Cooling water configuration
-  cooling_water:
-    design_flow_rate: 45000.0
-    design_inlet_temperature: 25.0
-    design_outlet_temperature: 35.0
-    design_temperature_rise: 10.0
-    design_ph: 7.5
-    design_hardness: 150.0
-    design_chloride: 50.0
-    design_dissolved_oxygen: 8.0
-    design_tds: 500.0
-    chlorine_dose: 1.0
-    antiscalant_dose: 5.0
-    corrosion_inhibitor_dose: 10.0
-    biocide_dose: 0.5
-    circulation_pumps: 3
-    pump_capacity: 15000.0
-    pump_efficiency: 0.85
-    pump_head: 30.0
-    cooling_tower_efficiency: 0.8
-    approach_temperature: 5.0
-    wet_bulb_temperature: 20.0
-  
-  # Initial conditions
-  initial_conditions:
-    steam_inlet_pressure: 0.007
-    steam_inlet_temperature: 39.0
-    steam_inlet_flow: 1500.0
-    steam_inlet_quality: 0.90
-    condensate_temperature: 39.0
-    condensate_flow: 1500.0
-    condensate_subcooling: 0.0
-    cooling_water_inlet_temp: 25.0
-    cooling_water_outlet_temp: 35.0
-    cooling_water_flow: 45000.0
-    cooling_water_velocity: 2.0
-    heat_rejection_rate: 2000000000.0
-    overall_htc: 3000.0
-    lmtd: 10.0
-    thermal_performance_factor: 1.0
-    condenser_pressure: 0.007
-    air_partial_pressure: 0.0005
-    air_removal_rate: 0.1
-    vacuum_steam_consumption: 0.3
-    active_tube_count: 84000
-    plugged_tube_count: 0
-    average_wall_thickness: 0.00159
-    tube_leak_rate: 0.0
-    biofouling_thickness: 0.0
-    scale_thickness: 0.0
-    corrosion_thickness: 0.0
-    total_fouling_resistance: 0.0
-    time_since_cleaning: 0.0
-    water_ph: 7.5
-    water_hardness: 150.0
-    chlorine_residual: 1.0
-    dissolved_oxygen: 8.0
-    water_temperature: 30.0
-    operating_hours: 0.0
-    system_availability: true
-  
-  # Maintenance configuration
-  maintenance:
-    thermal_performance_threshold: 0.85
-    heat_transfer_degradation_threshold: 0.1
-    fouling_resistance_threshold: 0.001
-    tube_leak_rate_threshold: 0.01
-    active_tube_count_threshold: 75600
-    wall_thickness_threshold: 0.0012
-    biofouling_thickness_threshold: 1.0
-    scale_thickness_threshold: 1.5
-    total_fouling_thickness_threshold: 2.0
-    time_since_cleaning_threshold: 4320.0
-    condenser_pressure_threshold: 0.008
-    air_leakage_threshold: 0.15
-    vacuum_efficiency_threshold: 0.8
-    ph_deviation_threshold: 0.5
-    hardness_threshold: 200.0
-    chlorine_residual_threshold: 0.5
-    dissolved_oxygen_threshold: 12.0
-    
-    # Maintenance actions
-    tube_cleaning_action: "condenser_tube_cleaning"
-    chemical_cleaning_action: "condenser_chemical_cleaning"
-    tube_plugging_action: "condenser_tube_plugging"
-    tube_inspection_action: "condenser_tube_inspection"
-    hydroblast_cleaning_action: "condenser_hydroblast_cleaning"
-    water_treatment_action: "condenser_water_treatment"
-    vacuum_system_test_action: "vacuum_system_test"
-    vacuum_leak_detection_action: "vacuum_leak_detection"
-    ejector_cleaning_action: "vacuum_ejector_cleaning"
-    ejector_nozzle_replacement_action: "vacuum_ejector_nozzle_replacement"
-    
-    # Maintenance intervals
-    tube_cleaning_interval_hours: 4320.0
-    chemical_cleaning_interval_hours: 8760.0
-    tube_inspection_interval_hours: 8760.0
-    hydroblast_cleaning_interval_hours: 4320.0
-    water_treatment_interval_hours: 720.0
-    vacuum_system_test_interval_hours: 2190.0
-    vacuum_leak_detection_interval_hours: 4320.0
-    ejector_cleaning_interval_hours: 4320.0
-    ejector_nozzle_replacement_interval_hours: 17520.0
-    
-    # Cooldown periods
-    tube_cleaning_cooldown_hours: 168.0
-    chemical_cleaning_cooldown_hours: 8760.0
-    tube_plugging_cooldown_hours: 24.0
-    tube_inspection_cooldown_hours: 8760.0
-    hydroblast_cleaning_cooldown_hours: 4320.0
-    water_treatment_cooldown_hours: 720.0
-    vacuum_system_test_cooldown_hours: 2190.0
-    vacuum_leak_detection_cooldown_hours: 4320.0
-    ejector_cleaning_cooldown_hours: 4320.0
-    ejector_nozzle_replacement_cooldown_hours: 17520.0
-
 # === MAINTENANCE SYSTEM CONFIGURATION ===
 maintenance_system:
-  # Global maintenance settings
-  maintenance_mode: "comprehensive"
+  # Realistic maintenance mode - industry standard thresholds
+  maintenance_mode: "realistic"
   maintenance_auto_execute: true
-  maintenance_default_check_interval_hours: 1.0
+  maintenance_default_check_interval_hours: 4.0
+  maintenance_default_cooldown_hours: 24.0
   
-  # Global multipliers for sensitivity adjustment
-  maintenance_threshold_multiplier: 1.0
-  maintenance_cooldown_reduction_factor: 1.0
-  maintenance_check_interval_multiplier: 1.0
-  maintenance_work_order_cooldown_hours: 24.0
-  
-  # Component-specific maintenance configurations
+  # Component-specific realistic maintenance configurations
   component_configs:
-    # Pump maintenance
-    pump:
+    # Feedwater system maintenance - based on industry standards
+    feedwater:
       check_interval_hours: 4.0
+      cooldown_hours: 24.0
       thresholds:
+        # === EXISTING THRESHOLDS ===
         oil_level:
-          threshold: 2.0
+          threshold: 75.0              # % - Industry standard low oil alarm
           comparison: "less_than"
           action: "oil_top_off"
-          cooldown_hours: 168.0
+          cooldown_hours: 168.0        # Weekly cooldown
+          priority: "HIGH"
+        oil_contamination:
+          threshold: 15.0              # ppm - Typical change-out level
+          comparison: "greater_than"
+          action: "oil_change"
+          cooldown_hours: 720.0        # Monthly cooldown
+          priority: "MEDIUM"
+        bearing_temperature:
+          threshold: 110.0             # °C - Typical bearing alarm
+          comparison: "greater_than"
+          action: "bearing_inspection"
+          cooldown_hours: 168.0        # Weekly cooldown
+          priority: "HIGH"
+        vibration_level:
+          threshold: 20.0              # mm/s - ISO standard
+          comparison: "greater_than"
+          action: "vibration_analysis"
+          cooldown_hours: 168.0        # Weekly cooldown
+          priority: "HIGH"
+        
+        efficiency_factor:
+          threshold: 0.85              # 85% efficiency factor (multiplier)
+          comparison: "less_than"
+          action: "pump_inspection"
+          cooldown_hours: 720.0        # Monthly cooldown
+          priority: "MEDIUM"
+        
+        # === MISSING OIL & LUBRICATION THRESHOLDS ===
+        oil_viscosity:
+          threshold: 42.0              # cSt - degraded viscosity
+          comparison: "greater_than"
+          action: "oil_change"
+          cooldown_hours: 720.0        # Monthly cooldown
+          priority: "MEDIUM"
+        oil_water_content:
+          threshold: 0.08              # % water content
+          comparison: "greater_than"
+          action: "oil_analysis"
+          cooldown_hours: 168.0        # Weekly cooldown
+          priority: "MEDIUM"
+        oil_acid_number:
+          threshold: 1.8               # mg KOH/g acid number
+          comparison: "greater_than"
+          action: "oil_analysis"
+          cooldown_hours: 168.0        # Weekly cooldown
+          priority: "MEDIUM"
+        oil_filter_pressure_drop:
+          threshold: 0.3               # MPa filter pressure drop
+          comparison: "greater_than"
+          action: "filter_change"
+          cooldown_hours: 720.0        # Monthly cooldown
+          priority: "MEDIUM"
+        oil_filter_contamination:
+          threshold: 85.0              # % filter capacity used
+          comparison: "greater_than"
+          action: "filter_change"
+          cooldown_hours: 720.0        # Monthly cooldown
+          priority: "MEDIUM"
+        lubrication_system_pressure:
+          threshold: 0.15              # MPa lubrication system pressure
+          comparison: "less_than"
+          action: "lubrication_inspection"
+          cooldown_hours: 168.0        # Weekly cooldown
           priority: "HIGH"
         oil_temperature:
-          threshold: 45.0
-          action: "oil_change"
-          cooldown_hours: 336.0
+          threshold: 58.0              # °C oil temperature
+          comparison: "greater_than"
+          action: "lubrication_inspection"
+          cooldown_hours: 168.0        # Weekly cooldown
           priority: "MEDIUM"
+        oil_system_debris_count:
+          threshold: 450.0             # particles/ml debris count
+          comparison: "greater_than"
+          action: "oil_system_flush"
+          cooldown_hours: 2190.0       # Quarterly cooldown
+          priority: "HIGH"
+        
+        # === MISSING MECHANICAL COMPONENT THRESHOLDS ===
+        # NOTE: Wear values are percentages (0-100%), with safety margins before trips
+        bearing_vibration:
+          threshold: 18.0              # mm/s bearing vibration
+          comparison: "greater_than"
+          action: "bearing_replacement"
+          cooldown_hours: 2190.0       # Quarterly cooldown
+          priority: "HIGH"
         bearing_wear:
-          threshold: 0.3
+          threshold: 10.0              # % bearing wear (vs 25% safety trip)
+          comparison: "greater_than"
+          action: "bearing_replacement"
+          cooldown_hours: 2190.0       # Quarterly cooldown
+          priority: "HIGH"
+        bearing_noise_level:
+          threshold: 78.0              # dB bearing noise level
+          comparison: "greater_than"
           action: "bearing_inspection"
-          cooldown_hours: 168.0
+          cooldown_hours: 168.0        # Weekly cooldown
+          priority: "MEDIUM"
+        seal_face_wear:
+          threshold: 15.0              # % seal face wear (vs 30% safety trip)
+          comparison: "greater_than"
+          action: "seal_replacement"
+          cooldown_hours: 2190.0       # Quarterly cooldown
+          priority: "MEDIUM"
+        seal_temperature:
+          threshold: 85.0              # °C seal temperature
+          comparison: "greater_than"
+          action: "seal_replacement"
+          cooldown_hours: 2190.0       # Quarterly cooldown
+          priority: "MEDIUM"
+        seal_pressure_drop:
+          threshold: 0.12              # MPa seal pressure drop
+          comparison: "greater_than"
+          action: "seal_inspection"
+          cooldown_hours: 168.0        # Weekly cooldown
+          priority: "MEDIUM"
+        seal_leakage_rate:
+          threshold: .05               # L/min seal leakage rate (vs 10.0 L/min trip)
+          comparison: "greater_than"
+          action: "seal_replacement"
+          cooldown_hours: 219.0       # Quarterly cooldown
+          priority: "MEDIUM"
+        impeller_wear:
+          threshold: 8.0               # % impeller wear (vs 15% safety trip)
+          comparison: "greater_than"
+          action: "impeller_replacement"
+          cooldown_hours: 4380.0       # Semi-annual cooldown
           priority: "HIGH"
-        vibration_level:
-          threshold: 0.5
-          action: "vibration_analysis"
-          cooldown_hours: 168.0
-          priority: "HIGH"
-        efficiency_degradation:
-          threshold: 0.95
+        impeller_inspection_wear:
+          threshold: 5.0               # % impeller wear for inspection
+          comparison: "greater_than"
+          action: "impeller_inspection"
+          cooldown_hours: 2190.0       # Quarterly cooldown
+          priority: "MEDIUM"
+        pump_efficiency:
+          threshold: 0.80              # 80% minimum efficiency
           comparison: "less_than"
-          action: "efficiency_analysis"
-          cooldown_hours: 168.0
+          action: "impeller_replacement"
+          cooldown_hours: 4380.0       # Semi-annual cooldown
+          priority: "MEDIUM"
+        impeller_cavitation_damage:
+          threshold: 0.75              # 75% cavitation damage fraction
+          comparison: "greater_than"
+          action: "impeller_replacement"
+          cooldown_hours: 4380.0       # Semi-annual cooldown
+          priority: "HIGH"
+        impeller_vibration:
+          threshold: 2.5               # mm/s impeller vibration
+          comparison: "greater_than"
+          action: "impeller_inspection"
+          cooldown_hours: 168.0        # Weekly cooldown
+          priority: "MEDIUM"
+        motor_temperature:
+          threshold: 88.0              # °C motor temperature
+          comparison: "greater_than"
+          action: "motor_inspection"
+          cooldown_hours: 168.0        # Weekly cooldown
+          priority: "MEDIUM"
+        
+        # === MISSING PERFORMANCE & SYSTEM THRESHOLDS ===
+        pump_head:
+          threshold: 0.94              # 94% of design head
+          comparison: "less_than"
+          action: "pump_inspection"
+          cooldown_hours: 720.0        # Monthly cooldown
+          priority: "MEDIUM"
+        pump_flow:
+          threshold: 0.96              # 96% of design flow
+          comparison: "less_than"
+          action: "pump_inspection"
+          cooldown_hours: 720.0        # Monthly cooldown
+          priority: "MEDIUM"
+        pump_power:
+          threshold: 1.05              # 105% of design power
+          comparison: "greater_than"
+          action: "pump_inspection"
+          cooldown_hours: 720.0        # Monthly cooldown
+          priority: "MEDIUM"
+        
+        # === MISSING NPSH & CAVITATION THRESHOLDS ===
+        npsh_available:
+          threshold: 8.0               # m NPSH available (vs 12.0 m safety trip)
+          comparison: "less_than"
+          action: "npsh_analysis"
+          cooldown_hours: 168.0        # Weekly cooldown
+          priority: "HIGH"
+        suction_pressure:
+          threshold: 0.12              # MPa suction pressure (vs 0.2 MPa trip)
+          comparison: "less_than"
+          action: "npsh_analysis"
+          cooldown_hours: 168.0        # Weekly cooldown
+          priority: "HIGH"
+        cavitation_inception:
+          threshold: 0.86              # 86% of design flow for cavitation
+          comparison: "less_than"
+          action: "cavitation_analysis"
+          cooldown_hours: 168.0        # Weekly cooldown
+          priority: "HIGH"
+        cavitation_intensity:
+          threshold: 0.25              # 25% cavitation intensity (vs 70% trip)
+          comparison: "greater_than"
+          action: "cavitation_analysis"
+          cooldown_hours: 168.0        # Weekly cooldown
+          priority: "HIGH"
+        noise_level:
+          threshold: 85.0              # dB noise level
+          comparison: "greater_than"
+          action: "cavitation_analysis"
+          cooldown_hours: 168.0        # Weekly cooldown
+          priority: "MEDIUM"
+        
+        # === MISSING SYSTEM CHECK THRESHOLDS ===
+        suction_line_pressure_drop:
+          threshold: 0.08              # MPa suction line pressure drop
+          comparison: "greater_than"
+          action: "suction_system_check"
+          cooldown_hours: 720.0        # Monthly cooldown
+          priority: "MEDIUM"
+        suction_strainer_dp:
+          threshold: 0.025             # MPa suction strainer pressure drop
+          comparison: "greater_than"
+          action: "suction_system_check"
+          cooldown_hours: 720.0        # Monthly cooldown
+          priority: "MEDIUM"
+        suction_line_air_content:
+          threshold: 2.8               # % air content by volume
+          comparison: "greater_than"
+          action: "suction_system_check"
+          cooldown_hours: 720.0        # Monthly cooldown
+          priority: "MEDIUM"
+        discharge_pressure:
+          threshold: 1.85              # MPa discharge pressure
+          comparison: "greater_than"
+          action: "discharge_system_inspection"
+          cooldown_hours: 720.0        # Monthly cooldown
+          priority: "MEDIUM"
+        discharge_valve_position:
+          threshold: 0.86              # 86% valve position (less than full open)
+          comparison: "less_than"
+          action: "discharge_system_inspection"
+          cooldown_hours: 720.0        # Monthly cooldown
+          priority: "MEDIUM"
+        discharge_line_vibration:
+          threshold: 12.0              # mm/s discharge line vibration
+          comparison: "greater_than"
+          action: "discharge_system_inspection"
+          cooldown_hours: 720.0        # Monthly cooldown
+          priority: "MEDIUM"
+        
+        # === MISSING LUBRICATION SYSTEM CHECK THRESHOLDS ===
+        oil_pressure:
+          threshold: 0.15              # MPa oil pressure
+          comparison: "less_than"
+          action: "lubrication_system_check"
+          cooldown_hours: 168.0        # Weekly cooldown
+          priority: "HIGH"
+        oil_flow_rate:
+          threshold: 0.90              # 90% of design oil flow rate
+          comparison: "less_than"
+          action: "lubrication_system_check"
+          cooldown_hours: 168.0        # Weekly cooldown
+          priority: "HIGH"
+        oil_cooler_effectiveness:
+          threshold: 0.83              # 83% heat transfer effectiveness
+          comparison: "less_than"
+          action: "lubrication_system_check"
+          cooldown_hours: 720.0        # Monthly cooldown
+          priority: "MEDIUM"
+        
+        # === MISSING COOLING SYSTEM THRESHOLDS ===
+        cooling_water_temperature:
+          threshold: 32.0              # °C cooling water temperature
+          comparison: "greater_than"
+          action: "cooling_system_check"
+          cooldown_hours: 720.0        # Monthly cooldown
+          priority: "MEDIUM"
+        cooling_water_flow:
+          threshold: 0.86              # 86% of design cooling water flow
+          comparison: "less_than"
+          action: "cooling_system_check"
+          cooldown_hours: 720.0        # Monthly cooldown
+          priority: "MEDIUM"
+        heat_exchanger_fouling:
+          threshold: 0.25              # 25% fouling factor
+          comparison: "greater_than"
+          action: "cooling_system_check"
+          cooldown_hours: 720.0        # Monthly cooldown
           priority: "MEDIUM"
     
-    # Steam generator maintenance
+    # Turbine system maintenance - based on industry standards
+    turbine:
+      check_interval_hours: 6.0
+      cooldown_hours: 24.0
+      thresholds:
+        vibration_level:
+          threshold: 25.0              # mils - Typical alarm setpoint
+          comparison: "greater_than"
+          action: "vibration_analysis"
+          cooldown_hours: 168.0        # Weekly cooldown
+          priority: "HIGH"
+        bearing_temperature:
+          threshold: 110.0             # °C - Industry standard
+          comparison: "greater_than"
+          action: "turbine_bearing_inspection"
+          cooldown_hours: 168.0        # Weekly cooldown
+          priority: "HIGH"
+        efficiency:
+          threshold: 0.30              # 30% minimum (90% of 33% design)
+          comparison: "less_than"
+          action: "efficiency_analysis"
+          cooldown_hours: 720.0        # Monthly cooldown
+          priority: "MEDIUM"
+        oil_contamination:
+          threshold: 15.0              # ppm - Change-out level
+          comparison: "greater_than"
+          action: "turbine_oil_change"
+          cooldown_hours: 720.0        # Monthly cooldown
+          priority: "MEDIUM"
+        oil_level:
+          threshold: 70.0              # % - Low level alarm
+          comparison: "less_than"
+          action: "turbine_oil_top_off"
+          cooldown_hours: 168.0        # Weekly cooldown
+          priority: "HIGH"
+        thrust_bearing_displacement:
+          threshold: 0.5               # mm - Displacement alarm (well below 50mm trip)
+          comparison: "greater_than"
+          action: "thrust_bearing_adjustment"
+          cooldown_hours: 24.0         # Daily cooldown (critical safety parameter)
+          priority: "CRITICAL"
+    
+    # Steam generator maintenance - based on industry standards
     steam_generator:
       check_interval_hours: 6.0
+      cooldown_hours: 24.0
       thresholds:
         tsp_fouling_fraction:
-          threshold: 0.05
+          threshold: 0.05              # 5% fouling triggers cleaning
+          comparison: "greater_than"
           action: "tsp_chemical_cleaning"
-          cooldown_hours: 672.0
+          cooldown_hours: 4380.0       # Semi-annual cooldown
           priority: "HIGH"
         tube_wall_temperature:
-          threshold: 450.0
+          threshold: 320.0             # °C - Alarm point
+          comparison: "greater_than"
           action: "scale_removal"
-          cooldown_hours: 672.0
+          cooldown_hours: 4380.0       # Semi-annual cooldown
           priority: "HIGH"
         steam_quality:
-          threshold: 0.995
+          threshold: 0.995             # 99.5% minimum quality
           comparison: "less_than"
           action: "moisture_separator_maintenance"
-          cooldown_hours: 336.0
+          cooldown_hours: 2190.0       # Quarterly cooldown
           priority: "HIGH"
         efficiency:
-          threshold: 0.95
+          threshold: 0.95              # 95% minimum efficiency
           comparison: "less_than"
           action: "secondary_side_cleaning"
-          cooldown_hours: 672.0
-          priority: "HIGH"
-    
-    # Turbine maintenance
-    turbine_stage:
-      check_interval_hours: 8.0
-      thresholds:
-        efficiency:
-          threshold: 0.98
-          comparison: "less_than"
-          action: "efficiency_analysis"
-          cooldown_hours: 336.0
-          priority: "HIGH"
-        blade_wear:
-          threshold: 0.8
-          action: "blade_inspection"
-          cooldown_hours: 504.0
-          priority: "HIGH"
-        vibration_level:
-          threshold: 5.0
-          action: "vibration_analysis"
-          cooldown_hours: 336.0
-          priority: "HIGH"
-    
-    # Condenser maintenance
-    condenser:
-      check_interval_hours: 12.0
-      thresholds:
-        vacuum_level:
-          threshold: 95.0
-          comparison: "less_than"
-          action: "vacuum_system_check"
-          cooldown_hours: 336.0
-          priority: "HIGH"
-        tube_cleanliness:
-          threshold: 0.90
-          comparison: "less_than"
-          action: "tube_cleaning"
-          cooldown_hours: 672.0
-          priority: "HIGH"
-        heat_rejection_efficiency:
-          threshold: 0.85
-          comparison: "less_than"
-          action: "efficiency_analysis"
-          cooldown_hours: 336.0
+          cooldown_hours: 4380.0       # Semi-annual cooldown
           priority: "MEDIUM"
+    
+    # Condenser maintenance - based on industry standards
+    condenser:
+      check_interval_hours: 8.0
+      cooldown_hours: 24.0
+      thresholds:
+        fouling_resistance:
+          threshold: 0.001             # m²K/W - Cleaning point
+          comparison: "greater_than"
+          action: "condenser_tube_cleaning"
+          cooldown_hours: 2190.0       # Quarterly cooldown
+          priority: "MEDIUM"
+        tube_cleanliness:
+          threshold: 0.80              # 80% minimum cleanliness
+          comparison: "less_than"
+          action: "condenser_chemical_cleaning"
+          cooldown_hours: 4380.0       # Semi-annual cooldown
+          priority: "MEDIUM"
+        vacuum_level:
+          threshold: 85.0              # % minimum vacuum
+          comparison: "less_than"
+          action: "vacuum_system_test"
+          cooldown_hours: 720.0        # Monthly cooldown
+          priority: "MEDIUM"
+        thermal_performance_factor:
+          threshold: 0.85              # 85% minimum performance
+          comparison: "less_than"
+          action: "condenser_performance_test"
+          cooldown_hours: 2190.0       # Quarterly cooldown
+          priority: "MEDIUM"
+        tube_leak_rate:
+          threshold: 0.01              # kg/s maximum leakage
+          comparison: "greater_than"
+          action: "condenser_tube_plugging"
+          cooldown_hours: 168.0        # Weekly cooldown
+          priority: "HIGH"
+
+# === ESSENTIAL CONFIGURATION SECTIONS ===
+# Simplified versions of supporting configuration sections
 
 # === WATER CHEMISTRY CONFIGURATION ===
 water_chemistry:
-  # Primary water chemistry
-  primary_chemistry:
-    design_ph: 7.2
-    design_boron_concentration: 1000.0  # ppm
-    design_lithium_concentration: 2.2   # ppm
-    design_dissolved_hydrogen: 25.0     # cc/kg
-    design_dissolved_oxygen: 0.005      # ppm
-    design_chloride: 0.15               # ppm
-    design_fluoride: 0.15               # ppm
-    design_sulfate: 0.15                # ppm
-  
-  # Secondary water chemistry
+  # Essential chemistry parameters only
   secondary_chemistry:
     design_ph: 9.2
-    design_iron_concentration: 0.1      # ppm
-    design_copper_concentration: 0.05   # ppm
-    design_silica_concentration: 20.0   # ppm
-    design_dissolved_oxygen: 0.005      # ppm
-    design_hydrazine: 10.0              # ppb
-    design_ammonia: 1.0                 # ppm
-    design_conductivity: 1.0            # µS/cm
-  
-  # Chemistry control parameters
-  chemistry_control:
-    enable_automatic_control: true
-    ph_control_deadband: 0.1
-    boron_control_deadband: 10.0        # ppm
-    oxygen_scavenger_control: true
-    corrosion_inhibitor_control: true
-    sampling_interval_hours: 1.0
-    analysis_interval_hours: 8.0
-
-# === INSTRUMENTATION AND CONTROL ===
-instrumentation_control:
-  # Control system parameters
-  control_system:
-    enable_automatic_control: true
-    control_update_interval_seconds: 1.0
-    enable_load_following: true
-    enable_frequency_regulation: true
-    enable_automatic_startup: true
-    enable_automatic_shutdown: true
-  
-  # Instrumentation parameters
-  instrumentation:
-    enable_advanced_monitoring: true
-    data_acquisition_rate_hz: 10.0
-    alarm_processing_enabled: true
-    trending_enabled: true
-    historical_data_retention_days: 365
-    
-  # Safety system parameters
-  safety_systems:
-    enable_reactor_protection: true
-    enable_engineered_safeguards: true
-    enable_diverse_actuation: true
-    safety_system_test_interval_hours: 720.0
-
-# === PERFORMANCE MONITORING ===
-performance_monitoring:
-  # System performance tracking
-  enable_performance_tracking: true
-  performance_calculation_interval_minutes: 5.0
-  efficiency_trending_enabled: true
-  heat_rate_monitoring_enabled: true
-  availability_tracking_enabled: true
-  
-  # Performance targets
-  target_capacity_factor: 0.92
-  target_thermal_efficiency: 0.33
-  target_heat_rate: 10340.0  # Btu/kWh
-  target_availability: 0.95
-  target_reliability: 0.98
-  
-  # Alarm thresholds
-  efficiency_alarm_threshold: 0.30      # 30% efficiency alarm
-  heat_rate_alarm_threshold: 11374.0    # 110% of target heat rate
-  availability_alarm_threshold: 0.90    # 90% availability alarm
+    design_iron_concentration: 0.1
+    design_copper_concentration: 0.05
+    design_dissolved_oxygen: 0.005
+    design_conductivity: 1.0
 
 # === ENVIRONMENTAL PARAMETERS ===
 environmental:
-  # Site conditions
+  # Essential site parameters only
   site_elevation_m: 200.0
   design_ambient_temperature_c: 35.0
-  design_wet_bulb_temperature_c: 25.0
-  design_dry_bulb_temperature_c: 35.0
-  design_atmospheric_pressure_kpa: 101.325
-  
-  # Cooling water source
-  cooling_water_source: "river"
   design_cooling_water_temperature_c: 25.0
-  seasonal_temperature_variation_c: 15.0
-  
-  # Environmental monitoring
-  enable_environmental_monitoring: true
-  meteorological_data_enabled: true
-  water_quality_monitoring_enabled: true
+  cooling_water_source: "river"
 
 # === CONFIGURATION METADATA ===
 metadata:
-  created_date: "2025-06-24"
-  created_by: "Nuclear Simulation System"
   configuration_type: "comprehensive_example"
-  validation_status: "validated"
-  last_modified: "2025-06-24"
-  version_notes: "Complete example demonstrating all configuration capabilities"
-  
-  # Configuration validation
-  validation_checks:
-    parameter_consistency: true
-    physical_constraints: true
-    safety_requirements: true
-    operational_limits: true
-    maintenance_feasibility: true
-  
-  # Documentation references
-  references:
-    design_basis: "Generic 3-loop PWR Design"
-    safety_analysis: "FSAR Chapter 15"
-    maintenance_program: "Plant Maintenance Rule Program"
-    chemistry_program: "Primary and Secondary Chemistry Control"
-    performance_standards: "INPO Performance Standards"
+  description: "Complete 3-loop PWR configuration - duplicate sections removed"
+  design_basis: "Generic 3-loop PWR Design"
+  cleanup_notes: "Removed duplicate standalone component sections and simplified unused sections"

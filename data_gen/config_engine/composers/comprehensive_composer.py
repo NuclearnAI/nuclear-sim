@@ -1,8 +1,9 @@
 """
-Comprehensive Configuration Composer - Subsystem-Specific Maintenance Modes
+Realistic Maintenance Test Composer
 
-This module provides the main composer that creates nuclear plant configurations
-with subsystem-specific maintenance modes for precise targeting of maintenance actions.
+This module provides a simplified composer that creates nuclear plant configurations
+with realistic industry-standard maintenance thresholds and targeted initial conditions
+to trigger specific maintenance actions through natural degradation.
 """
 
 import sys
@@ -23,21 +24,24 @@ from systems.maintenance.maintenance_actions import (
     get_maintenance_catalog
 )
 
+# Import initial conditions catalog
+from ..initial_conditions import get_initial_conditions_catalog
+
 
 class ComprehensiveComposer:
     """
-    Main composer for creating subsystem-specific maintenance mode configurations
+    Main composer for creating realistic maintenance test configurations
     
-    This composer creates configurations where each subsystem can be independently
-    configured with different maintenance modes (ultra_aggressive, aggressive, 
-    conservative, quiet, disabled) for precise targeting of maintenance actions.
+    This composer creates configurations with realistic industry-standard maintenance
+    thresholds and applies targeted initial conditions to trigger specific maintenance actions.
     """
     
     def __init__(self):
         """Initialize the comprehensive composer"""
         self.catalog = get_maintenance_catalog()
+        self.initial_conditions_catalog = get_initial_conditions_catalog()
         
-        # Load the comprehensive config template
+        # Load the comprehensive config template (now contains realistic thresholds)
         template_path = Path(__file__).parent.parent / "templates" / "nuclear_plant_comprehensive_config.yaml"
         try:
             with open(template_path, 'r') as f:
@@ -130,55 +134,22 @@ class ComprehensiveComposer:
             "vacuum_system_check": "condenser",
         }
         
-        # Subsystem maintenance modes
-        self.subsystem_modes = {
-            "ultra_aggressive": {
-                "threshold_multiplier": 20.0,
-                "cooldown_hours": 0.1,
-                "check_interval_hours": 0.05
-            },
-            "aggressive": {
-                "threshold_multiplier": 10.0,
-                "cooldown_hours": 0.5,
-                "check_interval_hours": 0.1
-            },
-            "conservative": {
-                "threshold_multiplier": 1.0,
-                "cooldown_hours": 24.0,
-                "check_interval_hours": 4.0
-            },
-            "quiet": {
-                "threshold_multiplier": 0.1,
-                "cooldown_hours": 168.0,
-                "check_interval_hours": 24.0
-            },
-            "disabled": {
-                "check_interval_hours": 9999.0,
-                "thresholds": {}
-            }
-        }
-        
         print(f"✅ Comprehensive Composer Initialized")
         print(f"   🎯 Action-subsystem mappings: {len(self.action_subsystem_map)}")
         print(f"   📋 Maintenance catalog: {len(self.catalog.actions)} actions")
-        print(f"   🔧 Subsystem modes: {list(self.subsystem_modes.keys())}")
-        print(f"   📄 Base config loaded with {len(self.base_config)} top-level sections")
+        print(f"   📄 Base config loaded with realistic thresholds")
     
     def compose_action_test_scenario(
         self,
         target_action: str,
-        subsystem_modes: Dict[str, str],
         duration_hours: float = 2.0,
         plant_name: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        Create a scenario with subsystem-specific maintenance modes
+        Create a realistic maintenance test scenario with targeted initial conditions
         
         Args:
             target_action: Maintenance action to target (e.g., "oil_top_off")
-            subsystem_modes: Dict mapping subsystem to mode
-                            {"feedwater": "aggressive", "steam_generator": "conservative", 
-                             "turbine": "quiet", "condenser": "disabled"}
             duration_hours: Simulation duration
             plant_name: Optional plant name
             
@@ -192,7 +163,7 @@ class ComprehensiveComposer:
         
         plant_id = f"{target_action.upper()}-TEST-{timestamp}"
         
-        print(f"🔧 Composing subsystem-specific scenario for: {target_action}")
+        print(f"🔧 Composing realistic test scenario for: {target_action}")
         
         # 1. Validate action exists in catalog
         try:
@@ -208,405 +179,204 @@ class ComprehensiveComposer:
         if not target_subsystem:
             raise ValueError(f"No subsystem mapping found for action: {target_action}")
         
-        # 3. Validate subsystem modes
-        all_subsystems = ["steam_generator", "turbine", "feedwater", "condenser"]
-        for subsystem, mode in subsystem_modes.items():
-            if subsystem not in all_subsystems:
-                raise ValueError(f"Unknown subsystem: {subsystem}")
-            if mode not in self.subsystem_modes:
-                raise ValueError(f"Unknown mode: {mode}")
-        
         print(f"   🎯 Target subsystem: {target_subsystem}")
         print(f"   ⏱️ Duration: {duration_hours} hours")
-        print(f"   🔧 Subsystem modes: {subsystem_modes}")
         
-        # 4. Start with a deep copy of the base config
+        # 3. Start with a deep copy of the base config (already has realistic thresholds)
         config = copy.deepcopy(self.base_config)
         
-        # 5. Update plant identification
+        # 4. Update plant identification (keep at top level)
         config['plant_name'] = plant_name
         config['plant_id'] = plant_id
-        config['description'] = f"Subsystem-specific test scenario for {target_action}"
+        config['description'] = f"Realistic maintenance test scenario for {target_action}"
         
-        # 6. Update simulation configuration
+        # 5. Update simulation configuration
         config['simulation_config']['duration_hours'] = duration_hours
-        config['simulation_config']['scenario'] = f"{target_action}_subsystem_test"
+        config['simulation_config']['scenario'] = f"{target_action}_test"
         
-        # 7. Add load profile for the test scenario
+        # 6. Ensure primary_system structure is preserved
+        # The template should have primary system parameters under primary_system key
+        # If they're at top level, move them to primary_system
+        
+        # 6. Add load profile for the test scenario
         if 'load_profiles' not in config:
             config['load_profiles'] = {'profiles': {}}
         
-        config['load_profiles']['profiles'][f"{target_action}_subsystem_test"] = {
+        config['load_profiles']['profiles'][f"{target_action}_test"] = {
             'type': 'steady_with_noise',
             'base_power_percent': 90.0,
             'noise_std_percent': 2.0,
-            'description': f"Steady operation for {target_action} subsystem testing"
+            'description': f"Steady operation for {target_action} testing"
         }
         
-        # 8. Generate maintenance system configuration (single path)
-        config['maintenance_system'] = self._generate_maintenance_system_config(
-            target_action, subsystem_modes
-        )
+        # 7. Apply targeted initial conditions to trigger the specific action
+        self._apply_targeted_initial_conditions(config, target_action)
         
-        # 9. Remove individual subsystem maintenance configs (clean single path)
-        self._remove_individual_subsystem_maintenance_configs(config)
-        
-        # 10. Apply initial degradation for target subsystem only
-        self._apply_initial_degradation(config, target_action, target_subsystem, subsystem_modes)
-        
-        # 11. Update metadata
+        # 8. Update metadata with enhanced information for state manager integration
         config['metadata'] = {
             'created_date': datetime.now().strftime("%Y-%m-%d"),
-            'created_by': "Subsystem-Specific Composer",
-            'configuration_type': "subsystem_specific_test",
+            'created_by': "Realistic Maintenance Composer",
+            'configuration_type': "realistic_maintenance_test",
             'target_action': target_action,
             'target_subsystem': target_subsystem,
-            'subsystem_modes': subsystem_modes,
             'validation_status': "generated",
             'last_modified': datetime.now().strftime("%Y-%m-%d"),
-            'version_notes': f"Generated for testing {target_action} with subsystem-specific modes",
-            'base_template': "nuclear_plant_comprehensive_config.yaml"
+            'version_notes': f"Generated for testing {target_action} with realistic thresholds and targeted initial conditions",
+            'base_template': "nuclear_plant_comprehensive_config.yaml",
+            # NEW: Add state manager configuration flags
+            'state_manager_integration': True,
+            'maintenance_monitoring_enabled': True,
+            'threshold_verification_enabled': True
         }
         
-        print(f"✅ Generated subsystem-specific config for {target_action}")
+        # 9. Ensure maintenance_system section is preserved from template
+        # The template already has realistic industry-standard thresholds
+        if 'maintenance_system' not in config:
+            print(f"   ⚠️ Warning: maintenance_system section missing from template")
+        else:
+            maintenance_system = config['maintenance_system']
+            print(f"   ✅ Preserved maintenance_system with {len(maintenance_system.get('component_configs', {}))} component configs")
+            
+            # Verify the target subsystem has maintenance configuration
+            component_configs = maintenance_system.get('component_configs', {})
+            if target_subsystem in component_configs:
+                target_config = component_configs[target_subsystem]
+                thresholds = target_config.get('thresholds', {})
+                print(f"   🎯 Target subsystem '{target_subsystem}' has {len(thresholds)} maintenance thresholds")
+            else:
+                print(f"   ⚠️ Warning: Target subsystem '{target_subsystem}' not found in maintenance configs")
+        
+        print(f"✅ Generated realistic test config for {target_action}")
         print(f"   📊 Total sections: {len(config)}")
         
         return config
     
-    def _generate_maintenance_system_config(self, target_action: str, subsystem_modes: Dict[str, str]) -> Dict[str, Any]:
+    def _apply_targeted_initial_conditions(self, config: Dict[str, Any], target_action: str):
         """
-        Generate maintenance_system configuration with subsystem-specific modes
+        Apply targeted initial conditions to trigger the specific maintenance action
         
         Args:
+            config: Configuration dictionary to modify
             target_action: Maintenance action to target
-            subsystem_modes: Dict mapping subsystem to mode
-            
-        Returns:
-            Dictionary with complete maintenance_system configuration
         """
-        maintenance_config = {
-            'maintenance_mode': 'subsystem_specific',
-            'maintenance_auto_execute': True,
-            'component_configs': {}
-        }
+        print(f"   🎯 Applying targeted initial conditions for {target_action}")
         
-        # Configure each subsystem according to its specified mode
-        for subsystem, mode in subsystem_modes.items():
-            mode_config = self.subsystem_modes[mode]
-            
-            if mode == 'disabled':
-                # Disabled subsystem
-                maintenance_config['component_configs'][subsystem] = {
-                    'mode': mode,
-                    'check_interval_hours': 9999.0,
-                    'thresholds': {}
-                }
-            else:
-                # Active subsystem with specific mode
-                maintenance_config['component_configs'][subsystem] = {
-                    'mode': mode,
-                    'check_interval_hours': mode_config['check_interval_hours'],
-                    'threshold_multiplier': mode_config['threshold_multiplier'],
-                    'cooldown_hours': mode_config['cooldown_hours'],
-                    'thresholds': self._get_thresholds_for_subsystem_action(
-                        subsystem, target_action, mode_config
-                    )
-                }
+        target_subsystem = self.action_subsystem_map.get(target_action)
+        if not target_subsystem:
+            print(f"   ⚠️ No subsystem mapping found for {target_action}")
+            return
         
-        return maintenance_config
+        # Get initial conditions from catalog
+        conditions = self.initial_conditions_catalog.get_conditions(target_subsystem, target_action)
+        if not conditions:
+            print(f"   ⚠️ No initial conditions found for {target_subsystem}.{target_action}")
+            return
+        
+        # Apply conditions to the appropriate subsystem configuration
+        self._apply_conditions_to_config(config, target_subsystem, conditions)
+        
+        # Count applied parameters (exclude metadata)
+        condition_params = {k: v for k, v in conditions.items() 
+                          if k not in ['description', 'safety_notes', 'threshold_info']}
+        
+        print(f"   ✅ Applied {len(condition_params)} targeted initial conditions for {target_subsystem}.{target_action}")
+        if 'description' in conditions:
+            print(f"   📝 {conditions['description']}")
     
-    def _get_thresholds_for_subsystem_action(self, subsystem: str, target_action: str, mode_config: Dict[str, Any]) -> Dict[str, Any]:
+    def _apply_conditions_to_config(self, config: Dict[str, Any], subsystem: str, conditions: Dict[str, Any]):
         """
-        Get maintenance thresholds for subsystem and action with mode-specific adjustments
+        Apply initial conditions to the appropriate subsystem configuration
         
         Args:
-            subsystem: Subsystem name
-            target_action: Target maintenance action
-            mode_config: Mode configuration with multipliers
-            
-        Returns:
-            Dictionary of thresholds for the subsystem
+            config: Configuration dictionary to modify
+            subsystem: Target subsystem name
+            conditions: Initial conditions to apply
         """
-        thresholds = {}
+        # Get the subsystem configuration path
+        if subsystem in ["feedwater", "turbine", "steam_generator", "condenser"]:
+            subsystem_config = config.get('secondary_system', {}).get(subsystem, {})
+            if not subsystem_config:
+                print(f"   ⚠️ Warning: Subsystem '{subsystem}' not found in secondary_system")
+                return
+        else:
+            # For other subsystems, try to find them in the config
+            subsystem_config = config.get(subsystem, {})
+            if not subsystem_config:
+                print(f"   ⚠️ Warning: Subsystem '{subsystem}' not found in config")
+                return
         
-        # Get base thresholds for subsystem
-        base_thresholds = self._get_base_thresholds_for_subsystem(subsystem)
+        # Get initial_conditions section
+        initial_conditions = subsystem_config.get('initial_conditions', {})
+        if not initial_conditions:
+            print(f"   ⚠️ Warning: No initial_conditions section found for {subsystem}")
+            return
         
-        # Apply mode-specific adjustments
-        threshold_multiplier = mode_config.get('threshold_multiplier', 1.0)
-        cooldown_hours = mode_config.get('cooldown_hours', 24.0)
-        
-        for param_name, base_threshold in base_thresholds.items():
-            # Apply threshold multiplier based on comparison type
-            if base_threshold['comparison'] == 'greater_than':
-                # For "greater than" thresholds, divide to make more sensitive
-                adjusted_threshold = base_threshold['threshold'] / threshold_multiplier
-            else:
-                # For "less than" thresholds, divide to make more sensitive (lower threshold triggers sooner)
-                adjusted_threshold = base_threshold['threshold'] / threshold_multiplier
-            
-            # Special handling for target action
-            if base_threshold['action'] == target_action:
-                # Make target action even more sensitive
-                if base_threshold['comparison'] == 'greater_than':
-                    adjusted_threshold = adjusted_threshold / 2.0
+        # Apply all condition parameters (skip metadata fields)
+        applied_count = 0
+        for param, value in conditions.items():
+            if param not in ['description', 'safety_notes', 'threshold_info']:
+                if param in initial_conditions:
+                    initial_conditions[param] = value
+                    print(f"     🔧 {subsystem}.{param} = {value}")
+                    applied_count += 1
                 else:
-                    adjusted_threshold = adjusted_threshold * 2.0
-                priority = 'HIGH'
-            else:
-                priority = base_threshold.get('priority', 'MEDIUM')
+                    print(f"     ⚠️ Parameter '{param}' not found in {subsystem} initial_conditions")
+        
+        print(f"   ✅ Applied {applied_count} parameters to {subsystem}")
+    
+    def _ensure_primary_system_structure(self, config: Dict[str, Any]):
+        """
+        Ensure primary system parameters are properly nested under primary_system key
+        
+        This fixes the YAML formatting issue where primary system parameters were at the top level
+        instead of being properly nested under a primary_system section.
+        
+        Args:
+            config: Configuration dictionary to restructure
+        """
+        # Define primary system parameters that should be moved under primary_system
+        primary_system_params = {
+            'thermal_power_mw',
+            'electrical_power_mw', 
+            'num_loops',
+            'steam_generators_per_loop',
+            'steam_pressure_mpa',
+            'steam_temperature_c',
+            'total_steam_flow_kgs',
+            'feedwater_temperature_c',
+            'minimum_power_fraction',
+            'maximum_power_fraction',
+            'normal_operating_efficiency',
+            'design_efficiency',
+            'enable_load_following',
+            'enable_chemistry_tracking',
+            'enable_maintenance_tracking',
+            'enable_performance_monitoring',
+            'enable_predictive_analytics',
+            'enable_system_coordination'
+        }
+        
+        # Check if any primary system parameters are at the top level
+        top_level_primary_params = {key: value for key, value in config.items() 
+                                  if key in primary_system_params}
+        
+        if top_level_primary_params:
+            print(f"   🔧 Restructuring {len(top_level_primary_params)} primary system parameters")
             
-            thresholds[param_name] = {
-                'threshold': adjusted_threshold,
-                'comparison': base_threshold['comparison'],
-                'action': base_threshold['action'],
-                'cooldown_hours': cooldown_hours,
-                'priority': priority
-            }
-        
-        return thresholds
-    
-    def _get_base_thresholds_for_subsystem(self, subsystem: str) -> Dict[str, Any]:
-        """Get base maintenance thresholds for a subsystem"""
-        
-        if subsystem == "steam_generator":
-            return {
-                'tsp_fouling_fraction': {
-                    'threshold': 0.10,
-                    'comparison': 'greater_than',
-                    'action': 'tsp_chemical_cleaning',
-                    'priority': 'HIGH'
-                },
-                'tube_wall_temperature': {
-                    'threshold': 320.0,
-                    'comparison': 'greater_than',
-                    'action': 'scale_removal',
-                    'priority': 'HIGH'
-                },
-                'steam_quality': {
-                    'threshold': 0.995,
-                    'comparison': 'less_than',
-                    'action': 'moisture_separator_maintenance',
-                    'priority': 'MEDIUM'
-                },
-                'efficiency': {
-                    'threshold': 0.95,
-                    'comparison': 'less_than',
-                    'action': 'secondary_side_cleaning',
-                    'priority': 'MEDIUM'
-                }
-            }
-        
-        elif subsystem == "turbine":
-            return {
-                'efficiency': {
-                    'threshold': 0.90,
-                    'comparison': 'less_than',
-                    'action': 'efficiency_analysis',
-                    'priority': 'MEDIUM'
-                },
-                'vibration_level': {
-                    'threshold': 20.0,
-                    'comparison': 'greater_than',
-                    'action': 'vibration_analysis',
-                    'priority': 'HIGH'
-                },
-                'bearing_temperature': {
-                    'threshold': 110.0,
-                    'comparison': 'greater_than',
-                    'action': 'turbine_bearing_inspection',
-                    'priority': 'HIGH'
-                },
-                'oil_contamination_level': {
-                    'threshold': 15.0,
-                    'comparison': 'greater_than',
-                    'action': 'turbine_oil_change',
-                    'priority': 'MEDIUM'
-                }
-            }
-        
-        elif subsystem == "feedwater":
-            return {
-                'oil_level': {
-                    'threshold': 70.0,
-                    'comparison': 'less_than',
-                    'action': 'oil_top_off',
-                    'priority': 'HIGH'
-                },
-                'oil_contamination_level': {
-                    'threshold': 15.0,
-                    'comparison': 'greater_than',
-                    'action': 'oil_change',
-                    'priority': 'MEDIUM'
-                },
-                'vibration_level': {
-                    'threshold': 20.0,
-                    'comparison': 'greater_than',
-                    'action': 'vibration_analysis',
-                    'priority': 'HIGH'
-                },
-                'bearing_temperature': {
-                    'threshold': 110.0,
-                    'comparison': 'greater_than',
-                    'action': 'bearing_inspection',
-                    'priority': 'HIGH'
-                },
-                'efficiency_degradation_factor': {
-                    'threshold': 0.85,
-                    'comparison': 'less_than',
-                    'action': 'pump_inspection',
-                    'priority': 'MEDIUM'
-                }
-            }
-        
-        elif subsystem == "condenser":
-            return {
-                'vacuum_level': {
-                    'threshold': 85.0,
-                    'comparison': 'less_than',
-                    'action': 'vacuum_system_check',
-                    'priority': 'MEDIUM'
-                },
-                'tube_cleanliness': {
-                    'threshold': 0.80,
-                    'comparison': 'less_than',
-                    'action': 'condenser_tube_cleaning',
-                    'priority': 'MEDIUM'
-                },
-                'heat_rejection_efficiency': {
-                    'threshold': 0.85,
-                    'comparison': 'less_than',
-                    'action': 'condenser_performance_test',
-                    'priority': 'MEDIUM'
-                },
-                'fouling_resistance': {
-                    'threshold': 0.001,
-                    'comparison': 'greater_than',
-                    'action': 'condenser_chemical_cleaning',
-                    'priority': 'HIGH'
-                }
-            }
-        
-        return {}
-    
-    def _remove_individual_subsystem_maintenance_configs(self, config: Dict[str, Any]):
-        """Remove individual subsystem maintenance configs to enforce single path"""
-        
-        # Remove maintenance sections from individual subsystem configs
-        subsystem_paths = [
-            ['secondary_system', 'steam_generator'],
-            ['secondary_system', 'turbine'],
-            ['secondary_system', 'feedwater'],
-            ['secondary_system', 'condenser'],
-            ['steam_generator'],
-            ['turbine'],
-            ['feedwater'],
-            ['condenser']
-        ]
-        
-        for path in subsystem_paths:
-            subsystem_config = config
-            for key in path:
-                if key in subsystem_config:
-                    subsystem_config = subsystem_config[key]
-                else:
-                    break
-            else:
-                # Successfully navigated to subsystem config
-                if 'maintenance' in subsystem_config:
-                    del subsystem_config['maintenance']
-                    print(f"   🧹 Removed maintenance config from {'.'.join(path)}")
-    
-    def _apply_initial_degradation(self, config: Dict[str, Any], target_action: str, 
-                                 target_subsystem: str, subsystem_modes: Dict[str, str]):
-        """Apply initial degradation only for subsystems that need it"""
-        
-        if 'initial_degradation' not in config:
-            config['initial_degradation'] = {}
-        
-        # Only apply degradation to subsystems that are not disabled
-        for subsystem, mode in subsystem_modes.items():
-            if mode != 'disabled':
-                self._apply_subsystem_degradation(config, subsystem, target_action, mode)
-    
-    def _apply_subsystem_degradation(self, config: Dict[str, Any], subsystem: str, 
-                                   target_action: str, mode: str):
-        """Apply degradation for a specific subsystem"""
-        
-        # Get mode-specific degradation intensity
-        mode_config = self.subsystem_modes[mode]
-        intensity = mode_config.get('threshold_multiplier', 1.0)
-        
-        if subsystem == "steam_generator":
-            if target_action == "tsp_chemical_cleaning":
-                config['initial_degradation']['steam_generator_tsp_fouling_fraction'] = 0.08 * intensity
-            elif target_action == "scale_removal":
-                config['initial_degradation']['steam_generator_tube_wall_temperature'] = 315.0 + (5.0 * intensity)
-            elif target_action == "moisture_separator_maintenance":
-                config['initial_degradation']['steam_generator_steam_quality'] = 0.992 - (0.001 * intensity)
-        
-        elif subsystem == "turbine":
-            if "bearing" in target_action:
-                config['initial_degradation']['turbine_bearing_temperature'] = 105.0 + (2.0 * intensity)
-                config['initial_degradation']['turbine_vibration_level'] = 18.0 + (1.0 * intensity)
-            elif "oil" in target_action:
-                if target_action == "turbine_oil_top_off":
-                    config['initial_degradation']['turbine_oil_level'] = 35.0 - (5.0 * intensity)
-                elif target_action == "turbine_oil_change":
-                    config['initial_degradation']['turbine_oil_contamination'] = 12.0 + (2.0 * intensity)
-            elif "vibration" in target_action:
-                config['initial_degradation']['turbine_vibration_level'] = 18.0 + (1.0 * intensity)
-            elif "efficiency" in target_action:
-                config['initial_degradation']['turbine_efficiency'] = 0.315 - (0.01 * intensity)
-        
-        elif subsystem == "feedwater":
-            if target_action == "oil_top_off":
-                # Set oil level to a low value that will trigger the threshold
-                # For ultra_aggressive (intensity=20): 35.0 - 5.0*20 = -65.0 (bad!)
-                # Fixed: Use realistic low oil level that will trigger 7.0% threshold
-                config['initial_degradation']['feedwater_pump_oil_level'] = max(5.0, 35.0 - (1.5 * intensity))
-            elif target_action == "oil_change":
-                config['initial_degradation']['feedwater_pump_oil_contamination'] = 85.0 + (5.0 * intensity)
-            elif "bearing" in target_action:
-                config['initial_degradation']['feedwater_pump_bearing_temperature'] = 105.0 + (2.0 * intensity)
-            elif "vibration" in target_action:
-                config['initial_degradation']['feedwater_pump_vibration_level'] = 18.0 + (1.0 * intensity)
-        
-        elif subsystem == "condenser":
-            if "tube_cleaning" in target_action:
-                config['initial_degradation']['condenser_tube_fouling_resistance'] = 0.0018 + (0.0002 * intensity)
-            elif "vacuum" in target_action:
-                config['initial_degradation']['condenser_vacuum_efficiency'] = 0.82 - (0.02 * intensity)
-    
-    # Helper methods for easy usage
-    def create_single_target_scenario(self, target_action: str, target_mode: str = "aggressive") -> Dict[str, Any]:
-        """Helper for single subsystem targeting"""
-        target_subsystem = self.action_subsystem_map[target_action]
-        
-        subsystem_modes = {
-            "steam_generator": "disabled",
-            "turbine": "disabled", 
-            "feedwater": "disabled",
-            "condenser": "disabled"
-        }
-        subsystem_modes[target_subsystem] = target_mode
-        
-        return self.compose_action_test_scenario(target_action, subsystem_modes)
-    
-    def create_focused_scenario(self, target_action: str, target_mode: str = "aggressive", 
-                              background_mode: str = "quiet") -> Dict[str, Any]:
-        """Helper for focused targeting with quiet background"""
-        target_subsystem = self.action_subsystem_map[target_action]
-        
-        subsystem_modes = {
-            "steam_generator": background_mode,
-            "turbine": background_mode,
-            "feedwater": background_mode, 
-            "condenser": background_mode
-        }
-        subsystem_modes[target_subsystem] = target_mode
-        
-        return self.compose_action_test_scenario(target_action, subsystem_modes)
+            # Create primary_system section if it doesn't exist
+            if 'primary_system' not in config:
+                config['primary_system'] = {}
+            
+            # Move parameters from top level to primary_system
+            for param_name, param_value in top_level_primary_params.items():
+                config['primary_system'][param_name] = param_value
+                # Remove from top level
+                del config[param_name]
+                print(f"   � Moved {param_name} to primary_system")
+            
+            print(f"   ✅ Primary system restructuring complete")
+        else:
+            print(f"   ✅ Primary system structure already correct")
     
     def save_config(self, config: Dict[str, Any], filename: str, output_dir: Optional[str] = None) -> Path:
         """Save configuration to YAML file"""
@@ -639,85 +409,53 @@ class ComprehensiveComposer:
         """Get all actions for a specific subsystem"""
         return [action for action, sub in self.action_subsystem_map.items() if sub == subsystem]
     
-    def list_available_modes(self) -> List[str]:
-        """List all available subsystem modes"""
-        return list(self.subsystem_modes.keys())
-
-
 # Convenience functions for easy usage
-def create_single_target_config(target_action: str, target_mode: str = "aggressive", 
-                               duration_hours: float = 2.0) -> Dict[str, Any]:
+def create_action_test_config(target_action: str, duration_hours: float = 2.0) -> Dict[str, Any]:
     """
-    Convenience function to create a single-target configuration
+    Convenience function to create a realistic maintenance test configuration
     
     Args:
         target_action: Maintenance action to target
-        target_mode: Mode for target subsystem
         duration_hours: Simulation duration
         
     Returns:
         Complete configuration dictionary
     """
     composer = ComprehensiveComposer()
-    return composer.create_single_target_scenario(target_action, target_mode)
+    return composer.compose_action_test_scenario(target_action, duration_hours)
 
 
-def create_focused_config(target_action: str, target_mode: str = "aggressive", 
-                         background_mode: str = "quiet", duration_hours: float = 2.0) -> Dict[str, Any]:
+def save_action_test_config(target_action: str, duration_hours: float = 2.0,
+                           output_dir: Optional[str] = None) -> Path:
     """
-    Convenience function to create a focused configuration
+    Convenience function to create and save a realistic maintenance test configuration
     
     Args:
         target_action: Maintenance action to target
-        target_mode: Mode for target subsystem
-        background_mode: Mode for other subsystems
         duration_hours: Simulation duration
-        
-    Returns:
-        Complete configuration dictionary
-    """
-    composer = ComprehensiveComposer()
-    return composer.create_focused_scenario(target_action, target_mode, background_mode)
-
-
-def save_single_target_config(target_action: str, target_mode: str = "aggressive",
-                             output_dir: Optional[str] = None) -> Path:
-    """
-    Convenience function to create and save a single-target configuration
-    
-    Args:
-        target_action: Maintenance action to target
-        target_mode: Mode for target subsystem
         output_dir: Output directory for config file
         
     Returns:
         Path to saved configuration file
     """
     composer = ComprehensiveComposer()
-    config = composer.create_single_target_scenario(target_action, target_mode)
-    return composer.save_config(config, f"{target_action}_single_target", output_dir)
+    config = composer.compose_action_test_scenario(target_action, duration_hours)
+    return composer.save_config(config, f"{target_action}_test", output_dir)
 
 
 # Example usage
 if __name__ == "__main__":
-    print("Subsystem-Specific Maintenance Mode Composer")
-    print("=" * 60)
+    print("Realistic Maintenance Test Composer")
+    print("=" * 50)
     
     composer = ComprehensiveComposer()
     
-    # List available actions and modes
+    # List available actions
     print("Available maintenance actions:")
     actions = composer.list_available_actions()
     for i, action in enumerate(actions[:10]):  # Show first 10
         print(f"  {i+1}. {action}")
     print(f"  ... and {len(actions) - 10} more")
-    print()
-    
-    print("Available subsystem modes:")
-    modes = composer.list_available_modes()
-    for mode in modes:
-        mode_config = composer.subsystem_modes[mode]
-        print(f"  - {mode}: {mode_config}")
     print()
     
     # Show actions by subsystem
@@ -734,31 +472,25 @@ if __name__ == "__main__":
     print("Generating example configurations...")
     
     try:
-        # Example 1: Single target (feedwater aggressive, others disabled)
-        config1 = composer.create_single_target_scenario("oil_top_off", "aggressive")
-        config_file1 = composer.save_config(config1, "example_single_target")
-        print(f"✅ Single target config saved to: {config_file1}")
+        # Example 1: Oil top off test
+        config1 = composer.compose_action_test_scenario("oil_top_off", 2.0)
+        config_file1 = composer.save_config(config1, "oil_top_off_test")
+        print(f"✅ Oil top off test config saved to: {config_file1}")
         
-        # Example 2: Focused (feedwater aggressive, others quiet)
-        config2 = composer.create_focused_scenario("oil_top_off", "aggressive", "quiet")
-        config_file2 = composer.save_config(config2, "example_focused")
-        print(f"✅ Focused config saved to: {config_file2}")
+        # Example 2: Vibration analysis test
+        config2 = composer.compose_action_test_scenario("vibration_analysis", 3.0)
+        config_file2 = composer.save_config(config2, "vibration_analysis_test")
+        print(f"✅ Vibration analysis test config saved to: {config_file2}")
         
-        # Example 3: Custom subsystem modes
-        custom_modes = {
-            "feedwater": "ultra_aggressive",
-            "steam_generator": "conservative",
-            "turbine": "quiet",
-            "condenser": "disabled"
-        }
-        config3 = composer.compose_action_test_scenario("oil_top_off", custom_modes)
-        config_file3 = composer.save_config(config3, "example_custom")
-        print(f"✅ Custom config saved to: {config_file3}")
+        # Example 3: TSP cleaning test
+        config3 = composer.compose_action_test_scenario("tsp_chemical_cleaning", 4.0)
+        config_file3 = composer.save_config(config3, "tsp_cleaning_test")
+        print(f"✅ TSP cleaning test config saved to: {config_file3}")
         
         print("\n📊 Example configuration summary:")
-        print(f"   Single target: Only feedwater aggressive, others disabled")
-        print(f"   Focused: Feedwater aggressive, others quiet background")
-        print(f"   Custom: Ultra-aggressive feedwater, mixed other modes")
+        print(f"   All configs use realistic industry-standard thresholds")
+        print(f"   Initial conditions are targeted to trigger specific actions")
+        print(f"   Natural degradation during simulation triggers maintenance")
         
     except Exception as e:
         print(f"❌ Error generating examples: {e}")

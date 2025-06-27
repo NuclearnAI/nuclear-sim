@@ -1,0 +1,625 @@
+{
+  "optimization_summary": {
+    "action": "oil_top_off",
+    "scenario_profile": "demo_fast",
+    "optimization_goal": "target_timing",
+    "optimization_timestamp": "2025-06-26T09:43:31.493930",
+    "optimization_time_seconds": 0.31536316871643066,
+    "iterations_used": 222
+  },
+  "timing_optimization": {
+    "target_trigger_hours": 0.1,
+    "tolerance_hours": 0.05,
+    "achieved_trigger_hours": null,
+    "timing_accuracy_hours": null,
+    "within_tolerance": false,
+    "improvement_description": "No trigger detected"
+  },
+  "initial_conditions": {
+    "baseline_ics": {
+      "secondary_system.steam_generator.initial_conditions.sg_levels": 12.5,
+      "secondary_system.steam_generator.initial_conditions.sg_pressures": 6.9,
+      "secondary_system.steam_generator.initial_conditions.sg_temperatures": 285.8,
+      "secondary_system.steam_generator.initial_conditions.sg_steam_qualities": 0.99,
+      "secondary_system.steam_generator.initial_conditions.sg_steam_flows": 500.0,
+      "secondary_system.steam_generator.initial_conditions.sg_feedwater_flows": 500.0,
+      "secondary_system.steam_generator.initial_conditions.primary_inlet_temps": 327.0,
+      "secondary_system.steam_generator.initial_conditions.primary_outlet_temps": 293.0,
+      "secondary_system.steam_generator.initial_conditions.primary_flow_rates": 5700.0,
+      "secondary_system.steam_generator.initial_conditions.tsp_fouling_thicknesses": 0.0,
+      "secondary_system.steam_generator.initial_conditions.tsp_heat_transfer_degradations": 0.0,
+      "secondary_system.turbine.initial_conditions.rotor_speed": 3600.0,
+      "secondary_system.turbine.initial_conditions.rotor_acceleration": 0.0,
+      "secondary_system.turbine.initial_conditions.rotor_temperature": 450.0,
+      "secondary_system.turbine.initial_conditions.load_demand": 1.0,
+      "secondary_system.turbine.initial_conditions.electrical_power_output": 1000.0,
+      "secondary_system.turbine.initial_conditions.mechanical_power_output": 1015.0,
+      "secondary_system.turbine.initial_conditions.steam_inlet_pressure": 6.9,
+      "secondary_system.turbine.initial_conditions.steam_inlet_temperature": 285.8,
+      "secondary_system.turbine.initial_conditions.steam_inlet_flow": 1500.0,
+      "secondary_system.turbine.initial_conditions.steam_quality": 0.99,
+      "secondary_system.turbine.initial_conditions.governor_valve_position": 100.0,
+      "secondary_system.turbine.initial_conditions.control_valve_positions": 100.0,
+      "secondary_system.turbine.initial_conditions.bearing_temperatures": 80.0,
+      "secondary_system.turbine.initial_conditions.bearing_vibrations": 5.0,
+      "secondary_system.turbine.initial_conditions.bearing_oil_pressures": 0.2,
+      "secondary_system.turbine.initial_conditions.oil_contamination": 5.0,
+      "secondary_system.turbine.initial_conditions.oil_level": 100.0,
+      "secondary_system.turbine.initial_conditions.oil_temperature": 45.0,
+      "secondary_system.turbine.initial_conditions.total_power_output": 1000.0,
+      "secondary_system.turbine.initial_conditions.overall_efficiency": 0.34,
+      "secondary_system.turbine.initial_conditions.casing_temperatures": 380.0,
+      "secondary_system.turbine.initial_conditions.blade_temperatures": 500.0,
+      "secondary_system.turbine.initial_conditions.protection_system_armed": 1.0,
+      "secondary_system.turbine.initial_conditions.trip_active": 0.0,
+      "secondary_system.feedwater.initial_conditions.sg_levels": 12.5,
+      "secondary_system.feedwater.initial_conditions.sg_pressures": 6.9,
+      "secondary_system.feedwater.initial_conditions.sg_steam_flows": 500.0,
+      "secondary_system.feedwater.initial_conditions.sg_steam_qualities": 0.99,
+      "secondary_system.feedwater.initial_conditions.pump_oil_levels": 85.0,
+      "secondary_system.condenser.initial_conditions.steam_inlet_pressure": 0.007,
+      "secondary_system.condenser.initial_conditions.steam_inlet_temperature": 39.0,
+      "secondary_system.condenser.initial_conditions.steam_inlet_flow": 1500.0,
+      "secondary_system.condenser.initial_conditions.steam_inlet_quality": 0.9,
+      "secondary_system.condenser.initial_conditions.condensate_temperature": 39.0,
+      "secondary_system.condenser.initial_conditions.condensate_flow": 1500.0,
+      "secondary_system.condenser.initial_conditions.condensate_subcooling": 0.0,
+      "secondary_system.condenser.initial_conditions.cooling_water_inlet_temp": 25.0,
+      "secondary_system.condenser.initial_conditions.cooling_water_outlet_temp": 35.0,
+      "secondary_system.condenser.initial_conditions.cooling_water_flow": 45000.0,
+      "secondary_system.condenser.initial_conditions.cooling_water_velocity": 2.0,
+      "secondary_system.condenser.initial_conditions.overall_htc": 3000.0,
+      "secondary_system.condenser.initial_conditions.lmtd": 10.0,
+      "secondary_system.condenser.initial_conditions.thermal_performance_factor": 1.0,
+      "secondary_system.condenser.initial_conditions.condenser_pressure": 0.007,
+      "secondary_system.condenser.initial_conditions.air_partial_pressure": 0.0005,
+      "secondary_system.condenser.initial_conditions.air_removal_rate": 0.1,
+      "secondary_system.condenser.initial_conditions.vacuum_steam_consumption": 0.3,
+      "secondary_system.condenser.initial_conditions.active_tube_count": 84000.0,
+      "secondary_system.condenser.initial_conditions.plugged_tube_count": 0.0,
+      "secondary_system.condenser.initial_conditions.average_wall_thickness": 0.00159,
+      "secondary_system.condenser.initial_conditions.tube_leak_rate": 0.0,
+      "secondary_system.condenser.initial_conditions.biofouling_thickness": 0.0,
+      "secondary_system.condenser.initial_conditions.scale_thickness": 0.0,
+      "secondary_system.condenser.initial_conditions.corrosion_thickness": 0.0,
+      "secondary_system.condenser.initial_conditions.total_fouling_resistance": 0.0,
+      "secondary_system.condenser.initial_conditions.time_since_cleaning": 0.0,
+      "secondary_system.condenser.initial_conditions.water_ph": 7.5,
+      "secondary_system.condenser.initial_conditions.water_hardness": 150.0,
+      "secondary_system.condenser.initial_conditions.chlorine_residual": 1.0,
+      "secondary_system.condenser.initial_conditions.dissolved_oxygen": 8.0,
+      "secondary_system.condenser.initial_conditions.water_temperature": 30.0,
+      "secondary_system.condenser.initial_conditions.operating_hours": 0.0,
+      "secondary_system.condenser.initial_conditions.system_availability": 1.0
+    },
+    "optimized_ics": {
+      "secondary_system.steam_generator.initial_conditions.sg_levels": 12.5,
+      "secondary_system.steam_generator.initial_conditions.sg_pressures": 6.9,
+      "secondary_system.steam_generator.initial_conditions.sg_temperatures": 285.8,
+      "secondary_system.steam_generator.initial_conditions.sg_steam_qualities": 0.99,
+      "secondary_system.steam_generator.initial_conditions.sg_steam_flows": 500.0,
+      "secondary_system.steam_generator.initial_conditions.sg_feedwater_flows": 500.0,
+      "secondary_system.steam_generator.initial_conditions.primary_inlet_temps": 327.0,
+      "secondary_system.steam_generator.initial_conditions.primary_outlet_temps": 293.0,
+      "secondary_system.steam_generator.initial_conditions.primary_flow_rates": 5700.0,
+      "secondary_system.steam_generator.initial_conditions.tsp_fouling_thicknesses": 0.0,
+      "secondary_system.steam_generator.initial_conditions.tsp_heat_transfer_degradations": 0.0,
+      "secondary_system.turbine.initial_conditions.rotor_speed": 3600.0,
+      "secondary_system.turbine.initial_conditions.rotor_acceleration": 0.0,
+      "secondary_system.turbine.initial_conditions.rotor_temperature": 450.0,
+      "secondary_system.turbine.initial_conditions.load_demand": 1.0,
+      "secondary_system.turbine.initial_conditions.electrical_power_output": 1000.0,
+      "secondary_system.turbine.initial_conditions.mechanical_power_output": 1015.0,
+      "secondary_system.turbine.initial_conditions.steam_inlet_pressure": 6.9,
+      "secondary_system.turbine.initial_conditions.steam_inlet_temperature": 285.8,
+      "secondary_system.turbine.initial_conditions.steam_inlet_flow": 1500.0,
+      "secondary_system.turbine.initial_conditions.steam_quality": 0.99,
+      "secondary_system.turbine.initial_conditions.governor_valve_position": 100.0,
+      "secondary_system.turbine.initial_conditions.control_valve_positions": 100.0,
+      "secondary_system.turbine.initial_conditions.bearing_temperatures": 80.0,
+      "secondary_system.turbine.initial_conditions.bearing_vibrations": 5.0,
+      "secondary_system.turbine.initial_conditions.bearing_oil_pressures": 0.2,
+      "secondary_system.turbine.initial_conditions.oil_contamination": 5.0,
+      "secondary_system.turbine.initial_conditions.oil_level": 100.0,
+      "secondary_system.turbine.initial_conditions.oil_temperature": 45.0,
+      "secondary_system.turbine.initial_conditions.total_power_output": 1000.0,
+      "secondary_system.turbine.initial_conditions.overall_efficiency": 0.34,
+      "secondary_system.turbine.initial_conditions.casing_temperatures": 380.0,
+      "secondary_system.turbine.initial_conditions.blade_temperatures": 500.0,
+      "secondary_system.turbine.initial_conditions.protection_system_armed": 1.0,
+      "secondary_system.turbine.initial_conditions.trip_active": 0.0,
+      "secondary_system.feedwater.initial_conditions.sg_levels": 12.5,
+      "secondary_system.feedwater.initial_conditions.sg_pressures": 6.9,
+      "secondary_system.feedwater.initial_conditions.sg_steam_flows": 500.0,
+      "secondary_system.feedwater.initial_conditions.sg_steam_qualities": 0.99,
+      "secondary_system.feedwater.initial_conditions.pump_oil_levels": 85.0,
+      "secondary_system.condenser.initial_conditions.steam_inlet_pressure": 0.007,
+      "secondary_system.condenser.initial_conditions.steam_inlet_temperature": 39.0,
+      "secondary_system.condenser.initial_conditions.steam_inlet_flow": 1500.0,
+      "secondary_system.condenser.initial_conditions.steam_inlet_quality": 0.9,
+      "secondary_system.condenser.initial_conditions.condensate_temperature": 39.0,
+      "secondary_system.condenser.initial_conditions.condensate_flow": 1500.0,
+      "secondary_system.condenser.initial_conditions.condensate_subcooling": 0.0,
+      "secondary_system.condenser.initial_conditions.cooling_water_inlet_temp": 25.0,
+      "secondary_system.condenser.initial_conditions.cooling_water_outlet_temp": 35.0,
+      "secondary_system.condenser.initial_conditions.cooling_water_flow": 45000.0,
+      "secondary_system.condenser.initial_conditions.cooling_water_velocity": 2.0,
+      "secondary_system.condenser.initial_conditions.overall_htc": 3000.0,
+      "secondary_system.condenser.initial_conditions.lmtd": 10.0,
+      "secondary_system.condenser.initial_conditions.thermal_performance_factor": 1.0,
+      "secondary_system.condenser.initial_conditions.condenser_pressure": 0.007,
+      "secondary_system.condenser.initial_conditions.air_partial_pressure": 0.0005,
+      "secondary_system.condenser.initial_conditions.air_removal_rate": 0.1,
+      "secondary_system.condenser.initial_conditions.vacuum_steam_consumption": 0.3,
+      "secondary_system.condenser.initial_conditions.active_tube_count": 84000.0,
+      "secondary_system.condenser.initial_conditions.plugged_tube_count": 0.0,
+      "secondary_system.condenser.initial_conditions.average_wall_thickness": 0.00159,
+      "secondary_system.condenser.initial_conditions.tube_leak_rate": 0.0,
+      "secondary_system.condenser.initial_conditions.biofouling_thickness": 0.0,
+      "secondary_system.condenser.initial_conditions.scale_thickness": 0.0,
+      "secondary_system.condenser.initial_conditions.corrosion_thickness": 0.0,
+      "secondary_system.condenser.initial_conditions.total_fouling_resistance": 0.0,
+      "secondary_system.condenser.initial_conditions.time_since_cleaning": 0.0,
+      "secondary_system.condenser.initial_conditions.water_ph": 7.5,
+      "secondary_system.condenser.initial_conditions.water_hardness": 150.0,
+      "secondary_system.condenser.initial_conditions.chlorine_residual": 1.0,
+      "secondary_system.condenser.initial_conditions.dissolved_oxygen": 8.0,
+      "secondary_system.condenser.initial_conditions.water_temperature": 30.0,
+      "secondary_system.condenser.initial_conditions.operating_hours": 0.0,
+      "secondary_system.condenser.initial_conditions.system_availability": 1.0
+    },
+    "parameters_optimized": 74,
+    "ic_changes": {
+      "secondary_system.steam_generator.initial_conditions.sg_temperatures": {
+        "baseline": 285.8,
+        "optimized": 285.8,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.condenser.initial_conditions.scale_thickness": {
+        "baseline": 0.0,
+        "optimized": 0.0,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.condenser.initial_conditions.steam_inlet_temperature": {
+        "baseline": 39.0,
+        "optimized": 39.0,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.turbine.initial_conditions.blade_temperatures": {
+        "baseline": 500.0,
+        "optimized": 500.0,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.condenser.initial_conditions.thermal_performance_factor": {
+        "baseline": 1.0,
+        "optimized": 1.0,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.turbine.initial_conditions.oil_level": {
+        "baseline": 100.0,
+        "optimized": 100.0,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.turbine.initial_conditions.rotor_speed": {
+        "baseline": 3600.0,
+        "optimized": 3600.0,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.steam_generator.initial_conditions.primary_outlet_temps": {
+        "baseline": 293.0,
+        "optimized": 293.0,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.steam_generator.initial_conditions.sg_steam_qualities": {
+        "baseline": 0.99,
+        "optimized": 0.99,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.condenser.initial_conditions.cooling_water_flow": {
+        "baseline": 45000.0,
+        "optimized": 45000.0,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.steam_generator.initial_conditions.primary_inlet_temps": {
+        "baseline": 327.0,
+        "optimized": 327.0,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.condenser.initial_conditions.lmtd": {
+        "baseline": 10.0,
+        "optimized": 10.0,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.turbine.initial_conditions.oil_contamination": {
+        "baseline": 5.0,
+        "optimized": 5.0,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.turbine.initial_conditions.oil_temperature": {
+        "baseline": 45.0,
+        "optimized": 45.0,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.feedwater.initial_conditions.sg_levels": {
+        "baseline": 12.5,
+        "optimized": 12.5,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.condenser.initial_conditions.system_availability": {
+        "baseline": 1.0,
+        "optimized": 1.0,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.feedwater.initial_conditions.sg_steam_flows": {
+        "baseline": 500.0,
+        "optimized": 500.0,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.condenser.initial_conditions.condensate_temperature": {
+        "baseline": 39.0,
+        "optimized": 39.0,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.condenser.initial_conditions.plugged_tube_count": {
+        "baseline": 0.0,
+        "optimized": 0.0,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.steam_generator.initial_conditions.sg_levels": {
+        "baseline": 12.5,
+        "optimized": 12.5,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.turbine.initial_conditions.bearing_temperatures": {
+        "baseline": 80.0,
+        "optimized": 80.0,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.condenser.initial_conditions.overall_htc": {
+        "baseline": 3000.0,
+        "optimized": 3000.0,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.turbine.initial_conditions.steam_inlet_temperature": {
+        "baseline": 285.8,
+        "optimized": 285.8,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.condenser.initial_conditions.total_fouling_resistance": {
+        "baseline": 0.0,
+        "optimized": 0.0,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.condenser.initial_conditions.cooling_water_inlet_temp": {
+        "baseline": 25.0,
+        "optimized": 25.0,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.condenser.initial_conditions.air_partial_pressure": {
+        "baseline": 0.0005,
+        "optimized": 0.0005,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.condenser.initial_conditions.active_tube_count": {
+        "baseline": 84000.0,
+        "optimized": 84000.0,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.steam_generator.initial_conditions.sg_pressures": {
+        "baseline": 6.9,
+        "optimized": 6.9,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.condenser.initial_conditions.biofouling_thickness": {
+        "baseline": 0.0,
+        "optimized": 0.0,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.turbine.initial_conditions.casing_temperatures": {
+        "baseline": 380.0,
+        "optimized": 380.0,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.condenser.initial_conditions.steam_inlet_flow": {
+        "baseline": 1500.0,
+        "optimized": 1500.0,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.condenser.initial_conditions.cooling_water_velocity": {
+        "baseline": 2.0,
+        "optimized": 2.0,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.turbine.initial_conditions.protection_system_armed": {
+        "baseline": 1.0,
+        "optimized": 1.0,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.condenser.initial_conditions.vacuum_steam_consumption": {
+        "baseline": 0.3,
+        "optimized": 0.3,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.condenser.initial_conditions.operating_hours": {
+        "baseline": 0.0,
+        "optimized": 0.0,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.condenser.initial_conditions.time_since_cleaning": {
+        "baseline": 0.0,
+        "optimized": 0.0,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.condenser.initial_conditions.corrosion_thickness": {
+        "baseline": 0.0,
+        "optimized": 0.0,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.condenser.initial_conditions.dissolved_oxygen": {
+        "baseline": 8.0,
+        "optimized": 8.0,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.turbine.initial_conditions.steam_inlet_flow": {
+        "baseline": 1500.0,
+        "optimized": 1500.0,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.condenser.initial_conditions.condensate_flow": {
+        "baseline": 1500.0,
+        "optimized": 1500.0,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.condenser.initial_conditions.average_wall_thickness": {
+        "baseline": 0.00159,
+        "optimized": 0.00159,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.steam_generator.initial_conditions.tsp_fouling_thicknesses": {
+        "baseline": 0.0,
+        "optimized": 0.0,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.steam_generator.initial_conditions.primary_flow_rates": {
+        "baseline": 5700.0,
+        "optimized": 5700.0,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.steam_generator.initial_conditions.sg_steam_flows": {
+        "baseline": 500.0,
+        "optimized": 500.0,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.turbine.initial_conditions.steam_inlet_pressure": {
+        "baseline": 6.9,
+        "optimized": 6.9,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.condenser.initial_conditions.condenser_pressure": {
+        "baseline": 0.007,
+        "optimized": 0.007,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.turbine.initial_conditions.rotor_temperature": {
+        "baseline": 450.0,
+        "optimized": 450.0,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.turbine.initial_conditions.mechanical_power_output": {
+        "baseline": 1015.0,
+        "optimized": 1015.0,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.turbine.initial_conditions.governor_valve_position": {
+        "baseline": 100.0,
+        "optimized": 100.0,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.condenser.initial_conditions.chlorine_residual": {
+        "baseline": 1.0,
+        "optimized": 1.0,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.condenser.initial_conditions.cooling_water_outlet_temp": {
+        "baseline": 35.0,
+        "optimized": 35.0,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.turbine.initial_conditions.total_power_output": {
+        "baseline": 1000.0,
+        "optimized": 1000.0,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.turbine.initial_conditions.overall_efficiency": {
+        "baseline": 0.34,
+        "optimized": 0.34,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.feedwater.initial_conditions.pump_oil_levels": {
+        "baseline": 85.0,
+        "optimized": 85.0,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.feedwater.initial_conditions.sg_steam_qualities": {
+        "baseline": 0.99,
+        "optimized": 0.99,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.condenser.initial_conditions.steam_inlet_quality": {
+        "baseline": 0.9,
+        "optimized": 0.9,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.turbine.initial_conditions.electrical_power_output": {
+        "baseline": 1000.0,
+        "optimized": 1000.0,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.steam_generator.initial_conditions.sg_feedwater_flows": {
+        "baseline": 500.0,
+        "optimized": 500.0,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.condenser.initial_conditions.air_removal_rate": {
+        "baseline": 0.1,
+        "optimized": 0.1,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.feedwater.initial_conditions.sg_pressures": {
+        "baseline": 6.9,
+        "optimized": 6.9,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.steam_generator.initial_conditions.tsp_heat_transfer_degradations": {
+        "baseline": 0.0,
+        "optimized": 0.0,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.condenser.initial_conditions.water_ph": {
+        "baseline": 7.5,
+        "optimized": 7.5,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.turbine.initial_conditions.rotor_acceleration": {
+        "baseline": 0.0,
+        "optimized": 0.0,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.turbine.initial_conditions.trip_active": {
+        "baseline": 0.0,
+        "optimized": 0.0,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.condenser.initial_conditions.water_temperature": {
+        "baseline": 30.0,
+        "optimized": 30.0,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.turbine.initial_conditions.bearing_vibrations": {
+        "baseline": 5.0,
+        "optimized": 5.0,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.condenser.initial_conditions.tube_leak_rate": {
+        "baseline": 0.0,
+        "optimized": 0.0,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.turbine.initial_conditions.bearing_oil_pressures": {
+        "baseline": 0.2,
+        "optimized": 0.2,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.turbine.initial_conditions.control_valve_positions": {
+        "baseline": 100.0,
+        "optimized": 100.0,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.condenser.initial_conditions.steam_inlet_pressure": {
+        "baseline": 0.007,
+        "optimized": 0.007,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.turbine.initial_conditions.steam_quality": {
+        "baseline": 0.99,
+        "optimized": 0.99,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.condenser.initial_conditions.water_hardness": {
+        "baseline": 150.0,
+        "optimized": 150.0,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.condenser.initial_conditions.condensate_subcooling": {
+        "baseline": 0.0,
+        "optimized": 0.0,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      },
+      "secondary_system.turbine.initial_conditions.load_demand": {
+        "baseline": 1.0,
+        "optimized": 1.0,
+        "absolute_change": 0.0,
+        "percent_change": 0.0
+      }
+    }
+  },
+  "performance_metrics": {
+    "optimization_successful": false,
+    "timing_improvement": 0.0,
+    "convergence_achieved": false,
+    "optimization_efficiency": 22.2
+  }
+}

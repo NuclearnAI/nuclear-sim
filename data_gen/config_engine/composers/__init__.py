@@ -7,14 +7,12 @@ configurations to generate comprehensive YAML configurations for test scenarios.
 
 from .comprehensive_composer import (
     ComprehensiveComposer,
-    create_single_target_config,
-    create_focused_config,
-    save_single_target_config
+    create_action_test_config,
+    save_action_test_config
 )
 
 __all__ = [
     'ComprehensiveComposer',
-    'create_single_target_config',
-    'create_focused_config',
-    'save_single_target_config'
+    'create_action_test_config',
+    'save_action_test_config'
 ]

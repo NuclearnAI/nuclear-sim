@@ -12,14 +12,12 @@ seamlessly with the nuclear plant simulation system.
 
 from .composers.comprehensive_composer import (
     ComprehensiveComposer,
-    create_single_target_config,
-    create_focused_config,
-    save_single_target_config
+    create_action_test_config,
+    save_action_test_config
 )
 
 __all__ = [
     'ComprehensiveComposer',
-    'create_single_target_config', 
-    'create_focused_config',
-    'save_single_target_config'
+    'create_action_test_config',
+    'save_action_test_config'
 ]

@@ -23,14 +23,14 @@ from datetime import datetime
 import yaml
 
 # Add project root to path
-project_root = Path(__file__).parent
+project_root = Path(__file__).parent.parent  # Go up two levels to get to data_gen/
 sys.path.insert(0, str(project_root))
 
 # Import composer and scenario generation
 from config_engine.composers.comprehensive_composer import (
     ComprehensiveComposer,
-    create_single_target_config,
-    save_single_target_config
+    create_action_test_config,
+    save_action_test_config
 )
 from scenarios.scenario_generator import (
     ScenarioGenerator,
@@ -40,7 +40,7 @@ from scenarios.scenario_generator import (
 )
 
 # Import simulation infrastructure
-from maintenance_scenario_runner import MaintenanceScenarioRunner
+from runners.maintenance_scenario_runner import MaintenanceScenarioRunner
 from simulator.core.sim import NuclearPlantSimulator
 
 
@@ -101,20 +101,9 @@ class ScenarioRunner:
             if not target_subsystem:
                 raise ValueError(f"Unknown action: {action}")
             
-            # Create subsystem modes - target subsystem gets aggressive mode, others disabled
-            mode = "aggressive" if aggressive_mode else "conservative"
-            subsystem_modes = {
-                "steam_generator": "disabled",
-                "turbine": "disabled", 
-                "feedwater": "disabled",
-                "condenser": "disabled"
-            }
-            subsystem_modes[target_subsystem] = mode
-            
-            # Use the new API with subsystem modes
+            # Use the simplified API (no subsystem modes needed)
             config = self.maintenance_composer.compose_action_test_scenario(
                 target_action=action,
-                subsystem_modes=subsystem_modes,
                 duration_hours=duration_hours,
                 plant_name=plant_name
             )
@@ -122,7 +111,6 @@ class ScenarioRunner:
             if self.verbose:
                 print(f"   ✅ Generated config with {len(config)} sections")
                 print(f"   🎯 Target subsystem: {config['metadata']['target_subsystem']}")
-                print(f"   🔧 Subsystem modes: {subsystem_modes}")
             
             return config
             
@@ -812,7 +800,7 @@ class ScenarioRunner:
         }
     
     def _print_maintenance_results(self, results: Dict[str, Any], simulation: MaintenanceScenarioRunner):
-        """Print maintenance scenario results"""
+        """Enhanced maintenance scenario results with state manager integration"""
         print(f"\n📋 Results Summary")
         print("-" * 40)
         print(f"   ⏱️ Execution time: {results['execution_time_seconds']:.1f}s")
@@ -824,6 +812,33 @@ class ScenarioRunner:
             print(f"   🔧 Work orders created: {wo['total_created']}")
             print(f"   ✅ Work orders completed: {wo['completed']}")
             print(f"   🔄 Work orders active: {wo['active']}")
+        
+        # NEW: Enhanced reporting with state manager data
+        if hasattr(simulation, 'simulator') and hasattr(simulation.simulator, 'state_manager'):
+            state_manager = simulation.simulator.state_manager
+            
+            # Show threshold violations
+            violations = state_manager.get_current_threshold_violations()
+            if violations:
+                print(f"   🚨 Active threshold violations: {len(violations)}")
+                for component_id, component_violations in violations.items():
+                    for param, violation in component_violations.items():
+                        print(f"      {component_id}.{param}: {violation.get('value', 'N/A'):.2f} {violation.get('comparison', '')} {violation.get('threshold', 'N/A')}")
+            
+            # Show maintenance history
+            maintenance_history = state_manager.get_maintenance_history()
+            if maintenance_history:
+                print(f"   📝 Maintenance actions performed: {len(maintenance_history)}")
+                for record in maintenance_history[-3:]:  # Show last 3
+                    success_icon = "✅" if record.get('success', False) else "❌"
+                    print(f"      {success_icon} {record.get('component_id', 'Unknown')}: {record.get('action_type', 'Unknown')}")
+        
+        # Show maintenance effectiveness if available
+        if 'maintenance_effectiveness' in results:
+            effectiveness = results['maintenance_effectiveness']
+            if effectiveness.get('verifications_performed', 0) > 0:
+                avg_eff = effectiveness.get('average_effectiveness', 0)
+                print(f"   📊 Maintenance effectiveness: {avg_eff:.1%} ({effectiveness['successful_verifications']}/{effectiveness['verifications_performed']} verified)")
         
         print(f"   📊 Data points: {results['simulation_data_points']}")
         print(f"   📊 Maintenance events: {results['maintenance_events']}")
