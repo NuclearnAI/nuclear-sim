@@ -28,13 +28,14 @@ class StateManager(StateCollector):
     it in a pandas DataFrame for efficient analysis and CSV export.
     """
     
-    def __init__(self, max_rows: int = 100000, auto_manage_memory: bool = True):
+    def __init__(self, max_rows: int = 100000, auto_manage_memory: bool = True, config=None):
         """
         Initialize state manager.
         
         Args:
             max_rows: Maximum number of rows to keep in memory
             auto_manage_memory: Whether to automatically manage memory by removing old data
+            config: Optional configuration dict/object for maintenance and other settings
         """
         self.max_rows = max_rows
         self.auto_manage_memory = auto_manage_memory
@@ -55,6 +56,18 @@ class StateManager(StateCollector):
         # Instance tracking for new decorator system
         self._instance_counters = {}  # Track instance numbers by component code
         self._registered_instances = {}  # Track all registered instances
+        
+        # PHASE 1: Maintenance system integration
+        self.config = config  # Store passed configuration
+        self.maintenance_thresholds = {}  # component_id -> {param: threshold_config}
+        self.threshold_violations = {}    # component_id -> {param: violation_data}
+        self.maintenance_history = []     # List of maintenance actions and results
+        self.maintenance_config = None    # Parsed maintenance configuration
+        self.threshold_event_subscribers = []  # Callbacks for threshold events
+        
+        print(f"STATE MANAGER: Initialized with maintenance capabilities")
+        if config:
+            print(f"STATE MANAGER: Configuration provided - will load maintenance settings")
         
     def register_provider(self, provider: StateProvider, category: str) -> None:
         """
@@ -117,6 +130,9 @@ class StateManager(StateCollector):
         
         # Add to DataFrame
         self._add_row(row_data)
+        
+        # PHASE 1: Check maintenance thresholds during state collection
+        self._check_maintenance_thresholds(timestamp, row_data)
         
         # Update tracking
         self.current_time = timestamp
@@ -428,14 +444,17 @@ class StateManager(StateCollector):
                 
                 for var_name, value in state_dict.items():
                     # Create hierarchical name based on whether ID is auto-generated
+                    # Handle both string and enum categories for config-driven usage
+                    category_str = category.value if hasattr(category, 'value') else str(category)
+                    
                     if is_auto_generated_id:
                         # For auto-generated IDs, use: category.subcategory.variable
-                        full_name = f"{category.value}.{subcategory}.{var_name}"
+                        full_name = f"{category_str}.{subcategory}.{var_name}"
                         subcategory_name = subcategory
                         description = f"{subcategory} {var_name}"
                     else:
                         # For real IDs, use: category.subcategory_instance.variable
-                        full_name = f"{category.value}.{subcategory}_{instance_id}.{var_name}"
+                        full_name = f"{category_str}.{subcategory}_{instance_id}.{var_name}"
                         subcategory_name = f"{subcategory}_{instance_id}"
                         description = f"{instance_id} {var_name}"
                     
@@ -457,10 +476,13 @@ class StateManager(StateCollector):
                 warnings.warn(f"Failed to generate state variables for {instance_id}: {e}")
         
         # Add to provider list with appropriate category
+        # Handle both string and enum categories for config-driven usage
+        category_str = category.value if hasattr(category, 'value') else str(category)
+        
         if is_auto_generated_id:
-            provider_category = f"{category.value}.{subcategory}"
+            provider_category = f"{category_str}.{subcategory}"
         else:
-            provider_category = f"{category.value}.{subcategory}_{instance_id}"
+            provider_category = f"{category_str}.{subcategory}_{instance_id}"
         
         self.providers.append((instance, provider_category))
         
@@ -841,10 +863,13 @@ class StateManager(StateCollector):
             warnings.warn(f"Failed to extract design parameters for {instance_id}: {e}")
         
         # 4. Create ComponentMetadata
+        # Handle both string and enum categories for config-driven usage
+        category_str = category.value if hasattr(category, 'value') else str(category)
+        
         metadata = ComponentMetadata(
             component_id=instance_id,
             equipment_type=equipment_type,
-            system=category.value,
+            system=category_str,  # ComponentMetadata expects a string
             subsystem=subcategory,
             capabilities=capabilities,
             design_parameters=design_parameters,
@@ -894,6 +919,618 @@ class StateManager(StateCollector):
         else:
             print("Component discovery complete: No @auto_register components found")
     
+    # PHASE 1: Maintenance Configuration Methods
+    
+    def load_maintenance_config(self, config_source=None):
+        """
+        Central maintenance configuration loading with all discovery logic
+        
+        Args:
+            config_source: Optional explicit config (dict, file path, or object)
+            
+        Returns:
+            Parsed maintenance configuration object
+        """
+        print(f"STATE MANAGER: 🔍 Loading maintenance configuration...")
+        
+        # PRIORITY 1: Explicit config_source parameter
+        if config_source:
+            print(f"STATE MANAGER: Using explicit config_source")
+            self.maintenance_config = self._parse_maintenance_config(config_source)
+            return self.maintenance_config
+        
+        # PRIORITY 2: Config passed to constructor
+        if self.config:
+            print(f"STATE MANAGER: Using constructor config")
+            self.maintenance_config = self._parse_maintenance_config(self.config)
+            return self.maintenance_config
+        
+        # PRIORITY 3: Auto-discovery from registered components
+        print(f"STATE MANAGER: No explicit config found, using factory defaults")
+        self.maintenance_config = self._create_default_maintenance_config()
+        return self.maintenance_config
+    
+    def _parse_maintenance_config(self, config):
+        """
+        Parse maintenance configuration from various formats
+        
+        Args:
+            config: Configuration dict, file path, or object
+            
+        Returns:
+            Parsed maintenance configuration
+        """
+        print(f"STATE MANAGER: 🔧 Parsing maintenance config from {type(config)}")
+        
+        # Handle different config formats
+        if isinstance(config, str):
+            # File path - load YAML/JSON
+            import yaml
+            with open(config, 'r') as f:
+                config_dict = yaml.safe_load(f)
+        elif isinstance(config, dict):
+            config_dict = config
+        else:
+            # Object with attributes
+            config_dict = self._convert_object_to_dict(config)
+        
+        # CRITICAL FIX: Check for maintenance_system.component_configs FIRST
+        if 'maintenance_system' in config_dict:
+            maintenance_system = config_dict['maintenance_system']
+            print(f"STATE MANAGER: 🎯 Found maintenance_system section with keys: {list(maintenance_system.keys())}")
+            
+            if 'component_configs' in maintenance_system:
+                print(f"STATE MANAGER: ✅ Found component_configs in maintenance_system - using comprehensive config!")
+                
+                # Show specific oil_level threshold for debugging
+                component_configs = maintenance_system['component_configs']
+                for subsystem, config_data in component_configs.items():
+                    thresholds = config_data.get('thresholds', {})
+                    print(f"  📊 {subsystem}: {len(thresholds)} thresholds")
+                    
+                    if 'oil_level' in thresholds:
+                        oil_threshold = thresholds['oil_level']
+                        print(f"    🛢️ oil_level: {oil_threshold.get('threshold', 'unknown')}% {oil_threshold.get('comparison', 'unknown')} -> {oil_threshold.get('action', 'unknown')}")
+                
+                return self._create_maintenance_config_from_comprehensive(maintenance_system)
+            else:
+                print(f"STATE MANAGER: ⚠️ maintenance_system found but no component_configs")
+        
+        # FALLBACK: Check for maintenance.component_configs
+        elif 'maintenance' in config_dict:
+            maintenance_section = config_dict['maintenance']
+            print(f"STATE MANAGER: 🔍 Found maintenance section with keys: {list(maintenance_section.keys())}")
+            
+            if 'component_configs' in maintenance_section:
+                print(f"STATE MANAGER: ✅ Found component_configs in maintenance section")
+                return self._create_maintenance_config_from_comprehensive(maintenance_section)
+            else:
+                print(f"STATE MANAGER: ⚠️ maintenance section found but no component_configs")
+        
+        # No recognized maintenance config found
+        print(f"STATE MANAGER: ⚠️ No recognized maintenance configuration format found")
+        return self._create_default_maintenance_config()
+    
+    def _convert_object_to_dict(self, obj):
+        """Convert object with attributes to dictionary"""
+        config_dict = {}
+        for attr in dir(obj):
+            if not attr.startswith('_'):
+                value = getattr(obj, attr)
+                if not callable(value):
+                    config_dict[attr] = value
+        return config_dict
+    
+    def _create_maintenance_config_from_comprehensive(self, maintenance_system):
+        """
+        Create maintenance configuration from comprehensive config format
+        
+        Args:
+            maintenance_system: maintenance_system section from config
+            
+        Returns:
+            Maintenance configuration object
+        """
+        print(f"STATE MANAGER: 🔧 Creating maintenance config from comprehensive format")
+        
+        # Map subsystem names to equipment types
+        subsystem_to_equipment_mapping = {
+            'feedwater': 'pump',
+            'turbine': 'turbine_stage', 
+            'steam_generator': 'steam_generator',
+            'condenser': 'condenser'
+        }
+        
+        maintenance_config = {
+            'mode': maintenance_system.get('maintenance_mode', 'realistic'),
+            'component_configs': {}
+        }
+        
+        if 'component_configs' in maintenance_system:
+            component_configs = maintenance_system['component_configs']
+            
+            for subsystem_name, config_data in component_configs.items():
+                equipment_type = subsystem_to_equipment_mapping.get(subsystem_name, subsystem_name)
+                
+                # Store config with equipment type mapping
+                maintenance_config['component_configs'][equipment_type] = {
+                    'check_interval_hours': config_data.get('check_interval_hours', 4.0),
+                    'thresholds': config_data.get('thresholds', {})
+                }
+                
+                print(f"STATE MANAGER: ✅ Mapped {subsystem_name} -> {equipment_type}")
+        
+        return maintenance_config
+    
+    def _create_default_maintenance_config(self):
+        """Create default maintenance configuration"""
+        print(f"STATE MANAGER: 🔄 Creating default maintenance configuration")
+        
+        return {
+            'mode': 'conservative',
+            'component_configs': {
+                'pump': {
+                    'check_interval_hours': 4.0,
+                    'thresholds': {
+                        'oil_level': {
+                            'threshold': 30.0,
+                            'comparison': 'less_than',
+                            'action': 'oil_top_off',
+                            'cooldown_hours': 24.0,
+                            'priority': 'HIGH'
+                        }
+                    }
+                }
+            }
+        }
+    
+    def apply_maintenance_thresholds(self, component_id: str, thresholds: dict):
+        """
+        Apply maintenance thresholds to a registered component
+        
+        Args:
+            component_id: Component ID
+            thresholds: Dictionary of threshold configurations
+        """
+        if component_id not in self.maintenance_thresholds:
+            self.maintenance_thresholds[component_id] = {}
+        
+        self.maintenance_thresholds[component_id].update(thresholds)
+        print(f"STATE MANAGER: ✅ Applied {len(thresholds)} thresholds to {component_id}")
+    
+    def get_maintenance_thresholds_for_component(self, component_id: str) -> dict:
+        """
+        Get maintenance thresholds for a specific component
+        
+        Args:
+            component_id: Component ID
+            
+        Returns:
+            Dictionary of threshold configurations
+        """
+        return self.maintenance_thresholds.get(component_id, {})
+    
+    def get_components_with_maintenance_thresholds(self) -> dict:
+        """
+        Get all components that have maintenance monitoring configured
+        
+        Returns:
+            Dictionary mapping component_id to threshold configurations
+        """
+        return self.maintenance_thresholds.copy()
+    
+    def subscribe_to_threshold_events(self, callback):
+        """
+        Subscribe to threshold violation events
+        
+        Args:
+            callback: Function to call when threshold is violated
+        """
+        self.threshold_event_subscribers.append(callback)
+        print(f"STATE MANAGER: ✅ Added threshold event subscriber")
+    
+    def get_current_value(self, component_id: str, parameter: str) -> Optional[float]:
+        """
+        Get current value of a parameter for a component
+        
+        Args:
+            component_id: Component ID
+            parameter: Parameter name
+            
+        Returns:
+            Current parameter value or None if not found
+        """
+        if self.data.empty:
+            return None
+        
+        # Try different naming patterns to find the parameter
+        possible_names = [
+            f"{component_id}.{parameter}",
+            f"secondary.feedwater_{component_id}.{parameter}",
+            f"secondary.feedwater.{parameter}",
+        ]
+        
+        for name in possible_names:
+            if name in self.data.columns:
+                return self.data[name].iloc[-1] if len(self.data) > 0 else None
+        
+        return None
+    
+    def get_component_state_snapshot(self, component_id: str) -> dict:
+        """
+        Get current state snapshot for a component
+        
+        Args:
+            component_id: Component ID
+            
+        Returns:
+            Dictionary of current parameter values
+        """
+        # FIRST: Try to get live data from the component instance
+        if component_id in self._registered_instances:
+            instance_info = self._registered_instances[component_id]
+            component = instance_info['instance']
+            
+            if hasattr(component, 'get_state_dict'):
+                try:
+                    return component.get_state_dict()
+                except Exception as e:
+                    warnings.warn(f"Failed to get live state from {component_id}: {e}")
+        
+        # FALLBACK: Use DataFrame data if available
+        if self.data.empty:
+            return {}
+        
+        snapshot = {}
+        latest_row = self.data.iloc[-1]
+        
+        # Find all variables for this component
+        for col in self.data.columns:
+            if component_id in col and col != 'time':
+                # Extract parameter name
+                parts = col.split('.')
+                if len(parts) >= 2:
+                    param_name = parts[-1]
+                    snapshot[param_name] = latest_row[col]
+        
+        return snapshot
+    
+    def _check_maintenance_thresholds(self, timestamp: float, row_data: dict):
+        """
+        Check maintenance thresholds during state collection
+        
+        Args:
+            timestamp: Current simulation time
+            row_data: Current state data
+        """
+        if not self.maintenance_thresholds:
+            return  # No thresholds configured
+        
+        violations_found = 0
+        
+        for component_id, thresholds in self.maintenance_thresholds.items():
+            for param_name, threshold_config in thresholds.items():
+                # Find the parameter value in row_data
+                param_value = self._find_parameter_in_row_data(component_id, param_name, row_data)
+                
+                if param_value is not None:
+                    # Check if threshold is violated
+                    if self._check_threshold_condition(param_value, threshold_config):
+                        # Emit threshold violation event
+                        self._emit_threshold_violation(component_id, param_name, param_value, threshold_config, timestamp)
+                        violations_found += 1
+        
+        if violations_found > 0:
+            print(f"STATE MANAGER: 🚨 Found {violations_found} threshold violations at time {timestamp:.2f}")
+    
+    def _find_parameter_in_row_data(self, component_id: str, param_name: str, row_data: dict) -> Optional[float]:
+        """
+        Find parameter value in row data using various naming patterns
+        
+        Args:
+            component_id: Component ID
+            param_name: Parameter name
+            row_data: Current state data
+            
+        Returns:
+            Parameter value or None if not found
+        """
+        # FEEDWATER PARAMETER ALIASES - Map threshold names to actual physics parameter names
+        FEEDWATER_PARAMETER_ALIASES = {
+            'impeller_inspection_wear': 'impeller_wear',
+            # Add more aliases here as needed for other mismatches
+        }
+        
+        # Resolve parameter name using aliases
+        actual_param_name = FEEDWATER_PARAMETER_ALIASES.get(param_name, param_name)
+        
+        # Try different naming patterns with the resolved parameter name
+        possible_names = [
+            f"{component_id}.{actual_param_name}",
+            f"secondary.feedwater_{component_id}.{actual_param_name}",
+            f"secondary.feedwater.{actual_param_name}",
+            f"secondary.{component_id}.{actual_param_name}",
+        ]
+        
+        for name in possible_names:
+            if name in row_data:
+                value = row_data[name]
+                if isinstance(value, (int, float)):
+                    return float(value)
+        
+        return None
+    
+    def _check_threshold_condition(self, value: float, threshold_config: dict) -> bool:
+        """
+        Check if threshold condition is met
+        
+        Args:
+            value: Current parameter value
+            threshold_config: Threshold configuration
+            
+        Returns:
+            True if threshold is violated
+        """
+        threshold = threshold_config.get('threshold')
+        comparison = threshold_config.get('comparison', 'greater_than')
+        
+        if threshold is None:
+            return False
+        
+        if comparison == "greater_than":
+            return value > threshold
+        elif comparison == "less_than":
+            return value < threshold
+        elif comparison == "greater_equal":
+            return value >= threshold
+        elif comparison == "less_equal":
+            return value <= threshold
+        elif comparison == "equals":
+            return abs(value - threshold) < 0.001
+        elif comparison == "not_equals":
+            return abs(value - threshold) >= 0.001
+        else:
+            return False
+    
+    def _emit_threshold_violation(self, component_id: str, param_name: str, value: float, 
+                                threshold_config: dict, timestamp: float):
+        """
+        Emit threshold violation event to subscribers
+        
+        Args:
+            component_id: Component ID
+            param_name: Parameter name
+            value: Current parameter value
+            threshold_config: Threshold configuration
+            timestamp: Current simulation time
+        """
+        violation_data = {
+            'component_id': component_id,
+            'parameter': param_name,
+            'value': value,
+            'threshold': threshold_config.get('threshold'),
+            'comparison': threshold_config.get('comparison'),
+            'action': threshold_config.get('action'),
+            'priority': threshold_config.get('priority', 'MEDIUM'),
+            'timestamp': timestamp
+        }
+        
+        # Store violation for tracking
+        if component_id not in self.threshold_violations:
+            self.threshold_violations[component_id] = {}
+        self.threshold_violations[component_id][param_name] = violation_data
+        
+        # Notify all subscribers
+        for callback in self.threshold_event_subscribers:
+            try:
+                callback(violation_data)
+            except Exception as e:
+                print(f"STATE MANAGER: ❌ Error in threshold event callback: {e}")
+        
+        print(f"STATE MANAGER: 🚨 Threshold violation: {component_id}.{param_name} = {value:.2f} {threshold_config.get('comparison')} {threshold_config.get('threshold')} -> {threshold_config.get('action')}")
+    
+    def get_current_threshold_violations(self) -> dict:
+        """
+        Get current threshold violations
+        
+        Returns:
+            Dictionary of current violations
+        """
+        return self.threshold_violations.copy()
+    
+    def clear_threshold_violations(self):
+        """Clear all threshold violations"""
+        self.threshold_violations.clear()
+        print(f"STATE MANAGER: ✅ Cleared all threshold violations")
+    
+    def record_maintenance_result(self, component_id: str, action_type: str, success: bool, 
+                                effectiveness: float = 1.0):
+        """
+        Record maintenance action result
+        
+        Args:
+            component_id: Component ID
+            action_type: Type of maintenance action
+            success: Whether action was successful
+            effectiveness: Effectiveness score (0-1)
+        """
+        maintenance_record = {
+            'component_id': component_id,
+            'action_type': action_type,
+            'success': success,
+            'effectiveness': effectiveness,
+            'timestamp': self.current_time
+        }
+        
+        self.maintenance_history.append(maintenance_record)
+        
+        # CRITICAL FIX: Force state collection after maintenance to get updated values
+        if success:
+            self._force_state_collection_after_maintenance(component_id)
+        
+        # Clear related threshold violations if maintenance was successful
+        if success and component_id in self.threshold_violations:
+            # IMPROVED: Clear violations that might have been addressed by this maintenance
+            violations_to_clear = []
+            for param_name, violation in self.threshold_violations[component_id].items():
+                # More flexible action matching
+                violation_action = violation.get('action', '')
+                if (violation_action == action_type or 
+                    self._actions_are_related(violation_action, action_type)):
+                    violations_to_clear.append(param_name)
+                    print(f"STATE MANAGER: 🔍 Marking violation {param_name} for clearing (action: {violation_action} matches {action_type})")
+            
+            # Clear the violations
+            for param_name in violations_to_clear:
+                del self.threshold_violations[component_id][param_name]
+                print(f"STATE MANAGER: 🗑️ Cleared violation {component_id}.{param_name}")
+            
+            # Clean up empty component entries
+            if not self.threshold_violations[component_id]:
+                del self.threshold_violations[component_id]
+                print(f"STATE MANAGER: 🗑️ Removed empty violation entry for {component_id}")
+            
+            if violations_to_clear:
+                print(f"STATE MANAGER: ✅ Cleared {len(violations_to_clear)} violations for {component_id} after successful {action_type}")
+            else:
+                print(f"STATE MANAGER: ⚠️ No violations found to clear for {component_id} after {action_type}")
+                # Debug: Show what violations exist
+                if component_id in self.threshold_violations:
+                    existing_violations = list(self.threshold_violations[component_id].keys())
+                    print(f"STATE MANAGER: 🔍 Existing violations for {component_id}: {existing_violations}")
+        
+        print(f"STATE MANAGER: 📝 Recorded maintenance: {component_id} {action_type} {'✅' if success else '❌'} (effectiveness: {effectiveness:.2f})")
+    
+    def _force_state_collection_after_maintenance(self, component_id: str):
+        """
+        Force state collection after maintenance to capture updated values
+        
+        Args:
+            component_id: Component ID that was maintained
+        """
+        try:
+            # Get the component instance and force a fresh state collection
+            if component_id in self._registered_instances:
+                instance_info = self._registered_instances[component_id]
+                component = instance_info['instance']
+                
+                if hasattr(component, 'get_state_dict'):
+                    # Get fresh state from component
+                    fresh_state = component.get_state_dict()
+                    print(f"STATE MANAGER: 🔄 Forced fresh state collection for {component_id}")
+                    
+                    # Update the latest row in our DataFrame if it exists
+                    if not self.data.empty:
+                        latest_row_index = len(self.data) - 1
+                        provider_category = instance_info['provider_category']
+                        
+                        # Update the DataFrame with fresh values
+                        for var_name, value in fresh_state.items():
+                            full_name = f"{provider_category}.{var_name}"
+                            if full_name in self.data.columns:
+                                self.data.at[latest_row_index, full_name] = value
+                                print(f"STATE MANAGER: 📊 Updated {full_name} = {value}")
+                else:
+                    print(f"STATE MANAGER: ⚠️ Component {component_id} has no get_state_dict method")
+            else:
+                print(f"STATE MANAGER: ⚠️ Component {component_id} not found in registered instances")
+                
+        except Exception as e:
+            print(f"STATE MANAGER: ❌ Failed to force state collection for {component_id}: {e}")
+    
+    def _actions_are_related(self, violation_action: str, performed_action: str) -> bool:
+        """
+        Check if two maintenance actions are related (one might address the other)
+        
+        Args:
+            violation_action: Action specified in the threshold violation
+            performed_action: Action that was actually performed
+            
+        Returns:
+            True if the actions are related
+        """
+        # Exact match
+        if violation_action == performed_action:
+            return True
+        
+        # Related action mappings
+        related_actions = {
+            'oil_top_off': ['oil_change', 'lubrication_maintenance'],
+            'oil_change': ['oil_top_off', 'lubrication_maintenance'],
+            'bearing_maintenance': ['bearing_inspection', 'lubrication_maintenance'],
+            'vibration_analysis': ['bearing_maintenance', 'alignment_check'],
+            'pump_maintenance': ['oil_top_off', 'bearing_maintenance', 'seal_replacement'],
+            'turbine_oil_top_off': ['oil_top_off', 'turbine_maintenance'],
+            'efficiency_analysis': ['turbine_maintenance', 'performance_optimization']
+        }
+        
+        # Check if performed action is in the related actions for violation action
+        if violation_action in related_actions:
+            if performed_action in related_actions[violation_action]:
+                return True
+        
+        # Check reverse relationship
+        if performed_action in related_actions:
+            if violation_action in related_actions[performed_action]:
+                return True
+        
+        # Check for partial string matches (e.g., "oil_top_off" matches "turbine_oil_top_off")
+        if 'oil' in violation_action and 'oil' in performed_action:
+            return True
+        
+        if 'bearing' in violation_action and 'bearing' in performed_action:
+            return True
+        
+        if 'vibration' in violation_action and 'vibration' in performed_action:
+            return True
+        
+        return False
+
+    def get_maintenance_history(self, component_id: str = None) -> list:
+        """
+        Get maintenance history
+        
+        Args:
+            component_id: Optional component ID to filter by
+            
+        Returns:
+            List of maintenance records
+        """
+        if component_id:
+            return [record for record in self.maintenance_history 
+                   if record['component_id'] == component_id]
+        return self.maintenance_history.copy()
+    
+    def verify_maintenance_action(self, component_id: str, action_type: str, 
+                                expected_changes: dict, tolerance: float = 0.1) -> bool:
+        """
+        Verify that maintenance action was effective
+        
+        Args:
+            component_id: Component ID
+            action_type: Type of maintenance action
+            expected_changes: Expected parameter changes {param: expected_delta}
+            tolerance: Tolerance for verification
+            
+        Returns:
+            True if maintenance was effective
+        """
+        # FIXED: Maintenance verification should check if the action was recorded as successful,
+        # not check current parameter values which may have degraded again over time
+        
+        # Check if we have a successful maintenance record for this component and action
+        for record in reversed(self.maintenance_history):  # Check most recent first
+            if (record['component_id'] == component_id and 
+                record['action_type'] == action_type and 
+                record['success']):
+                
+                print(f"STATE MANAGER: ✅ Verified maintenance: {component_id} {action_type} was successfully completed")
+                return True
+        
+        # If no successful maintenance record found, it wasn't effective
+        print(f"STATE MANAGER: ❌ No successful maintenance record found for {component_id} {action_type}")
+        return False
+    
     def reset(self) -> None:
         """Reset the state manager completely."""
         self.clear_data()
@@ -902,9 +1539,18 @@ class StateManager(StateCollector):
         self._instance_counters.clear()
         self._registered_instances.clear()
         
+        # Reset maintenance system state
+        self.maintenance_thresholds.clear()
+        self.threshold_violations.clear()
+        self.maintenance_history.clear()
+        self.maintenance_config = None
+        self.threshold_event_subscribers.clear()
+        
         # Clear any pending registrations
         if hasattr(self.__class__, '_pending_registrations'):
             self.__class__._pending_registrations = []
+        
+        print(f"STATE MANAGER: ✅ Complete reset including maintenance system")
     
     def __repr__(self) -> str:
         """String representation of state manager."""

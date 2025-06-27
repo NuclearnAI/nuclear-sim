@@ -39,9 +39,9 @@ class WearTrackingConfig:
     seal_wear_rate_base: float = 0.0008              # %/hour base seal wear rate
     
     # Wear thresholds
-    impeller_wear_warning: float = 10.0              # % wear warning threshold
-    bearing_wear_warning: float = 15.0               # % wear warning threshold
-    seal_wear_warning: float = 20.0                  # % wear warning threshold
+    impeller_wear_warning: float = .1              # % wear warning threshold
+    bearing_wear_warning: float = .15               # % wear warning threshold
+    seal_wear_warning: float = .2                  # % wear warning threshold
     
     # Performance impact thresholds
     efficiency_degradation_warning: float = 5.0      # % efficiency loss warning

@@ -40,7 +40,7 @@ class NuclearPlantSimulator:
             rated_power_mw=3000.0,
             heat_source=heat_source
         )
-        
+
         # Initialize secondary reactor physics system with optional configuration
         if self.enable_secondary:
             if secondary_config is not None:
@@ -59,7 +59,7 @@ class NuclearPlantSimulator:
                 self.secondary_physics = SecondaryReactorPhysics(config=pwr_config)
         else:
             self.secondary_physics = None
-        
+
         # Initialize state management system with component discovery
         if self.enable_state_management:
             self.state_manager = StateManager(max_rows=max_state_rows, auto_manage_memory=True)
@@ -116,8 +116,8 @@ class NuclearPlantSimulator:
             # Pass the secondary_config to the maintenance system for YAML configuration loading
             self.maintenance_system.secondary_config = secondary_config
             
-            # Discover and register components automatically
-            self.maintenance_system.discover_components_from_state_manager(
+            # Setup monitoring from state manager
+            self.maintenance_system.setup_monitoring_from_state_manager(
                 self.state_manager, 
                 aggressive_mode=aggressive_mode
             )

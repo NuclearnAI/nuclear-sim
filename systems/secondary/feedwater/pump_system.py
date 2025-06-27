@@ -93,10 +93,10 @@ class FeedwaterPumpState(BasePumpState):
     seal_wear: float = 0.0                      # % seal wear (0-100)
     seal_leakage: float = 0.0                   # L/min seal leakage rate
     
-    # Performance Degradation Factors
-    flow_degradation_factor: float = 1.0        # Flow capacity multiplier
-    efficiency_degradation_factor: float = 1.0  # Efficiency multiplier
-    head_degradation_factor: float = 1.0        # Head capacity multiplier
+    # Performance Factors (Multipliers: 1.0 = perfect, 0.85 = 85% performance)
+    flow_factor: float = 1.0                    # Flow capacity multiplier
+    efficiency_factor: float = 1.0              # Efficiency multiplier
+    head_factor: float = 1.0                    # Head capacity multiplier
 
 
 @auto_register("SECONDARY", "feedwater", id_source="config.pump_id",
@@ -118,6 +118,11 @@ class FeedwaterPump(BasePump):
         # Initialize base pump with feedwater-specific parameters
         BasePump.__init__(self, config.pump_id, "feedwater", config.rated_flow, FeedwaterPumpState)
         self.config = config
+        
+        # Apply initial oil level from config if provided
+        if hasattr(config, 'oil_level'):
+            self.state.oil_level = config.initial_oil_level
+            print(f"Pump {config.pump_id} initialized with oil level: {config.initial_oil_level}%")
         
         # Feedwater-specific performance parameters
         self.rated_power = config.rated_power
@@ -195,7 +200,7 @@ class FeedwaterPump(BasePump):
             self._apply_system_effects(system_conditions)
             
             # Apply performance degradation from wear and cavitation
-            self.state.flow_rate *= self.state.flow_degradation_factor
+            self.state.flow_rate *= self.state.flow_factor
             
             # Minimum flow constraint only when running at very low speeds
             if self.state.status == PumpStatus.RUNNING and self.state.speed_percent < 20.0:
@@ -240,7 +245,7 @@ class FeedwaterPump(BasePump):
             return 0.05 + (temp_c - 100) * 0.001  # Much more conservative
     
     def _calculate_power_consumption(self):
-        """Calculate feedwater pump motor power consumption"""
+        """Calculate feedwater pump motor power consumption with efficiency effects"""
         if self.state.status in [PumpStatus.RUNNING, PumpStatus.STARTING]:
             # Power calculation for centrifugal pump: P = Q * H * ρ * g / η
             speed_ratio = self.state.speed_percent / 100.0
@@ -251,7 +256,12 @@ class FeedwaterPump(BasePump):
             
             # Power roughly proportional to flow * head
             power_ratio = flow_ratio * head_ratio
-            self.state.power_consumption = self.config.rated_power * power_ratio
+            base_power = self.config.rated_power * power_ratio
+            
+            # ENHANCED: Apply efficiency factor (bearing wear increases power consumption)
+            # efficiency_factor is a multiplier: 1.0 = perfect, 0.85 = 85% efficiency
+            # Lower efficiency requires more electrical power for same hydraulic work
+            self.state.power_consumption = base_power / self.state.efficiency_factor
             
             # Minimum power when starting
             if self.state.status == PumpStatus.STARTING:
@@ -370,7 +380,7 @@ class FeedwaterPump(BasePump):
             return True
             
         # Performance degradation threshold
-        efficiency_loss = (1.0 - self.state.efficiency_degradation_factor) * 100.0
+        efficiency_loss = (1.0 - self.state.efficiency_factor) * 100.0
         if efficiency_loss > self.performance_degradation_trip_threshold:
             self._trip_pump("Performance Degradation")
             return True
@@ -439,10 +449,10 @@ class FeedwaterPump(BasePump):
             'seal_wear': self.state.seal_wear,
             'seal_leakage': self.state.seal_leakage,
             
-            # Performance degradation
-            'flow_degradation_factor': self.state.flow_degradation_factor,
-            'efficiency_degradation_factor': self.state.efficiency_degradation_factor,
-            'head_degradation_factor': self.state.head_degradation_factor,
+            # Performance factors
+            'flow_factor': self.state.flow_factor,
+            'efficiency_factor': self.state.efficiency_factor,
+            'head_factor': self.state.head_factor,
             
             # Enhanced sensor readings
             'npsh_available': self.state.npsh_available,
@@ -647,10 +657,10 @@ class FeedwaterPump(BasePump):
                                impeller_efficiency_loss + 
                                bearing_efficiency_loss)
         
-        # Update degradation factors
-        self.state.flow_degradation_factor = max(0.5, 1.0 - total_flow_loss)
-        self.state.efficiency_degradation_factor = max(0.5, 1.0 - total_efficiency_loss)
-        self.state.head_degradation_factor = max(0.7, 1.0 - impeller_flow_loss * 0.8)
+        # Update performance factors
+        self.state.flow_factor = max(0.5, 1.0 - total_flow_loss)
+        self.state.efficiency_factor = max(0.5, 1.0 - total_efficiency_loss)
+        self.state.head_factor = max(0.7, 1.0 - impeller_flow_loss * 0.8)
     
     def _simulate_sensors(self, system_conditions: Dict):
         """Simulate sensor readings based on current state and system inputs"""
@@ -664,8 +674,7 @@ class FeedwaterPump(BasePump):
         # Load factor for thermal and electrical simulation
         load_factor = self.state.flow_rate / self.config.rated_flow if self.config.rated_flow > 0 else 0.0
         
-        # Temperatures (°C)
-        self.state.oil_temperature = 40.0 + 20.0 * load_factor
+        # Temperatures (°C) - oil temperature now handled by lubrication system
         self.state.bearing_temperature = 45.0 + 25.0 * load_factor
         self.state.motor_temperature = 60.0 + 30.0 * load_factor
         
@@ -681,6 +690,319 @@ class FeedwaterPump(BasePump):
         self.state.discharge_pressure = system_conditions.get("discharge_pressure", 8.0)
         self.state.differential_pressure = self.state.discharge_pressure - self.state.suction_pressure
     
+    def sync_oil_level_to_lubrication(self):
+        """Sync pump oil level to lubrication system"""
+        if hasattr(self, 'lubrication_system'):
+            self.lubrication_system.oil_level = self.state.oil_level
+            print(f"SYNC: {self.config.pump_id} pump oil level {self.state.oil_level}% → lubrication system")
+
+    def sync_oil_level_from_lubrication(self):
+        """Sync lubrication system oil level to pump"""
+        if hasattr(self, 'lubrication_system'):
+            old_level = self.state.oil_level
+            self.state.oil_level = self.lubrication_system.oil_level
+            if abs(old_level - self.state.oil_level) > 0.1:  # Only log significant changes
+                print(f"SYNC: {self.config.pump_id} lubrication system {self.lubrication_system.oil_level}% → pump oil level")
+
+    def sync_oil_levels_bidirectional(self, source: str = "auto"):
+        """
+        Ensure pump and lubrication system oil levels are synchronized
+        
+        Args:
+            source: "pump", "lubrication", or "auto" to determine sync direction
+        """
+        if not hasattr(self, 'lubrication_system'):
+            return
+            
+        pump_level = self.state.oil_level
+        lub_level = self.lubrication_system.oil_level
+        
+        # If levels are already in sync, no action needed
+        if abs(pump_level - lub_level) < 0.01:
+            return
+            
+        if source == "pump":
+            # Pump state changed, sync to lubrication
+            self.sync_oil_level_to_lubrication()
+        elif source == "lubrication":
+            # Lubrication system changed, sync to pump
+            self.sync_oil_level_from_lubrication()
+        else:
+            # Auto-detect: use the higher value (assumes recent maintenance or top-off)
+            if pump_level > lub_level:
+                self.sync_oil_level_to_lubrication()
+            else:
+                self.sync_oil_level_from_lubrication()
+
+    def perform_maintenance(self, maintenance_type: str = "general", **kwargs) -> Dict[str, Any]:
+        """
+        Perform maintenance on this individual pump
+        
+        Args:
+            maintenance_type: Type of maintenance to perform
+            **kwargs: Additional maintenance parameters
+            
+        Returns:
+            Dictionary with maintenance results compatible with MaintenanceResult
+        """
+        # Map maintenance types to specific actions
+        if maintenance_type == "oil_change":
+            return self._perform_oil_change()
+        elif maintenance_type == "oil_top_off":
+            return self._perform_oil_top_off(**kwargs)
+        elif maintenance_type == "impeller_inspection":
+            return self._perform_impeller_inspection()
+        elif maintenance_type == "impeller_replacement":
+            return self._perform_impeller_replacement()
+        elif maintenance_type == "bearing_replacement":
+            return self._perform_bearing_replacement()
+        elif maintenance_type == "seal_replacement":
+            return self._perform_seal_replacement()
+        elif maintenance_type == "vibration_analysis":
+            return self._perform_vibration_analysis()
+        elif maintenance_type == "component_overhaul":
+            return self._perform_component_overhaul(**kwargs)
+        elif maintenance_type == "routine_maintenance":
+            return self._perform_routine_maintenance()
+        else:
+            # General maintenance (legacy behavior)
+            return self._perform_general_maintenance()
+    
+    def _perform_oil_change(self) -> Dict[str, Any]:
+        """Perform complete oil change - Enhanced to use lubrication system"""
+        # Delegate to lubrication system if available
+        if hasattr(self, 'lubrication_system'):
+            # Call the lubrication system's oil change method
+            lub_results = self.lubrication_system.perform_maintenance("oil_change")
+            
+            # Sync pump state with lubrication system results
+            self.state.oil_level = self.lubrication_system.oil_level
+            self.state.oil_temperature = self.lubrication_system.oil_temperature
+            
+            # Ensure bidirectional sync
+            self.sync_oil_levels_bidirectional("lubrication")
+            
+            # Return comprehensive lubrication system results
+            return lub_results
+        else:
+            # Fallback to basic pump-level oil change (legacy behavior)
+            self.state.oil_level = 100.0
+            self.state.oil_temperature = 40.0
+            self.sync_oil_levels_bidirectional("pump")
+            return {
+                'success': True,
+                'duration_hours': 2.0,
+                'work_performed': f"Basic oil change on {self.config.pump_id}",
+                'findings': "Oil level restored (no lubrication system integration)",
+                'effectiveness_score': 0.7,  # Lower effectiveness without proper lubrication system
+                'next_maintenance_due': 8760.0
+            }
+    
+    def _perform_oil_top_off(self, target_level: float = 95.0, **kwargs) -> Dict[str, Any]:
+        """Perform oil top-off - Enhanced to use lubrication system"""
+        # Delegate to lubrication system if available
+        if hasattr(self, 'lubrication_system'):
+            # Call the lubrication system's oil top-off method
+            lub_results = self.lubrication_system.perform_maintenance("oil_top_off", target_level=target_level, **kwargs)
+            
+            # Sync pump state with lubrication system results
+            self.state.oil_level = self.lubrication_system.oil_level
+            self.state.oil_temperature = self.lubrication_system.oil_temperature
+            
+            # Ensure bidirectional sync
+            self.sync_oil_levels_bidirectional("lubrication")
+            
+            # Return comprehensive lubrication system results
+            return lub_results
+        else:
+            # Fallback to basic pump-level oil top-off (legacy behavior)
+            old_level = self.state.oil_level
+            self.state.oil_level = min(100.0, target_level)
+            oil_added = self.state.oil_level - old_level
+            
+            # BIDIRECTIONAL SYNC: Sync pump state change to lubrication system
+            self.sync_oil_levels_bidirectional("pump")
+
+            return {
+                'success': True,
+                'duration_hours': 0.5,
+                'work_performed': f"Basic oil top-off on {self.config.pump_id}",
+                'findings': f"Added {oil_added:.1f}% oil, level now {self.state.oil_level:.1f}% (no lubrication system integration)",
+                'effectiveness_score': 0.7  # Lower effectiveness without proper lubrication system
+            }
+    
+    def _perform_impeller_inspection(self) -> Dict[str, Any]:
+        """Perform impeller inspection"""
+        wear_before = self.state.impeller_wear
+        
+        # Inspection can detect and partially address minor wear
+        if self.state.impeller_wear > 5.0:
+            self.state.impeller_wear *= 0.9  # 10% improvement from cleaning
+            improvement = wear_before - self.state.impeller_wear
+            findings = f"Impeller wear: {wear_before:.1f}% -> {self.state.impeller_wear:.1f}% (cleaned)"
+            recommendations = ["Monitor impeller wear closely", "Consider replacement if wear exceeds 15%"]
+        else:
+            findings = f"Impeller in good condition, wear: {self.state.impeller_wear:.1f}%"
+            recommendations = ["Continue normal operation"]
+        
+        return {
+            'success': True,
+            'duration_hours': 4.0,
+            'work_performed': f"Impeller inspection on {self.config.pump_id}",
+            'findings': findings,
+            'recommendations': recommendations,
+            'effectiveness_score': 0.9,
+            'next_maintenance_due': 4380.0  # 6 months
+        }
+    
+    def _perform_impeller_replacement(self) -> Dict[str, Any]:
+        """Perform impeller replacement"""
+        old_wear = self.state.impeller_wear
+        self.state.impeller_wear = 0.0
+        self.state.flow_factor = 1.0
+        self.state.efficiency_factor = min(1.0, self.state.efficiency_factor + 0.15)
+        
+        return {
+            'success': True,
+            'duration_hours': 8.0,
+            'work_performed': f"Impeller replacement on {self.config.pump_id}",
+            'findings': f"Replaced impeller with {old_wear:.1f}% wear",
+            'performance_improvement': 15.0,  # 15% improvement
+            'effectiveness_score': 1.0,
+            'next_maintenance_due': 17520.0  # 2 years
+        }
+    
+    def _perform_bearing_replacement(self) -> Dict[str, Any]:
+        """Perform bearing replacement"""
+        old_wear = self.state.bearing_wear
+        self.state.bearing_wear = 0.0
+        self.state.vibration_level = max(1.0, self.state.vibration_level - 2.0)
+        self.state.efficiency_factor = min(1.0, self.state.efficiency_factor + 0.1)
+        
+        return {
+            'success': True,
+            'duration_hours': 8.0,
+            'work_performed': f"Bearing replacement on {self.config.pump_id}",
+            'findings': f"Replaced bearings with {old_wear:.1f}% wear",
+            'performance_improvement': 10.0,
+            'effectiveness_score': 1.0,
+            'next_maintenance_due': 17520.0  # 2 years
+        }
+    
+    def _perform_seal_replacement(self) -> Dict[str, Any]:
+        """Perform seal replacement"""
+        old_wear = self.state.seal_wear
+        old_leakage = self.state.seal_leakage
+        self.state.seal_wear = 0.0
+        self.state.seal_leakage = 0.0
+        
+        return {
+            'success': True,
+            'duration_hours': 6.0,
+            'work_performed': f"Seal replacement on {self.config.pump_id}",
+            'findings': f"Replaced seals, eliminated {old_leakage:.2f} L/min leakage",
+            'performance_improvement': 5.0,
+            'effectiveness_score': 1.0,
+            'next_maintenance_due': 8760.0  # 1 year
+        }
+    
+    def _perform_vibration_analysis(self) -> Dict[str, Any]:
+        """Perform vibration analysis"""
+        vibration = self.state.vibration_level
+        
+        if vibration > 5.0:
+            findings = f"High vibration detected: {vibration:.1f} mm/s"
+            recommendations = ["Investigate bearing condition", "Check alignment", "Consider balancing"]
+            effectiveness = 0.7
+        elif vibration > 3.0:
+            findings = f"Moderate vibration: {vibration:.1f} mm/s"
+            recommendations = ["Monitor vibration trends", "Schedule bearing inspection"]
+            effectiveness = 0.8
+        else:
+            findings = f"Normal vibration levels: {vibration:.1f} mm/s"
+            recommendations = ["Continue normal operation"]
+            effectiveness = 1.0
+        
+        return {
+            'success': True,
+            'duration_hours': 2.0,
+            'work_performed': f"Vibration analysis on {self.config.pump_id}",
+            'findings': findings,
+            'recommendations': recommendations,
+            'effectiveness_score': effectiveness
+        }
+    
+    def _perform_component_overhaul(self, component_id: str = "all", **kwargs) -> Dict[str, Any]:
+        """Perform component overhaul"""
+        if component_id == "impeller":
+            return self._perform_impeller_replacement()
+        elif component_id == "bearings":
+            return self._perform_bearing_replacement()
+        elif component_id == "seals":
+            return self._perform_seal_replacement()
+        else:
+            # Complete overhaul
+            self.state.impeller_wear = 0.0
+            self.state.bearing_wear = 0.0
+            self.state.seal_wear = 0.0
+            self.state.cavitation_damage = 0.0
+            self.state.oil_level = 100.0
+            self.state.vibration_level = 1.5
+            
+            # Reset performance factors
+            self.state.flow_factor = 1.0
+            self.state.efficiency_factor = 1.0
+            self.state.head_factor = 1.0
+            
+            return {
+                'success': True,
+                'duration_hours': 24.0,
+                'work_performed': f"Complete overhaul of {self.config.pump_id}",
+                'findings': "All major components overhauled, pump restored to like-new condition",
+                'performance_improvement': 25.0,
+                'effectiveness_score': 1.0,
+                'next_maintenance_due': 35040.0  # 4 years
+            }
+    
+    def _perform_routine_maintenance(self) -> Dict[str, Any]:
+        """Perform routine maintenance"""
+        # Minor improvements from routine maintenance
+        self.state.oil_level = min(100.0, self.state.oil_level + 5.0)
+        self.state.impeller_wear = max(0.0, self.state.impeller_wear - 0.5)
+        self.state.bearing_wear = max(0.0, self.state.bearing_wear - 0.3)
+        self.state.seal_wear = max(0.0, self.state.seal_wear - 0.2)
+        
+        return {
+            'success': True,
+            'duration_hours': 4.0,
+            'work_performed': f"Routine maintenance on {self.config.pump_id}",
+            'findings': "Performed standard maintenance tasks, minor improvements achieved",
+            'effectiveness_score': 0.8,
+            'next_maintenance_due': 2190.0  # 3 months
+        }
+    
+    def _perform_general_maintenance(self) -> Dict[str, Any]:
+        """Perform general maintenance (legacy behavior)"""
+        # Reset wear and damage
+        self.state.impeller_wear = 0.0
+        self.state.bearing_wear = 0.0
+        self.state.seal_wear = 0.0
+        self.state.cavitation_damage = 0.0
+        self.state.oil_level = 100.0
+        
+        # Reset performance factors
+        self.state.flow_factor = 1.0
+        self.state.efficiency_factor = 1.0
+        self.state.head_factor = 1.0
+        
+        return {
+            'success': True,
+            'duration_hours': 8.0,
+            'work_performed': f"General maintenance on {self.config.pump_id}",
+            'findings': "All systems restored to optimal condition",
+            'effectiveness_score': 1.0
+        }
+
     def reset(self) -> None:
         """Reset feedwater pump to initial conditions"""
         # Reset basic pump state to initial values
@@ -723,14 +1045,17 @@ class FeedwaterPump(BasePump):
         self.state.seal_wear = 0.0
         self.state.seal_leakage = 0.0
         
-        # Reset performance degradation factors to optimal
-        self.state.flow_degradation_factor = 1.0
-        self.state.efficiency_degradation_factor = 1.0
-        self.state.head_degradation_factor = 1.0
+        # Reset performance factors to optimal
+        self.state.flow_factor = 1.0
+        self.state.efficiency_factor = 1.0
+        self.state.head_factor = 1.0
         
         # Reset control parameters
         self.flow_demand = self.config.rated_flow
         self.auto_level_control = True
+        
+        # Sync oil levels after reset
+        #self.sync_oil_levels_bidirectional("pump")
 
     def get_state_dict(self):
         state_dict = {
@@ -746,6 +1071,24 @@ class FeedwaterPump(BasePump):
             f'bearing_wear': self.state.bearing_wear,
             f'vibration_level': self.state.vibration_level
         }
+        
+        # Add lubrication system state if available
+        if hasattr(self, 'lubrication_system'):
+            lubrication_state = self.lubrication_system.get_state_dict()
+            state_dict.update({
+                'oil_level': lubrication_state['oil_level'],
+                'oil_temperature': lubrication_state['oil_temperature'],
+                'oil_contamination': lubrication_state['oil_contamination_level'],
+                'bearing_temperature': lubrication_state.get('motor_bearing_temperature', 
+                                                           lubrication_state.get('motor_bearing_wear', 0.0) * 5.0 + 80.0),
+                'efficiency_factor': lubrication_state['efficiency_factor'],
+                'seal_leakage_rate': lubrication_state['seal_leakage_rate'],
+                'vibration_increase': lubrication_state['vibration_increase'],
+                'lubrication_effectiveness': lubrication_state['lubrication_effectiveness'],
+                'system_health_factor': lubrication_state['system_health_factor'],
+                'maintenance_due': lubrication_state['maintenance_due']
+            })
+        
         return state_dict
 
 @dataclass
@@ -797,6 +1140,12 @@ class FeedwaterPumpSystem(ChemistryFlowProvider):
                 rated_power=config.pump_config.rated_power,  # Use config value
                 rated_head=config.pump_config.rated_head   # Use config value
             )
+            
+            # Add initial_oil_level to pump config if provided in system config
+            if hasattr(config, 'initial_oil_levels') and i < len(config.initial_oil_levels):
+                pump_config.initial_oil_level = config.initial_oil_levels[i]
+            elif hasattr(config, 'initial_oil_level'):
+                pump_config.initial_oil_level = config.initial_oil_level
             
             
             # Create the pump
@@ -944,12 +1293,12 @@ class FeedwaterPumpSystem(ChemistryFlowProvider):
             total_speed = sum(self.pumps[pump_id].state.speed_percent for pump_id in running_pumps)
             average_pump_speed = total_speed / len(running_pumps)
             
-            total_efficiency = sum(self.pumps[pump_id].state.efficiency_degradation_factor for pump_id in running_pumps)
+            total_efficiency = sum(self.pumps[pump_id].state.efficiency_factor for pump_id in running_pumps)
             average_pump_efficiency = total_efficiency / len(running_pumps)
             
             total_performance = sum(
-                self.pumps[pump_id].state.flow_degradation_factor * 
-                self.pumps[pump_id].state.efficiency_degradation_factor 
+                self.pumps[pump_id].state.flow_factor * 
+                self.pumps[pump_id].state.efficiency_factor 
                 for pump_id in running_pumps
             )
             average_performance_factor = total_performance / len(running_pumps)
@@ -996,392 +1345,6 @@ class FeedwaterPumpSystem(ChemistryFlowProvider):
             return self.pumps[pump_id].stop_pump()
         return False
     
-    def setup_maintenance_integration(self, maintenance_system):
-        """
-        Set up maintenance integration for all pumps in the system
-        
-        Args:
-            maintenance_system: AutoMaintenanceSystem instance
-        """
-        from systems.maintenance import AutoMaintenanceSystem
-        
-        print(f"PUMP SYSTEM: Setting up maintenance integration for {len(self.pumps)} pumps")
-        
-        # Register each individual pump with the maintenance system
-        for pump_id, pump in self.pumps.items():
-            monitoring_config = {
-                'oil_level': {
-                    'attribute': 'state.oil_level',
-                    'threshold': 30.0,
-                    'comparison': 'less_than',
-                    'action': 'oil_top_off',
-                    'cooldown_hours': 1.0
-                },
-                'impeller_wear': {
-                    'attribute': 'state.impeller_wear',
-                    'threshold': 15.0,
-                    'comparison': 'greater_than',
-                    'action': 'impeller_inspection',
-                    'cooldown_hours': 24.0
-                },
-                'bearing_wear': {
-                    'attribute': 'state.bearing_wear',
-                    'threshold': 20.0,
-                    'comparison': 'greater_than',
-                    'action': 'bearing_replacement',
-                    'cooldown_hours': 48.0
-                },
-                'seal_wear': {
-                    'attribute': 'state.seal_wear',
-                    'threshold': 25.0,
-                    'comparison': 'greater_than',
-                    'action': 'seal_replacement',
-                    'cooldown_hours': 24.0
-                },
-                'vibration_level': {
-                    'attribute': 'state.vibration_level',
-                    'threshold': 8.0,
-                    'comparison': 'greater_than',
-                    'action': 'vibration_analysis',
-                    'cooldown_hours': 12.0
-                },
-                'cavitation_damage': {
-                    'attribute': 'state.cavitation_damage',
-                    'threshold': 5.0,
-                    'comparison': 'greater_than',
-                    'action': 'impeller_inspection',
-                    'cooldown_hours': 6.0
-                }
-            }
-            
-            # Register pump with maintenance system
-            maintenance_system.register_component(pump_id, pump, monitoring_config)
-            print(f"  Registered {pump_id} for automatic maintenance monitoring")
-        
-        # Store reference for coordination
-        self.maintenance_system = maintenance_system
-        
-        # Subscribe to maintenance events for system-level coordination
-        maintenance_system.event_bus.subscribe('work_order_created', self._coordinate_pump_maintenance)
-        print(f"PUMP SYSTEM: Maintenance integration complete")
-    
-    def _coordinate_pump_maintenance(self, event):
-        """
-        Coordinate pump maintenance to ensure system availability
-        
-        Args:
-            event: Maintenance event containing work order information
-        """
-        # Extract work order from event data
-        work_order_data = event.data
-        component_id = event.component_id
-        
-        # Check if this is a pump maintenance work order
-        if component_id in self.pumps:
-            # Check if we can safely take this pump offline
-            current_running = len(self.running_pumps)
-            min_required = self.minimum_pumps_required
-            
-            if current_running <= min_required:
-                # Not safe to take pump offline - need to delay maintenance
-                print(f"PUMP SYSTEM: Delaying maintenance on {component_id} - "
-                      f"only {current_running} pumps running, need minimum {min_required}")
-                
-                # Publish delay event (maintenance system will handle rescheduling)
-                if hasattr(self, 'maintenance_system') and self.maintenance_system:
-                    self.maintenance_system.event_bus.publish('maintenance_delayed', component_id, {
-                        'reason': 'insufficient_running_pumps',
-                        'current_running': current_running,
-                        'minimum_required': min_required,
-                        'delay_hours': 24.0
-                    })
-            else:
-                # Safe to proceed with maintenance
-                print(f"PUMP SYSTEM: Approved maintenance on {component_id} - "
-                      f"{current_running} pumps running, {min_required} required")
-    
-    def perform_maintenance(self, pump_id: str = None, maintenance_type: str = "general", **kwargs) -> Dict[str, Any]:
-        """
-        Enhanced maintenance method compatible with automatic maintenance system
-        
-        Args:
-            pump_id: Specific pump to maintain (None for all pumps)
-            maintenance_type: Type of maintenance to perform
-            **kwargs: Additional maintenance parameters
-            
-        Returns:
-            Dictionary with maintenance results compatible with MaintenanceResult
-        """
-        results = {}
-        
-        if pump_id and pump_id in self.pumps:
-            # Individual pump maintenance with system coordination
-            pump = self.pumps[pump_id]
-            
-            # Check if safe to take pump offline for maintenance
-            if (pump_id in self.running_pumps and 
-                len(self.running_pumps) <= self.minimum_pumps_required):
-                
-                return {
-                    'success': False,
-                    'duration_hours': 0.0,
-                    'work_performed': f"Maintenance deferred on {pump_id}",
-                    'error_message': 'Cannot take pump offline - insufficient running pumps',
-                    'findings': f'System has {len(self.running_pumps)} running pumps, minimum {self.minimum_pumps_required} required'
-                }
-            
-            # Perform maintenance on specific pump
-            result = self._perform_pump_maintenance(pump, maintenance_type, **kwargs)
-            results[f'{pump_id}_maintenance'] = result
-            
-        else:
-            # Maintenance on all pumps (system-wide)
-            for pid, pump in self.pumps.items():
-                result = self._perform_pump_maintenance(pump, maintenance_type, **kwargs)
-                results[f'{pid}_maintenance'] = result
-        
-        # Return compatible format for automatic maintenance system
-        if len(results) == 1:
-            # Single pump maintenance - return the result directly
-            return list(results.values())[0]
-        else:
-            # Multiple pump maintenance - return summary
-            all_successful = all(r.get('success', True) for r in results.values())
-            total_duration = sum(r.get('duration_hours', 1.0) for r in results.values())
-            
-            return {
-                'success': all_successful,
-                'duration_hours': total_duration,
-                'work_performed': f"Performed {maintenance_type} on {len(results)} pumps",
-                'findings': f"Maintained {len(results)} feedwater pumps",
-                'effectiveness_score': 1.0 if all_successful else 0.5
-            }
-    
-    def _perform_pump_maintenance(self, pump, maintenance_type: str, **kwargs) -> Dict[str, Any]:
-        """Perform maintenance on a specific pump"""
-        
-        # Map maintenance types to specific actions
-        if maintenance_type == "oil_change":
-            return self._perform_oil_change(pump)
-        elif maintenance_type == "oil_top_off":
-            return self._perform_oil_top_off(pump, **kwargs)
-        elif maintenance_type == "impeller_inspection":
-            return self._perform_impeller_inspection(pump)
-        elif maintenance_type == "impeller_replacement":
-            return self._perform_impeller_replacement(pump)
-        elif maintenance_type == "bearing_replacement":
-            return self._perform_bearing_replacement(pump)
-        elif maintenance_type == "seal_replacement":
-            return self._perform_seal_replacement(pump)
-        elif maintenance_type == "vibration_analysis":
-            return self._perform_vibration_analysis(pump)
-        elif maintenance_type == "component_overhaul":
-            return self._perform_component_overhaul(pump, **kwargs)
-        elif maintenance_type == "routine_maintenance":
-            return self._perform_routine_maintenance(pump)
-        else:
-            # General maintenance (legacy behavior)
-            return self._perform_general_maintenance(pump)
-    
-    def _perform_oil_change(self, pump) -> Dict[str, Any]:
-        """Perform complete oil change"""
-        pump.state.oil_level = 100.0
-        pump.state.oil_temperature = 40.0
-        
-        return {
-            'success': True,
-            'duration_hours': 2.0,
-            'work_performed': f"Complete oil change on {pump.config.pump_id}",
-            'findings': "Oil changed, system restored to optimal condition",
-            'effectiveness_score': 1.0,
-            'next_maintenance_due': 8760.0  # 1 year
-        }
-    
-    def _perform_oil_top_off(self, pump, target_level: float = 95.0, **kwargs) -> Dict[str, Any]:
-        """Perform oil top-off"""
-        old_level = pump.state.oil_level
-        pump.state.oil_level = min(100.0, target_level)
-        oil_added = pump.state.oil_level - old_level
-        
-        return {
-            'success': True,
-            'duration_hours': 0.5,
-            'work_performed': f"Oil top-off on {pump.config.pump_id}",
-            'findings': f"Added {oil_added:.1f}% oil, level now {pump.state.oil_level:.1f}%",
-            'effectiveness_score': 1.0
-        }
-    
-    def _perform_impeller_inspection(self, pump) -> Dict[str, Any]:
-        """Perform impeller inspection"""
-        wear_before = pump.state.impeller_wear
-        
-        # Inspection can detect and partially address minor wear
-        if pump.state.impeller_wear > 5.0:
-            pump.state.impeller_wear *= 0.9  # 10% improvement from cleaning
-            improvement = wear_before - pump.state.impeller_wear
-            findings = f"Impeller wear: {wear_before:.1f}% -> {pump.state.impeller_wear:.1f}% (cleaned)"
-            recommendations = ["Monitor impeller wear closely", "Consider replacement if wear exceeds 15%"]
-        else:
-            findings = f"Impeller in good condition, wear: {pump.state.impeller_wear:.1f}%"
-            recommendations = ["Continue normal operation"]
-        
-        return {
-            'success': True,
-            'duration_hours': 4.0,
-            'work_performed': f"Impeller inspection on {pump.config.pump_id}",
-            'findings': findings,
-            'recommendations': recommendations,
-            'effectiveness_score': 0.9,
-            'next_maintenance_due': 4380.0  # 6 months
-        }
-    
-    def _perform_impeller_replacement(self, pump) -> Dict[str, Any]:
-        """Perform impeller replacement"""
-        old_wear = pump.state.impeller_wear
-        pump.state.impeller_wear = 0.0
-        pump.state.flow_degradation_factor = 1.0
-        pump.state.efficiency_degradation_factor = min(1.0, pump.state.efficiency_degradation_factor + 0.15)
-        
-        return {
-            'success': True,
-            'duration_hours': 8.0,
-            'work_performed': f"Impeller replacement on {pump.config.pump_id}",
-            'findings': f"Replaced impeller with {old_wear:.1f}% wear",
-            'performance_improvement': 15.0,  # 15% improvement
-            'effectiveness_score': 1.0,
-            'next_maintenance_due': 17520.0  # 2 years
-        }
-    
-    def _perform_bearing_replacement(self, pump) -> Dict[str, Any]:
-        """Perform bearing replacement"""
-        old_wear = pump.state.bearing_wear
-        pump.state.bearing_wear = 0.0
-        pump.state.vibration_level = max(1.0, pump.state.vibration_level - 2.0)
-        pump.state.efficiency_degradation_factor = min(1.0, pump.state.efficiency_degradation_factor + 0.1)
-        
-        return {
-            'success': True,
-            'duration_hours': 8.0,
-            'work_performed': f"Bearing replacement on {pump.config.pump_id}",
-            'findings': f"Replaced bearings with {old_wear:.1f}% wear",
-            'performance_improvement': 10.0,
-            'effectiveness_score': 1.0,
-            'next_maintenance_due': 17520.0  # 2 years
-        }
-    
-    def _perform_seal_replacement(self, pump) -> Dict[str, Any]:
-        """Perform seal replacement"""
-        old_wear = pump.state.seal_wear
-        old_leakage = pump.state.seal_leakage
-        pump.state.seal_wear = 0.0
-        pump.state.seal_leakage = 0.0
-        
-        return {
-            'success': True,
-            'duration_hours': 6.0,
-            'work_performed': f"Seal replacement on {pump.config.pump_id}",
-            'findings': f"Replaced seals, eliminated {old_leakage:.2f} L/min leakage",
-            'performance_improvement': 5.0,
-            'effectiveness_score': 1.0,
-            'next_maintenance_due': 8760.0  # 1 year
-        }
-    
-    def _perform_vibration_analysis(self, pump) -> Dict[str, Any]:
-        """Perform vibration analysis"""
-        vibration = pump.state.vibration_level
-        
-        if vibration > 5.0:
-            findings = f"High vibration detected: {vibration:.1f} mm/s"
-            recommendations = ["Investigate bearing condition", "Check alignment", "Consider balancing"]
-            effectiveness = 0.7
-        elif vibration > 3.0:
-            findings = f"Moderate vibration: {vibration:.1f} mm/s"
-            recommendations = ["Monitor vibration trends", "Schedule bearing inspection"]
-            effectiveness = 0.8
-        else:
-            findings = f"Normal vibration levels: {vibration:.1f} mm/s"
-            recommendations = ["Continue normal operation"]
-            effectiveness = 1.0
-        
-        return {
-            'success': True,
-            'duration_hours': 2.0,
-            'work_performed': f"Vibration analysis on {pump.config.pump_id}",
-            'findings': findings,
-            'recommendations': recommendations,
-            'effectiveness_score': effectiveness
-        }
-    
-    def _perform_component_overhaul(self, pump, component_id: str = "all", **kwargs) -> Dict[str, Any]:
-        """Perform component overhaul"""
-        if component_id == "impeller":
-            return self._perform_impeller_replacement(pump)
-        elif component_id == "bearings":
-            return self._perform_bearing_replacement(pump)
-        elif component_id == "seals":
-            return self._perform_seal_replacement(pump)
-        else:
-            # Complete overhaul
-            pump.state.impeller_wear = 0.0
-            pump.state.bearing_wear = 0.0
-            pump.state.seal_wear = 0.0
-            pump.state.cavitation_damage = 0.0
-            pump.state.oil_level = 100.0
-            pump.state.vibration_level = 1.5
-            
-            # Reset performance factors
-            pump.state.flow_degradation_factor = 1.0
-            pump.state.efficiency_degradation_factor = 1.0
-            pump.state.head_degradation_factor = 1.0
-            
-            return {
-                'success': True,
-                'duration_hours': 24.0,
-                'work_performed': f"Complete overhaul of {pump.config.pump_id}",
-                'findings': "All major components overhauled, pump restored to like-new condition",
-                'performance_improvement': 25.0,
-                'effectiveness_score': 1.0,
-                'next_maintenance_due': 35040.0  # 4 years
-            }
-    
-    def _perform_routine_maintenance(self, pump) -> Dict[str, Any]:
-        """Perform routine maintenance"""
-        # Minor improvements from routine maintenance
-        pump.state.oil_level = min(100.0, pump.state.oil_level + 5.0)
-        pump.state.impeller_wear = max(0.0, pump.state.impeller_wear - 0.5)
-        pump.state.bearing_wear = max(0.0, pump.state.bearing_wear - 0.3)
-        pump.state.seal_wear = max(0.0, pump.state.seal_wear - 0.2)
-        
-        return {
-            'success': True,
-            'duration_hours': 4.0,
-            'work_performed': f"Routine maintenance on {pump.config.pump_id}",
-            'findings': "Performed standard maintenance tasks, minor improvements achieved",
-            'effectiveness_score': 0.8,
-            'next_maintenance_due': 2190.0  # 3 months
-        }
-    
-    def _perform_general_maintenance(self, pump) -> Dict[str, Any]:
-        """Perform general maintenance (legacy behavior)"""
-        # Reset wear and damage
-        pump.state.impeller_wear = 0.0
-        pump.state.bearing_wear = 0.0
-        pump.state.seal_wear = 0.0
-        pump.state.cavitation_damage = 0.0
-        pump.state.oil_level = 100.0
-        
-        # Reset performance factors
-        pump.state.flow_degradation_factor = 1.0
-        pump.state.efficiency_degradation_factor = 1.0
-        pump.state.head_degradation_factor = 1.0
-        
-        return {
-            'success': True,
-            'duration_hours': 8.0,
-            'work_performed': f"General maintenance on {pump.config.pump_id}",
-            'findings': "All systems restored to optimal condition",
-            'effectiveness_score': 1.0
-        }
     
     def get_state_dict(self) -> Dict[str, float]:
         """Get current state as dictionary for logging/monitoring"""
@@ -1537,10 +1500,10 @@ class FeedwaterPumpSystem(ChemistryFlowProvider):
                         
                         # Improve performance factors
                         improvement = cleaning_eff * 0.1
-                        pump.state.flow_degradation_factor = min(1.0, 
-                            pump.state.flow_degradation_factor + improvement)
-                        pump.state.efficiency_degradation_factor = min(1.0, 
-                            pump.state.efficiency_degradation_factor + improvement)
+                        pump.state.flow_factor = min(1.0, 
+                            pump.state.flow_factor + improvement)
+                        pump.state.efficiency_factor = min(1.0, 
+                            pump.state.efficiency_factor + improvement)
                 
                 # Corrosion inhibitor effects
                 if 'corrosion_inhibitor_effectiveness' in treatment:
@@ -1622,7 +1585,7 @@ class FeedwaterPumpSystem(ChemistryFlowProvider):
             return 0.0
         
         total_efficiency = sum(
-            self.pumps[pump_id].state.efficiency_degradation_factor 
+            self.pumps[pump_id].state.efficiency_factor 
             for pump_id in self.running_pumps
         )
         return total_efficiency / len(self.running_pumps)

@@ -238,7 +238,9 @@ class SecondaryReactorPhysics:
                 self.config = SimpleConfig(config_data)
                 
         elif config:
-            self.config = SecondarySystemConfig.from_dict(config)
+            config_data = config['secondary_system']
+            print(config_data)
+            self.config = SecondarySystemConfig.from_dict(config_data)
         else:
             # Create default 3000 MW PWR configuration
             from .config import PWR3000ConfigFactory
@@ -353,10 +355,18 @@ class SecondaryReactorPhysics:
                 - 'cooling_water_temp': Cooling water inlet temperature (°C)
                 - 'cooling_water_flow': Cooling water flow rate (kg/s)
                 - 'vacuum_pump_operation': Vacuum pump operation (0-1)
-            dt: Time step (s)
+            dt: Time step (MINUTES from main simulator)
             
         Returns:
             Dictionary with complete system state and performance
+            
+        Note:
+            Time step unit conversions:
+            - Main simulator passes dt in MINUTES
+            - Turbine system expects dt in HOURS -> convert with dt/60.0
+            - Condenser system expects dt in HOURS -> convert with dt/60.0  
+            - Feedwater system expects dt in MINUTES -> use dt directly
+            - Steam generator system expects dt in SECONDS -> convert with dt*60.0
         """
         # Extract control inputs
         self.load_demand = control_inputs.get('load_demand', 100.0)
@@ -473,7 +483,7 @@ class SecondaryReactorPhysics:
             steam_demands=steam_demands,
             system_conditions=enhanced_system_conditions,
             control_inputs=control_inputs,
-            dt=dt
+            dt=dt*60
         )
         
         # Extract results from enhanced system
@@ -550,17 +560,19 @@ class SecondaryReactorPhysics:
             steam_generator_demands=steam_generator_demands,
             system_conditions=feedwater_system_conditions,
             control_inputs=control_inputs,
-            dt=dt / 60.0  # Convert seconds to minutes for enhanced feedwater
+            dt=dt
         )
         
         # Update turbine
+        # CRITICAL FIX: Convert dt from minutes to hours for turbine system
+        # The turbine system expects dt in hours, but main simulator passes dt in minutes
         turbine_result = self.turbine.update_state(
             steam_pressure=avg_steam_pressure,
             steam_temperature=avg_steam_temperature,
             steam_flow=total_steam_flow,
             steam_quality=avg_steam_quality,
             load_demand=self.load_demand,
-            dt=dt
+            dt=dt/60.0  # Convert minutes to hours for turbine
         )
         
         # Update condenser with ACTUAL LP turbine exhaust conditions from turbine system
@@ -612,7 +624,7 @@ class SecondaryReactorPhysics:
             motive_steam_temperature=motive_steam_temperature,
             makeup_water_quality=makeup_water_quality,
             chemical_doses=chemical_doses,
-            dt=dt / 3600.0  # Convert seconds to hours for enhanced condenser
+            dt=dt / 60.0  # Convert seconds to hours for enhanced condenser
         )
         
         # Update condenser system conditions now that we have condenser results

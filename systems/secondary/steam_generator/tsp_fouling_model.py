@@ -149,8 +149,6 @@ class DepositState:
         return max_thickness
 
 
-@auto_register("SECONDARY", "tsp_fouling", id_source="config.fouling_model_id",
-               description=STEAM_GENERATOR_COMPONENT_DESCRIPTIONS['tsp_fouling_model'])
 class TSPFoulingModel(ChemistryFlowProvider):
     """
     Comprehensive TSP fouling model for PWR steam generators

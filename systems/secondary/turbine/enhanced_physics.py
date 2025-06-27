@@ -546,6 +546,202 @@ class EnhancedTurbinePhysics(HeatFlowProvider):
         # Store last update results for get_current_state()
         self.last_update_results = {}
         
+        # CRITICAL: Apply initial conditions after creating components
+        self._apply_initial_conditions()
+        
+        print(f"TURBINE: Applied initial conditions from config")
+    
+    def _apply_initial_conditions(self):
+        """
+        Apply initial conditions from config to turbine components
+        
+        This method reads the initial_conditions from the TurbineConfig dataclass
+        and applies them to the actual component states. This is critical for
+        maintenance scenarios that start with pre-degraded conditions.
+        """
+        ic = self.config.initial_conditions
+        
+        print(f"TURBINE: Applying initial conditions:")
+        print(f"  Rotor speed: {ic.rotor_speed} RPM")
+        print(f"  Rotor acceleration: {ic.rotor_acceleration} RPM/s")
+        print(f"  Rotor temperature: {ic.rotor_temperature}°C")
+        print(f"  Bearing temperatures: {ic.bearing_temperatures}")
+        print(f"  Bearing vibrations: {ic.bearing_vibrations}")
+        print(f"  Bearing oil pressures: {ic.bearing_oil_pressures}")
+        print(f"  Oil contamination: {ic.oil_contamination} ppm")
+        print(f"  Oil level: {ic.oil_level}%")
+        
+        # Apply rotor conditions
+        if hasattr(self.rotor_dynamics, 'rotor_speed'):
+            self.rotor_dynamics.rotor_speed = ic.rotor_speed
+            print(f"    Applied rotor speed: {ic.rotor_speed} RPM")
+        
+        if hasattr(self.rotor_dynamics, 'rotor_acceleration'):
+            self.rotor_dynamics.rotor_acceleration = ic.rotor_acceleration
+            print(f"    Applied rotor acceleration: {ic.rotor_acceleration} RPM/s")
+        
+        if hasattr(self.rotor_dynamics, 'rotor_temperature'):
+            self.rotor_dynamics.rotor_temperature = ic.rotor_temperature
+            print(f"    Applied rotor temperature: {ic.rotor_temperature}°C")
+        
+        # Apply bearing conditions
+        if hasattr(self.rotor_dynamics, 'bearings'):
+            bearing_ids = list(self.rotor_dynamics.bearings.keys())
+            
+            for i, bearing_id in enumerate(bearing_ids):
+                bearing = self.rotor_dynamics.bearings[bearing_id]
+                
+                print(f"    Applying initial conditions to bearing {bearing_id}:")
+                
+                # Apply bearing temperatures
+                if i < len(ic.bearing_temperatures):
+                    bearing.metal_temperature = ic.bearing_temperatures[i]
+                    print(f"      Bearing temperature: {ic.bearing_temperatures[i]}°C")
+                
+                # Apply bearing vibrations
+                if i < len(ic.bearing_vibrations):
+                    bearing.vibration_displacement = ic.bearing_vibrations[i]
+                    print(f"      Bearing vibration: {ic.bearing_vibrations[i]} mm/s")
+                
+                # Apply bearing oil pressures
+                if i < len(ic.bearing_oil_pressures):
+                    bearing.oil_pressure = ic.bearing_oil_pressures[i]
+                    print(f"      Oil pressure: {ic.bearing_oil_pressures[i]} MPa")
+        
+        # Apply lubrication system conditions
+        if hasattr(self, 'bearing_lubrication_system'):
+            lubrication_system = self.bearing_lubrication_system
+            
+            # Apply oil contamination
+            if hasattr(lubrication_system, 'oil_contamination'):
+                lubrication_system.oil_contamination = ic.oil_contamination
+                print(f"    Applied oil contamination: {ic.oil_contamination} ppm")
+            
+            # Apply oil level
+            if hasattr(lubrication_system, 'oil_level'):
+                lubrication_system.oil_level = ic.oil_level
+                print(f"    Applied oil level: {ic.oil_level}%")
+            
+            # Apply oil temperature
+            if hasattr(ic, 'oil_temperature') and hasattr(lubrication_system, 'oil_temperature'):
+                lubrication_system.oil_temperature = ic.oil_temperature
+                print(f"    Applied oil temperature: {ic.oil_temperature}°C")
+        
+        # Apply thermal conditions
+        if hasattr(self, 'thermal_tracker'):
+            thermal_tracker = self.thermal_tracker
+            
+            # Apply rotor temperatures
+            if hasattr(ic, 'rotor_temperatures') and hasattr(thermal_tracker, 'rotor_temperatures'):
+                for i, temp in enumerate(ic.rotor_temperatures):
+                    if i < len(thermal_tracker.rotor_temperatures):
+                        thermal_tracker.rotor_temperatures[i] = temp
+                print(f"    Applied rotor temperatures: {ic.rotor_temperatures}")
+            
+            # Apply casing temperatures
+            if hasattr(ic, 'casing_temperatures') and hasattr(thermal_tracker, 'casing_temperatures'):
+                for i, temp in enumerate(ic.casing_temperatures):
+                    if i < len(thermal_tracker.casing_temperatures):
+                        thermal_tracker.casing_temperatures[i] = temp
+                print(f"    Applied casing temperatures: {ic.casing_temperatures}")
+            
+            # Apply blade temperatures
+            if hasattr(ic, 'blade_temperatures') and hasattr(thermal_tracker, 'blade_temperatures'):
+                for i, temp in enumerate(ic.blade_temperatures):
+                    if i < len(thermal_tracker.blade_temperatures):
+                        thermal_tracker.blade_temperatures[i] = temp
+                print(f"    Applied blade temperatures: {ic.blade_temperatures}")
+        
+        # Apply system-level initial conditions
+        self.total_power_output = ic.total_power_output
+        self.overall_efficiency = ic.overall_efficiency
+        self.load_demand = ic.load_demand
+        
+        print(f"TURBINE: Initial conditions applied successfully")
+        
+        # Validate that critical initial conditions were applied
+        self._validate_initial_conditions_applied()
+    
+    def _validate_initial_conditions_applied(self):
+        """Validate that initial conditions were properly applied"""
+        ic = self.config.initial_conditions
+        
+        print(f"TURBINE: Validating initial conditions application:")
+        
+        # Validate rotor conditions
+        if hasattr(self.rotor_dynamics, 'rotor_speed'):
+            expected = ic.rotor_speed
+            actual = self.rotor_dynamics.rotor_speed
+            if abs(actual - expected) < 1.0:
+                print(f"  ✓ Rotor speed: {actual} RPM (expected {expected} RPM)")
+            else:
+                print(f"  ✗ Rotor speed mismatch: {actual} RPM (expected {expected} RPM)")
+        
+        if hasattr(self.rotor_dynamics, 'rotor_temperature'):
+            expected = ic.rotor_temperature
+            actual = self.rotor_dynamics.rotor_temperature
+            if abs(actual - expected) < 1.0:
+                print(f"  ✓ Rotor temperature: {actual}°C (expected {expected}°C)")
+            else:
+                print(f"  ✗ Rotor temperature mismatch: {actual}°C (expected {expected}°C)")
+        
+        # Validate bearing conditions
+        if hasattr(self.rotor_dynamics, 'bearings'):
+            bearing_ids = list(self.rotor_dynamics.bearings.keys())
+            
+            for i, bearing_id in enumerate(bearing_ids):
+                bearing = self.rotor_dynamics.bearings[bearing_id]
+                print(f"  Bearing {bearing_id} verification:")
+                
+                # Validate bearing temperature
+                if i < len(ic.bearing_temperatures):
+                    expected = ic.bearing_temperatures[i]
+                    actual = bearing.metal_temperature
+                    if abs(actual - expected) < 1.0:
+                        print(f"    ✓ Temperature: {actual}°C (expected {expected}°C)")
+                    else:
+                        print(f"    ✗ Temperature mismatch: {actual}°C (expected {expected}°C)")
+                
+                # Validate bearing vibration
+                if i < len(ic.bearing_vibrations):
+                    expected = ic.bearing_vibrations[i]
+                    actual = bearing.vibration_displacement
+                    if abs(actual - expected) < 0.1:
+                        print(f"    ✓ Vibration: {actual} mm/s (expected {expected} mm/s)")
+                    else:
+                        print(f"    ✗ Vibration mismatch: {actual} mm/s (expected {expected} mm/s)")
+                
+                # Validate oil pressure
+                if i < len(ic.bearing_oil_pressures):
+                    expected = ic.bearing_oil_pressures[i]
+                    actual = bearing.oil_pressure
+                    if abs(actual - expected) < 0.01:
+                        print(f"    ✓ Oil pressure: {actual} MPa (expected {expected} MPa)")
+                    else:
+                        print(f"    ✗ Oil pressure mismatch: {actual} MPa (expected {expected} MPa)")
+        
+        # Validate lubrication system
+        if hasattr(self, 'bearing_lubrication_system'):
+            lubrication_system = self.bearing_lubrication_system
+            
+            if hasattr(lubrication_system, 'oil_contamination'):
+                expected = ic.oil_contamination
+                actual = lubrication_system.oil_contamination
+                if abs(actual - expected) < 0.1:
+                    print(f"  ✓ Oil contamination: {actual} ppm (expected {expected} ppm)")
+                else:
+                    print(f"  ✗ Oil contamination mismatch: {actual} ppm (expected {expected} ppm)")
+            
+            if hasattr(lubrication_system, 'oil_level'):
+                expected = ic.oil_level
+                actual = lubrication_system.oil_level
+                if abs(actual - expected) < 1.0:
+                    print(f"  ✓ Oil level: {actual}% (expected {expected}%)")
+                else:
+                    print(f"  ✗ Oil level mismatch: {actual}% (expected {expected}%)")
+        
+        print(f"TURBINE: Initial conditions validation complete")
+        
     def update_state(self,
                     steam_pressure: float,
                     steam_temperature: float,

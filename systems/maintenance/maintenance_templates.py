@@ -47,13 +47,40 @@ def generate_monitoring_config(component_state_variables: Dict[str, Any],
     
     monitoring_config = {}
     
-    # Variable name aliases for better matching
+    # CRITICAL FIX: Enhanced variable name aliases for better matching
     variable_aliases = {
         'blade_condition': 'blade_wear',
         'tsp_fouling_fraction': 'tube_fouling_factor',
+        # Oil-related aliases
+        'oil_level': 'oil_level',
+        'lubrication_oil_level': 'oil_level',
+        'lube_oil_level': 'oil_level',
+        'pump_oil_level': 'oil_level',
+        # Efficiency aliases
+        'efficiency_degradation_factor': 'efficiency',
+        'pump_efficiency': 'efficiency',
+        'system_efficiency': 'efficiency',
+        # Vibration aliases
+        'vibration_level': 'vibration_level',
+        'pump_vibration': 'vibration_level',
+        'bearing_vibration': 'vibration_level',
+        # Temperature aliases
+        'bearing_temperature': 'bearing_temperature',
+        'pump_temperature': 'bearing_temperature',
+        # Contamination aliases
+        'oil_contamination': 'oil_contamination',
+        'contamination_level': 'oil_contamination',
     }
     
+    print(f"MAINTENANCE TEMPLATES: 🔍 Matching {len(component_state_variables)} state variables to {len(component_config.thresholds)} thresholds")
+    
+    # CRITICAL DEBUG: Show what thresholds we're trying to match
+    print(f"MAINTENANCE TEMPLATES: 🎯 Available thresholds:")
+    for threshold_name in component_config.thresholds.keys():
+        print(f"  - {threshold_name}")
+    
     # Match state variables to configured thresholds
+    matches_found = 0
     for var_name, var_value in component_state_variables.items():
         var_name_lower = var_name.lower()
         
@@ -63,6 +90,8 @@ def generate_monitoring_config(component_state_variables: Dict[str, Any],
         
         # Check aliases
         aliased_name = variable_aliases.get(base_var_name_lower, base_var_name_lower)
+        
+        print(f"MAINTENANCE TEMPLATES: 🔧 Processing variable: {var_name} (base: {base_var_name}, aliased: {aliased_name})")
         
         # Find matching threshold configuration
         best_match = None
@@ -74,39 +103,80 @@ def generate_monitoring_config(component_state_variables: Dict[str, Any],
             # Score the match quality
             score = 0
             
-            # Exact match with base variable name gets highest score
+            # CRITICAL FIX: Exact match with base variable name gets highest score
             if threshold_name_lower == base_var_name_lower:
                 score = 100
-            # Exact match with aliased name
+                print(f"    🎯 Exact base match: {base_var_name_lower} == {threshold_name_lower} (score: {score})")
+            # CRITICAL FIX: Exact match with aliased name
             elif threshold_name_lower == aliased_name:
                 score = 95
+                print(f"    🎯 Exact alias match: {aliased_name} == {threshold_name_lower} (score: {score})")
             # Exact match with full variable name
             elif threshold_name_lower == var_name_lower:
                 score = 90
+                print(f"    🎯 Exact full match: {var_name_lower} == {threshold_name_lower} (score: {score})")
+            # CRITICAL FIX: Special handling for oil_level matching (highest priority)
+            elif 'oil' in threshold_name_lower and 'oil' in base_var_name_lower and 'level' in threshold_name_lower and 'level' in base_var_name_lower:
+                score = 98
+                print(f"    🛢️ Oil level match: {base_var_name_lower} <-> {threshold_name_lower} (score: {score})")
+            elif 'oil' in threshold_name_lower and 'oil' in base_var_name_lower:
+                score = 85
+                print(f"    🛢️ Oil match: {base_var_name_lower} <-> {threshold_name_lower} (score: {score})")
+            elif 'level' in threshold_name_lower and 'level' in base_var_name_lower:
+                score = 80
+                print(f"    📏 Level match: {base_var_name_lower} <-> {threshold_name_lower} (score: {score})")
+            # CRITICAL FIX: Special handling for efficiency matching
+            elif 'efficiency' in threshold_name_lower and 'efficiency' in base_var_name_lower:
+                score = 85
+                print(f"    ⚡ Efficiency match: {base_var_name_lower} <-> {threshold_name_lower} (score: {score})")
+            elif 'degradation' in threshold_name_lower and ('degradation' in base_var_name_lower or 'efficiency' in base_var_name_lower):
+                score = 80
+                print(f"    📉 Degradation match: {base_var_name_lower} <-> {threshold_name_lower} (score: {score})")
+            # CRITICAL FIX: Special handling for vibration matching
+            elif 'vibration' in threshold_name_lower and 'vibration' in base_var_name_lower:
+                score = 85
+                print(f"    📳 Vibration match: {base_var_name_lower} <-> {threshold_name_lower} (score: {score})")
+            # CRITICAL FIX: Special handling for temperature matching
+            elif 'temperature' in threshold_name_lower and 'temperature' in base_var_name_lower:
+                score = 85
+                print(f"    🌡️ Temperature match: {base_var_name_lower} <-> {threshold_name_lower} (score: {score})")
+            elif 'bearing' in threshold_name_lower and 'bearing' in base_var_name_lower:
+                score = 80
+                print(f"    ⚙️ Bearing match: {base_var_name_lower} <-> {threshold_name_lower} (score: {score})")
             # Substring match with base name
             elif threshold_name_lower in base_var_name_lower:
-                score = 80
-            elif base_var_name_lower in threshold_name_lower:
                 score = 75
+                print(f"    🔍 Substring match (threshold in base): {threshold_name_lower} in {base_var_name_lower} (score: {score})")
+            elif base_var_name_lower in threshold_name_lower:
+                score = 70
+                print(f"    🔍 Substring match (base in threshold): {base_var_name_lower} in {threshold_name_lower} (score: {score})")
             # Substring match with full name
             elif threshold_name_lower in var_name_lower:
-                score = 70
-            elif var_name_lower in threshold_name_lower:
                 score = 65
-            # Keyword match (less preferred)
+                print(f"    🔍 Substring match (threshold in full): {threshold_name_lower} in {var_name_lower} (score: {score})")
+            elif var_name_lower in threshold_name_lower:
+                score = 60
+                print(f"    🔍 Substring match (full in threshold): {var_name_lower} in {threshold_name_lower} (score: {score})")
+            # CRITICAL FIX: Enhanced keyword matching for common patterns
             elif any(keyword in base_var_name_lower for keyword in threshold_name_lower.split('_')):
                 score = 50
+                matching_keywords = [kw for kw in threshold_name_lower.split('_') if kw in base_var_name_lower]
+                print(f"    🔗 Keyword match (threshold->base): {matching_keywords} (score: {score})")
             elif any(keyword in var_name_lower for keyword in threshold_name_lower.split('_')):
                 score = 45
+                matching_keywords = [kw for kw in threshold_name_lower.split('_') if kw in var_name_lower]
+                print(f"    🔗 Keyword match (threshold->full): {matching_keywords} (score: {score})")
             
             # Use the best match
             if score > best_score:
                 best_score = score
                 best_match = (threshold_name, threshold_config)
         
-        # Only create monitoring if we have a good match (score > 60)
-        if best_match and best_score > 60:
+        # CRITICAL FIX: Lower threshold for matching to catch more variables
+        if best_match and best_score > 40:  # Lowered from 60 to 40
             threshold_name, threshold_config = best_match
+            
+            print(f"MAINTENANCE TEMPLATES: ✅ Matched {var_name} -> {threshold_name} (score: {best_score})")
             
             # Apply global multipliers to get effective values
             effective_threshold = maintenance_config.get_effective_threshold(
@@ -124,6 +194,16 @@ def generate_monitoring_config(component_state_variables: Dict[str, Any],
                 'cooldown_hours': effective_cooldown,
                 'priority': threshold_config.priority
             }
+            matches_found += 1
+            
+            # CRITICAL DEBUG: Show the final monitoring config entry
+            print(f"    📋 Created monitoring config: {var_name} {threshold_config.comparison} {effective_threshold} -> {threshold_config.action}")
+        else:
+            print(f"MAINTENANCE TEMPLATES: ⚠️ No match for {var_name} (best score: {best_score})")
+            if best_match:
+                print(f"    Best candidate was: {best_match[0]} (score: {best_score})")
+    
+    print(f"MAINTENANCE TEMPLATES: 📊 Found {matches_found} matches out of {len(component_state_variables)} variables")
     
     return monitoring_config
 

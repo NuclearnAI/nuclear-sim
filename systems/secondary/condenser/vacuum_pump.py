@@ -20,7 +20,7 @@ Physical Basis:
 
 import warnings
 from dataclasses import dataclass
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple, Any
 import numpy as np
 from simulator.state import auto_register
 from ..component_descriptions import CONDENSER_COMPONENT_DESCRIPTIONS
@@ -334,6 +334,138 @@ class SteamJetEjector:
         self.overall_performance_factor = (self.nozzle_fouling_factor * 
                                          self.diffuser_fouling_factor * 
                                          self.nozzle_erosion_factor)
+
+    def perform_maintenance(self, maintenance_type: str = "general", **kwargs) -> Dict[str, Any]:
+        """
+        Perform maintenance on this individual steam jet ejector
+        
+        Args:
+            maintenance_type: Type of maintenance to perform
+            **kwargs: Additional maintenance parameters
+            
+        Returns:
+            Dictionary with maintenance results compatible with MaintenanceResult
+        """
+        # Map maintenance types to specific actions
+        if maintenance_type == "vacuum_ejector_cleaning":
+            return self._perform_ejector_cleaning(**kwargs)
+        elif maintenance_type == "vacuum_ejector_nozzle_replacement":
+            return self._perform_nozzle_replacement()
+        elif maintenance_type == "vacuum_ejector_inspection":
+            return self._perform_ejector_inspection()
+        elif maintenance_type == "vacuum_ejector_mechanical_cleaning":
+            return self._perform_mechanical_cleaning()
+        elif maintenance_type == "routine_maintenance":
+            return self._perform_routine_maintenance()
+        else:
+            # General maintenance (legacy behavior)
+            return self._perform_general_maintenance()
+    
+    def _perform_ejector_cleaning(self, cleaning_type: str = "chemical", **kwargs) -> Dict[str, Any]:
+        """Perform ejector cleaning"""
+        old_performance = self.overall_performance_factor
+        self.perform_cleaning(cleaning_type)
+        
+        performance_improvement = (self.overall_performance_factor - old_performance) * 100
+        
+        return {
+            'success': True,
+            'duration_hours': 4.0,
+            'work_performed': f"Cleaned ejector {self.config.ejector_id} using {cleaning_type} method",
+            'findings': f"Nozzle fouling factor improved from {old_performance:.3f} to {self.overall_performance_factor:.3f}",
+            'performance_improvement': performance_improvement,
+            'effectiveness_score': min(1.0, performance_improvement / 10.0),
+            'next_maintenance_due': 4380.0  # 6 months
+        }
+    
+    def _perform_nozzle_replacement(self) -> Dict[str, Any]:
+        """Perform nozzle replacement"""
+        old_performance = self.overall_performance_factor
+        self.perform_cleaning("replacement")
+        
+        performance_improvement = (self.overall_performance_factor - old_performance) * 100
+        
+        return {
+            'success': True,
+            'duration_hours': 8.0,
+            'work_performed': f"Replaced nozzles in ejector {self.config.ejector_id}",
+            'findings': "Nozzles showed significant erosion and fouling",
+            'performance_improvement': performance_improvement,
+            'effectiveness_score': 1.0,
+            'next_maintenance_due': 17520.0  # 2 years
+        }
+    
+    def _perform_ejector_inspection(self) -> Dict[str, Any]:
+        """Perform ejector inspection"""
+        findings = []
+        if self.nozzle_fouling_factor < 0.9:
+            findings.append("Nozzle fouling detected")
+        if self.diffuser_fouling_factor < 0.9:
+            findings.append("Diffuser fouling detected")
+        if self.nozzle_erosion_factor < 0.9:
+            findings.append("Nozzle erosion detected")
+        
+        return {
+            'success': True,
+            'duration_hours': 3.0,
+            'work_performed': f"Inspected ejector {self.config.ejector_id}",
+            'findings': "; ".join(findings) if findings else "No significant issues found",
+            'effectiveness_score': 1.0,
+            'next_maintenance_due': 8760.0  # Annual
+        }
+    
+    def _perform_mechanical_cleaning(self) -> Dict[str, Any]:
+        """Perform mechanical cleaning"""
+        old_performance = self.overall_performance_factor
+        self.perform_cleaning("mechanical")
+        
+        performance_improvement = (self.overall_performance_factor - old_performance) * 100
+        
+        return {
+            'success': True,
+            'duration_hours': 6.0,
+            'work_performed': f"Mechanical cleaning of ejector {self.config.ejector_id}",
+            'findings': f"Removed fouling and erosion deposits",
+            'performance_improvement': performance_improvement,
+            'effectiveness_score': min(1.0, performance_improvement / 8.0),
+            'next_maintenance_due': 8760.0  # Annual
+        }
+    
+    def _perform_routine_maintenance(self) -> Dict[str, Any]:
+        """Perform routine maintenance"""
+        # Minor improvements from routine maintenance
+        self.nozzle_fouling_factor = min(1.0, self.nozzle_fouling_factor + 0.05)
+        self.diffuser_fouling_factor = min(1.0, self.diffuser_fouling_factor + 0.05)
+        
+        # Update overall performance
+        self.overall_performance_factor = (self.nozzle_fouling_factor * 
+                                         self.diffuser_fouling_factor * 
+                                         self.nozzle_erosion_factor)
+        
+        return {
+            'success': True,
+            'duration_hours': 2.0,
+            'work_performed': f"Routine maintenance on ejector {self.config.ejector_id}",
+            'findings': "Performed standard maintenance tasks, minor improvements achieved",
+            'effectiveness_score': 0.8,
+            'next_maintenance_due': 2190.0  # 3 months
+        }
+    
+    def _perform_general_maintenance(self) -> Dict[str, Any]:
+        """Perform general maintenance (legacy behavior)"""
+        # Reset to optimal conditions
+        self.nozzle_fouling_factor = 1.0
+        self.diffuser_fouling_factor = 1.0
+        self.nozzle_erosion_factor = 1.0
+        self.overall_performance_factor = 1.0
+        
+        return {
+            'success': True,
+            'duration_hours': 6.0,
+            'work_performed': f"General maintenance on ejector {self.config.ejector_id}",
+            'findings': "All systems restored to optimal condition",
+            'effectiveness_score': 1.0
+        }
     
     def update_state(self,
                     suction_pressure: float,

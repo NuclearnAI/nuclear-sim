@@ -382,6 +382,15 @@ class TurbineInitialConditions:
     bearing_vibrations: List[float] = field(default_factory=lambda: [5.0, 5.0, 5.0, 5.0])  # mils
     bearing_oil_pressures: List[float] = field(default_factory=lambda: [0.2, 0.2, 0.2, 0.2])  # MPa
     
+    # Lubrication system conditions
+    oil_contamination: float = 5.0                  # ppm oil contamination level
+    oil_level: float = 100.0                        # % oil level
+    oil_temperature: float = 45.0                   # °C oil temperature
+    
+    # System performance conditions
+    total_power_output: float = 1000.0              # MW total power output
+    overall_efficiency: float = 0.34                # Overall efficiency
+    
     # Thermal conditions
     casing_temperatures: List[float] = field(default_factory=lambda: [380.0, 360.0, 340.0, 320.0, 300.0, 280.0])
     blade_temperatures: List[float] = field(default_factory=lambda: [500.0, 480.0, 460.0, 440.0, 420.0, 400.0, 380.0, 360.0, 340.0, 320.0, 300.0, 280.0, 260.0, 240.0])

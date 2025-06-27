@@ -66,8 +66,6 @@ class FeedwaterPumpLubricationConfig(BaseLubricationConfig):
     oil_analysis_interval: float = 500.0        # hours (3 weeks)
 
 
-@auto_register("SECONDARY", "feedwater", id_source="config.system_id",
-               description=FEEDWATER_COMPONENT_DESCRIPTIONS['feedwater_pump_lubrication'])
 class FeedwaterPumpLubricationSystem(BaseLubricationSystem):
     """
     Feedwater pump-specific lubrication system implementation
@@ -316,8 +314,8 @@ class FeedwaterPumpLubricationSystem(BaseLubricationSystem):
         # Apply bounds checking to prevent oil level exceeding 100%
         self.oil_level = min(100.0, max(0.0, self.oil_level))
         
-        # Calculate performance degradation
-        self._calculate_pump_performance_degradation()
+        # Calculate performance factors
+        self._calculate_pump_performance_factors()
         
         return {
             'cavitation_lubrication_effect': self.cavitation_lubrication_effect,
@@ -327,15 +325,15 @@ class FeedwaterPumpLubricationSystem(BaseLubricationSystem):
             'vibration_increase': self.vibration_increase
         }
     
-    def _calculate_pump_performance_degradation(self):
-        """Calculate pump performance degradation due to lubrication issues"""
+    def _calculate_pump_performance_factors(self):
+        """Calculate pump performance factors due to lubrication effects"""
         
         # Bearing wear effects on pump efficiency
         motor_bearing_wear = self.component_wear.get('motor_bearings', 0.0)
         pump_bearing_wear = self.component_wear.get('pump_bearings', 0.0)
         thrust_bearing_wear = self.component_wear.get('thrust_bearing', 0.0)
         
-        # Bearing wear increases friction losses
+        # Calculate efficiency losses (intermediate values)
         bearing_efficiency_loss = (motor_bearing_wear * 0.01 + 
                                  pump_bearing_wear * 0.015 + 
                                  thrust_bearing_wear * 0.02)
@@ -344,13 +342,18 @@ class FeedwaterPumpLubricationSystem(BaseLubricationSystem):
         seal_wear = self.component_wear.get('mechanical_seals', 0.0)
         seal_efficiency_loss = seal_wear * 0.01  # Seal wear increases internal leakage
         
-        # Lubrication quality effects (reduced impact)
-        lubrication_efficiency_loss = (1.0 - self.lubrication_effectiveness) * 0.02  # Reduced from 0.05
+        # Lubrication quality effects
+        lubrication_efficiency_loss = (1.0 - self.lubrication_effectiveness) * 0.02
         
-        # Total pump efficiency degradation
-        self.pump_efficiency_degradation = (bearing_efficiency_loss + 
-                                          seal_efficiency_loss + 
-                                          lubrication_efficiency_loss)
+        # Calculate total efficiency loss
+        total_efficiency_loss = (bearing_efficiency_loss + 
+                               seal_efficiency_loss + 
+                               lubrication_efficiency_loss)
+        
+        # ENHANCED: Convert losses to factors directly (factor system)
+        self.pump_efficiency_factor = max(0.5, 1.0 - total_efficiency_loss)
+        self.pump_flow_factor = max(0.5, 1.0 - total_efficiency_loss * 0.5)
+        self.pump_head_factor = max(0.7, 1.0 - total_efficiency_loss * 0.3)
         
         # NPSH margin degradation (cavitation damage reduces NPSH margin)
         cavitation_damage = sum(self.component_wear.values()) * 0.1  # Simplified
@@ -363,6 +366,7 @@ class FeedwaterPumpLubricationSystem(BaseLubricationSystem):
     def get_state_dict(self) -> Dict[str, float]:
         """Get pump-specific lubrication state for integration with pump models"""
         return {
+            
             # Oil system state (replaces individual pump oil tracking)
             'oil_level': self.oil_level,
             'oil_temperature': self.oil_temperature,
@@ -378,10 +382,10 @@ class FeedwaterPumpLubricationSystem(BaseLubricationSystem):
             'seal_wear': self.component_wear.get('mechanical_seals', 0.0),
             'coupling_wear': self.component_wear.get('coupling_system', 0.0),
             
-            # Performance effects (replaces individual degradation factors)
-            'efficiency_degradation_factor': 1.0 - self.pump_efficiency_degradation,
-            'flow_degradation_factor': 1.0 - self.pump_efficiency_degradation * 0.5,
-            'head_degradation_factor': 1.0 - self.pump_efficiency_degradation * 0.3,
+            # Performance factors (multipliers: 1.0 = perfect, 0.85 = 85% performance)
+            'efficiency_factor': self.pump_efficiency_factor,
+            'flow_factor': self.pump_flow_factor,
+            'head_factor': self.pump_head_factor,
             
             # Seal system state
             'seal_leakage_rate': self.seal_leakage_rate,
@@ -466,13 +470,69 @@ def integrate_lubrication_with_pump(pump, lubrication_system: FeedwaterPumpLubri
                 }
             }
             
-            # Update lubrication system
-            oil_temp = 45.0 + load_factor * 25.0
-            contamination_input = load_factor * 0.01  # Reduced contamination input
-            moisture_input = 0.0001  # Reduced moisture input
+            # Enhanced oil temperature calculation targeting 55°C normal operation
+            # Base temperature reduced to target 55°C at normal load
+            base_temp = 40.0 + load_factor * 10.0  # 40-50°C range for main effect
+            
+            # Motor heat contribution (electrical losses) - reduced impact
+            motor_heat = electrical_load_factor * 2.0  # Reduced from 5.0
+            
+            # Heat transfer from hot feedwater through pump casing - minimal effect due to insulation
+            feedwater_temp = system_conditions['feedwater_temperature']
+            feedwater_heat_effect = (feedwater_temp - 200.0) * 0.01  # Much reduced, only above 200°C
+            
+            # Pressure effects (higher pressure = more work = more heat) - reduced impact
+            suction_pressure = system_conditions['suction_pressure']
+            discharge_pressure = system_conditions['discharge_pressure']
+            pressure_ratio = discharge_pressure / suction_pressure if suction_pressure > 0 else 16.0
+            pressure_heat = max(0.0, (pressure_ratio - 12.0) * 0.5)  # Much reduced effect
+            
+            # Cavitation effects (energy dissipation) - reduced impact
+            cavitation_heat = pump_conditions['cavitation_intensity'] * 3.0  # Reduced from 8.0
+            
+            # Calculate target oil temperature with conservative limits
+            oil_temp = base_temp + motor_heat + feedwater_heat_effect + pressure_heat + cavitation_heat
+            oil_temp = max(35.0, min(75.0, oil_temp))  # More conservative upper limit
+            
+            # ENHANCED contamination input with wear-based generation
+            base_contamination_input = load_factor * 0.05  # Increased from 0.01 to 0.05
+            
+            # Add wear-based contamination generation
+            bearing_wear_contamination = 0.0
+            seal_wear_contamination = 0.0
+            
+            # Get current component wear levels
+            motor_bearing_wear = lubrication_system.component_wear.get('motor_bearings', 0.0)
+            pump_bearing_wear = lubrication_system.component_wear.get('pump_bearings', 0.0)
+            thrust_bearing_wear = lubrication_system.component_wear.get('thrust_bearing', 0.0)
+            seal_wear = lubrication_system.component_wear.get('mechanical_seals', 0.0)
+            
+            # Bearing wear generates metal particles
+            bearing_wear_contamination = (motor_bearing_wear + pump_bearing_wear + thrust_bearing_wear) * 0.02
+            
+            # Seal wear generates rubber/carbon particles
+            seal_wear_contamination = seal_wear * 0.03
+            
+            # Cavitation generates debris
+            cavitation_contamination = pump_conditions['cavitation_intensity'] * 0.08
+            
+            # High temperature accelerates contamination generation
+            if oil_temp > 70.0:
+                temp_contamination = (oil_temp - 70.0) * 0.02
+            else:
+                temp_contamination = 0.0
+            
+            # Total contamination input
+            total_contamination_input = (base_contamination_input + 
+                                       bearing_wear_contamination + 
+                                       seal_wear_contamination + 
+                                       cavitation_contamination + 
+                                       temp_contamination)
+            
+            moisture_input = 0.0005  # Increased moisture input
             
             oil_quality_results = lubrication_system.update_oil_quality(
-                oil_temp, contamination_input, moisture_input, dt / 60.0  # Convert minutes to hours
+                oil_temp, total_contamination_input, moisture_input, dt / 60.0  # Convert minutes to hours
             )
             
             # Update component wear
@@ -488,17 +548,20 @@ def integrate_lubrication_with_pump(pump, lubrication_system: FeedwaterPumpLubri
             # Get lubrication state for pump integration
             lubrication_state = lubrication_system.get_state_dict()
             
-            # Update pump state with lubrication effects
+            # BIDIRECTIONAL SYNC: Update pump state with lubrication effects
             pump.state.oil_level = lubrication_state['oil_level']
             pump.state.oil_temperature = lubrication_state['oil_temperature']
             pump.state.bearing_wear = lubrication_state['pump_bearing_wear']
             pump.state.seal_wear = lubrication_state['seal_wear']
             pump.state.seal_leakage = lubrication_state['seal_leakage_rate']
             
-            # Apply performance degradation
-            pump.state.efficiency_degradation_factor = lubrication_state['efficiency_degradation_factor']
-            pump.state.flow_degradation_factor = lubrication_state['flow_degradation_factor']
-            pump.state.head_degradation_factor = lubrication_state['head_degradation_factor']
+            # Apply performance factors
+            pump.state.efficiency_factor = lubrication_state['efficiency_factor']
+            pump.state.flow_factor = lubrication_state['flow_factor']
+            pump.state.head_factor = lubrication_state['head_factor']
+            
+            # BIDIRECTIONAL SYNC: Check if pump state was manually changed and sync back
+            pump.sync_oil_levels_bidirectional("lubrication")
             
             # Call original pump update method
             result = original_update_method(dt, system_conditions, control_inputs)
@@ -604,8 +667,9 @@ if __name__ == "__main__":
             }
         }
         
-        # Update lubrication system
-        oil_temp = 45.0 + load_factor * 25.0
+        # Update lubrication system - using enhanced temperature calculation from integration function
+        # Note: In actual integration, temperature is calculated by the enhanced method above
+        oil_temp = 45.0 + load_factor * 20.0  # Simplified for testing
         contamination_input = load_factor * 0.05
         moisture_input = 0.0005
         

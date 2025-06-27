@@ -154,6 +154,11 @@ class EnhancedFeedwaterPhysics(HeatFlowProvider, ChemistryFlowProvider):
         self.diagnostics = PerformanceDiagnostics(compatible_diagnostics_config)
         self.protection_system = FeedwaterProtectionSystem(protection_config)
         
+        # CRITICAL: Apply initial conditions after creating components
+        self._apply_initial_conditions()
+        
+        print(f"FEEDWATER: Applied initial conditions from config")
+        
         # Enhanced feedwater state
         self.total_flow_rate = 0.0                       # kg/s total system flow
         self.total_power_consumption = 0.0               # MW total power consumption
@@ -174,6 +179,286 @@ class EnhancedFeedwaterPhysics(HeatFlowProvider, ChemistryFlowProvider):
         # Control state
         self.control_mode = "automatic"                  # Control mode
         self.load_demand = 1.0                          # Load demand (0-1)
+    
+    def _apply_initial_conditions(self):
+        """
+        Apply initial conditions from config to feedwater components
+        
+        This method reads the initial_conditions from the FeedwaterConfig dataclass
+        and applies them to the actual component states. This is critical for
+        maintenance scenarios that start with pre-degraded conditions.
+        
+        Uses smart parameter application - only applies parameters that actually
+        exist in the target system states.
+        """
+        ic = self.config.initial_conditions
+        
+        print(f"FEEDWATER: Applying initial conditions:")
+        print(f"  System flow rate: {ic.total_flow_rate} kg/s")
+        print(f"  System efficiency: {ic.system_efficiency}")
+        print(f"  Pump oil levels: {ic.pump_oil_levels}")
+        print(f"  Bearing temperatures: {ic.bearing_temperatures}")
+        print(f"  Pump vibrations: {ic.pump_vibrations}")
+        print(f"  Running pumps: {ic.running_pumps}")
+
+        # Apply system-level initial conditions
+        self.total_flow_rate = ic.total_flow_rate
+        self.system_efficiency = ic.system_efficiency
+        self.sg_levels = ic.sg_levels.copy()
+        self.sg_pressures = ic.sg_pressures.copy()
+        self.sg_steam_flows = ic.sg_steam_flows.copy()
+        self.sg_steam_qualities = ic.sg_steam_qualities.copy()
+        
+        # Apply initial conditions to pump system
+        if hasattr(self.pump_system, 'pumps'):
+            pump_ids = list(self.pump_system.pumps.keys())
+            
+            for i, pump_id in enumerate(pump_ids):
+                pump = self.pump_system.pumps[pump_id]
+                
+                print(f"  Applying initial conditions to pump {pump_id}:")
+                
+                # === APPLY PARAMETERS THAT EXIST IN PUMP.STATE ===
+                # Basic oil conditions
+                if i < len(ic.pump_oil_levels):
+                    pump.state.oil_level = ic.pump_oil_levels[i]
+                    print(f"    Oil level: {ic.pump_oil_levels[i]}%")
+                
+                if hasattr(ic, 'oil_temperature'):
+                    pump.state.oil_temperature = ic.oil_temperature
+                    print(f"    Oil temperature: {ic.oil_temperature}°C")
+                
+                # Basic mechanical conditions
+                if i < len(ic.bearing_temperatures):
+                    pump.state.bearing_temperature = ic.bearing_temperatures[i]
+                    print(f"    Bearing temperature: {ic.bearing_temperatures[i]}°C")
+                
+                if hasattr(ic, 'motor_temperature') and i < len(ic.motor_temperature):
+                    pump.state.motor_temperature = ic.motor_temperature[i]
+                    print(f"    Motor temperature: {ic.motor_temperature[i]}°C")
+                
+                if i < len(ic.pump_vibrations):
+                    pump.state.vibration_level = ic.pump_vibrations[i]
+                    print(f"    Vibration level: {ic.pump_vibrations[i]} mm/s")
+                
+                if i < len(ic.seal_leakages):
+                    pump.state.seal_leakage = ic.seal_leakages[i]
+                    print(f"    Seal leakage: {ic.seal_leakages[i]} L/min")
+                
+                # Hydraulic conditions
+                if hasattr(ic, 'suction_pressure'):
+                    pump.state.suction_pressure = ic.suction_pressure
+                    print(f"    Suction pressure: {ic.suction_pressure} MPa")
+                
+                if hasattr(ic, 'discharge_pressure'):
+                    pump.state.discharge_pressure = ic.discharge_pressure
+                    print(f"    Discharge pressure: {ic.discharge_pressure} MPa")
+                
+                if hasattr(ic, 'npsh_available') and i < len(ic.npsh_available):
+                    pump.state.npsh_available = ic.npsh_available[i]
+                    print(f"    NPSH available: {ic.npsh_available[i]} m")
+                
+                # Cavitation and wear conditions
+                if hasattr(ic, 'cavitation_intensity') and i < len(ic.cavitation_intensity):
+                    pump.state.cavitation_intensity = ic.cavitation_intensity[i]
+                    print(f"    Cavitation intensity: {ic.cavitation_intensity[i]}")
+                
+                if hasattr(ic, 'cavitation_damage'):
+                    # Use impeller_cavitation_damage if available, otherwise use cavitation_damage
+                    if hasattr(ic, 'impeller_cavitation_damage') and i < len(ic.impeller_cavitation_damage):
+                        pump.state.cavitation_damage = ic.impeller_cavitation_damage[i] * 10.0  # Scale to damage units
+                        print(f"    Cavitation damage: {pump.state.cavitation_damage}")
+                
+                if hasattr(ic, 'impeller_wear') and i < len(ic.impeller_wear):
+                    pump.state.impeller_wear = ic.impeller_wear[i] * 100.0  # Convert fraction to percentage
+                    print(f"    Impeller wear: {pump.state.impeller_wear}%")
+                
+                if hasattr(ic, 'bearing_wear') and i < len(ic.bearing_wear):
+                    pump.state.bearing_wear = ic.bearing_wear[i] * 100.0  # Convert fraction to percentage
+                    print(f"    Bearing wear: {pump.state.bearing_wear}%")
+                
+                if hasattr(ic, 'seal_wear'):
+                    # Use seal_face_wear if available, otherwise use seal_wear
+                    if hasattr(ic, 'seal_face_wear') and i < len(ic.seal_face_wear):
+                        pump.state.seal_wear = ic.seal_face_wear[i] * 100.0  # Convert fraction to percentage
+                        print(f"    Seal wear: {pump.state.seal_wear}%")
+                
+                # Performance degradation factors
+                if i < len(ic.pump_efficiencies):
+                    pump.state.efficiency_degradation_factor = ic.pump_efficiencies[i]
+                    print(f"    Efficiency factor: {ic.pump_efficiencies[i]}")
+                
+                if hasattr(ic, 'pump_flow') and i < len(ic.pump_flow):
+                    pump.state.flow_degradation_factor = ic.pump_flow[i]
+                    print(f"    Flow degradation factor: {ic.pump_flow[i]}")
+                
+                if hasattr(ic, 'pump_head') and i < len(ic.pump_head):
+                    pump.state.head_degradation_factor = ic.pump_head[i]
+                    print(f"    Head degradation factor: {ic.pump_head[i]}")
+                
+                # === APPLY TO LUBRICATION SYSTEM ===
+                if hasattr(pump, 'lubrication_system'):
+                    print(f"    Applying lubrication system parameters:")
+                    # Oil quality parameters - FIXED: Handle single values (system-wide parameters)
+                    if hasattr(ic, 'pump_oil_contamination'):
+                        pump.lubrication_system.oil_contamination_level = ic.pump_oil_contamination
+                        print(f"      Oil contamination: {ic.pump_oil_contamination} ppm")
+                    
+                    if hasattr(ic, 'pump_oil_water_content'):
+                        pump.lubrication_system.oil_moisture_content = ic.pump_oil_water_content
+                        print(f"      Oil moisture: {ic.pump_oil_water_content}%")
+                    
+                    if hasattr(ic, 'pump_oil_acid_number'):
+                        pump.lubrication_system.oil_acidity_number = ic.pump_oil_acid_number
+                        print(f"      Oil acidity: {ic.pump_oil_acid_number} mg KOH/g")
+                    
+                    # Sync oil level to lubrication system
+                    pump.lubrication_system.oil_level = pump.state.oil_level
+                    pump.lubrication_system.oil_temperature = pump.state.oil_temperature
+                    
+                    # Apply component wear to lubrication system
+                    if hasattr(ic, 'bearing_wear') and i < len(ic.bearing_wear):
+                        pump.lubrication_system.component_wear['pump_bearings'] = ic.bearing_wear[i] * 100.0
+                        pump.lubrication_system.component_wear['motor_bearings'] = ic.bearing_wear[i] * 100.0 * 0.8
+                    
+                    if hasattr(ic, 'seal_face_wear') and i < len(ic.seal_face_wear):
+                        pump.lubrication_system.component_wear['mechanical_seals'] = ic.seal_face_wear[i] * 100.0
+                
+                # === APPLY OPERATIONAL CONDITIONS ===
+                # Apply running status and speed
+                if i < len(ic.running_pumps):
+                    from systems.primary.coolant.pump_models import PumpStatus
+                    if ic.running_pumps[i]:
+                        pump.state.status = PumpStatus.RUNNING
+                        pump.state.available = True
+                        if i < len(ic.pump_speeds):
+                            pump.state.speed_percent = ic.pump_speeds[i]
+                        else:
+                            pump.state.speed_percent = 100.0
+                        print(f"    Status: RUNNING at {pump.state.speed_percent}%")
+                    else:
+                        pump.state.status = PumpStatus.STOPPED
+                        pump.state.speed_percent = 0.0
+                        print(f"    Status: STOPPED")
+                
+                # Apply flow conditions
+                if i < len(ic.pump_flows):
+                    pump.state.flow_rate = ic.pump_flows[i]
+                    print(f"    Flow rate: {ic.pump_flows[i]} kg/s")
+                
+                # Apply power conditions
+                if hasattr(ic, 'pump_power') and i < len(ic.pump_power):
+                    # pump_power is a fraction, convert to actual power
+                    design_power = pump.config.rated_power if hasattr(pump.config, 'rated_power') else 10.0
+                    pump.state.power_consumption = ic.pump_power[i] * design_power
+                    print(f"    Power consumption: {pump.state.power_consumption} MW")
+                
+                # === SYNC WITH LUBRICATION SYSTEM ===
+                if hasattr(pump, 'sync_oil_levels_bidirectional'):
+                    pump.sync_oil_levels_bidirectional("pump")
+                elif hasattr(pump, 'sync_oil_level_to_lubrication'):
+                    pump.sync_oil_level_to_lubrication()
+        
+        # === APPLY SYSTEM-LEVEL CONDITIONS ===
+        # Apply system-wide parameters to main feedwater physics state
+        if hasattr(ic, 'lubrication_system_pressure'):
+            # FIXED: Handle single value (system-wide parameter)
+            self.lubrication_system_pressure = ic.lubrication_system_pressure
+            print(f"  System lubrication pressure: {ic.lubrication_system_pressure} MPa")
+        
+        if hasattr(ic, 'cooling_water_temperature') and ic.cooling_water_temperature:
+            # Apply average cooling water temperature
+            avg_cooling_temp = sum(ic.cooling_water_temperature) / len(ic.cooling_water_temperature)
+            self.cooling_water_temperature = avg_cooling_temp
+            print(f"  System cooling water temp: {avg_cooling_temp}°C")
+        
+        # Apply control system initial conditions
+        self.control_mode = ic.control_mode
+        if hasattr(ic, 'level_setpoint'):
+            self.config.design_sg_level = ic.level_setpoint
+        
+        # Apply water quality initial conditions
+        if self.water_quality is not None:
+            if hasattr(ic, 'feedwater_ph'):
+                self.water_quality.ph = ic.feedwater_ph
+            if hasattr(ic, 'dissolved_oxygen'):
+                self.water_quality.dissolved_oxygen = ic.dissolved_oxygen
+            if hasattr(ic, 'iron_concentration'):
+                self.water_quality.iron_concentration = ic.iron_concentration
+            if hasattr(ic, 'copper_concentration'):
+                self.water_quality.copper_concentration = ic.copper_concentration
+        
+        # === APPLY CONDITIONS TO SUBSYSTEMS ===
+        # Apply initial conditions to diagnostics system
+        if hasattr(self.diagnostics, 'cavitation_model'):
+            # Apply cavitation parameters to diagnostics
+            if hasattr(ic, 'cavitation_intensity'):
+                avg_cavitation = sum(ic.cavitation_intensity) / len(ic.cavitation_intensity)
+                self.diagnostics.cavitation_model.current_intensity = avg_cavitation
+            
+            if hasattr(ic, 'impeller_cavitation_damage'):
+                avg_damage = sum(ic.impeller_cavitation_damage) / len(ic.impeller_cavitation_damage)
+                self.diagnostics.cavitation_model.accumulated_damage = avg_damage * 10.0  # Scale to damage units
+        
+        if hasattr(self.diagnostics, 'wear_tracking'):
+            # Apply wear parameters to diagnostics
+            if hasattr(ic, 'impeller_wear'):
+                avg_impeller_wear = sum(ic.impeller_wear) / len(ic.impeller_wear)
+                self.diagnostics.wear_tracking.impeller_wear = avg_impeller_wear * 100.0  # Convert to percentage
+            
+            if hasattr(ic, 'bearing_wear'):
+                avg_bearing_wear = sum(ic.bearing_wear) / len(ic.bearing_wear)
+                self.diagnostics.wear_tracking.bearing_wear = avg_bearing_wear * 100.0  # Convert to percentage
+            
+            if hasattr(ic, 'seal_face_wear'):
+                avg_seal_wear = sum(ic.seal_face_wear) / len(ic.seal_face_wear)
+                self.diagnostics.wear_tracking.seal_wear = avg_seal_wear * 100.0  # Convert to percentage
+        
+        print(f"FEEDWATER: Initial conditions applied successfully")
+        print(f"  Applied parameters to pump states, lubrication systems, and diagnostics")
+        
+        # Validate that critical initial conditions were applied
+        self._validate_initial_conditions_applied()
+    
+    def _validate_initial_conditions_applied(self):
+        """Validate that initial conditions were properly applied"""
+        ic = self.config.initial_conditions
+        
+        print(f"FEEDWATER: Validating initial conditions application:")
+        
+        if hasattr(self.pump_system, 'pumps'):
+            pump_ids = list(self.pump_system.pumps.keys())
+            for i, pump_id in enumerate(pump_ids):
+                pump = self.pump_system.pumps[pump_id]
+                
+                # Validate oil level application
+                if i < len(ic.pump_oil_levels):
+                    expected = ic.pump_oil_levels[i]
+                    actual = pump.state.oil_level
+                    if abs(actual - expected) > 0.1:
+                        print(f"  WARNING: Pump {pump_id} oil level mismatch: expected {expected}%, got {actual}%")
+                    else:
+                        print(f"  ✓ Pump {pump_id} oil level applied: {actual}%")
+                
+                # Validate bearing temperature application
+                if i < len(ic.bearing_temperatures):
+                    expected = ic.bearing_temperatures[i]
+                    actual = pump.state.bearing_temperature
+                    if abs(actual - expected) > 1.0:
+                        print(f"  WARNING: Pump {pump_id} bearing temp mismatch: expected {expected}°C, got {actual}°C")
+                    else:
+                        print(f"  ✓ Pump {pump_id} bearing temperature applied: {actual}°C")
+                
+                # Validate vibration level application
+                if i < len(ic.pump_vibrations):
+                    expected = ic.pump_vibrations[i]
+                    actual = pump.state.vibration_level
+                    if abs(actual - expected) > 0.1:
+                        print(f"  WARNING: Pump {pump_id} vibration mismatch: expected {expected} mm/s, got {actual} mm/s")
+                    else:
+                        print(f"  ✓ Pump {pump_id} vibration level applied: {actual} mm/s")
+        
+        print(f"FEEDWATER: Initial conditions validation complete")
         
     def update_state(self,
                     sg_conditions: Dict[str, List[float]],
@@ -320,7 +605,7 @@ class EnhancedFeedwaterPhysics(HeatFlowProvider, ChemistryFlowProvider):
         self.maintenance_factor = diagnostics_results.get('maintenance_effectiveness', 1.0)
         
         # Update operating hours
-        self.operating_hours += dt
+        self.operating_hours += dt / 60
         
         return {
             # Overall system performance
@@ -781,10 +1066,14 @@ class EnhancedFeedwaterPhysics(HeatFlowProvider, ChemistryFlowProvider):
     
     def reset(self) -> None:
         """Reset enhanced feedwater system to initial conditions"""
+        # CRITICAL FIX: Store initial conditions before reset to preserve them
+        ic = self.config.initial_conditions
+        
         # Reset subsystems
         self.pump_system.reset()
         self.level_control.reset()
-        self.water_quality.reset()
+        if self.water_quality is not None:
+            self.water_quality.reset()
         self.diagnostics.reset()
         self.protection_system.reset()
         
@@ -808,6 +1097,10 @@ class EnhancedFeedwaterPhysics(HeatFlowProvider, ChemistryFlowProvider):
         # Reset control state
         self.control_mode = "automatic"
         self.load_demand = 1.0
+        
+        # CRITICAL FIX: Re-apply initial conditions after reset to preserve targeted degraded conditions
+        print(f"FEEDWATER: Re-applying initial conditions after reset to preserve targeted degraded conditions")
+        self._apply_initial_conditions()
     
 
 

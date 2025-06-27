@@ -138,8 +138,10 @@ class BaseLubricationSystem(ABC):
         self.oil_contamination_level = 5.0                   # ppm particles >10 microns
         self.oil_moisture_content = 0.02                     # % water content
         self.oil_acidity_number = 0.15                       # mg KOH/g acid number
-        self.oil_viscosity_index = 95.0                      # Viscosity index
-        self.oil_viscosity_change = 0.0                      # % change from new oil
+        self.oil_viscosity_index = 95.0                      # Viscosity index (0-100)
+        self.oil_viscosity_change = 0.0                      # % change from new oil viscosity
+        self.oil_viscosity_at_40c = 46.0                     # cSt viscosity at 40°C (ISO VG 46 typical)
+        self.oil_viscosity_at_100c = 6.8                     # cSt viscosity at 100°C
         self.oil_operating_hours = 0.0                       # Hours since oil change
         
         # Additive package state
@@ -219,11 +221,28 @@ class BaseLubricationSystem(ABC):
         base_degradation_rate = 0.0001  # Reduced base rate at reference temperature
         thermal_degradation_rate = base_degradation_rate * activation_factor
         
-        # Contamination dynamics
-        # Input contamination minus filtration removal
-        filtration_efficiency = 0.95  # 95% filtration efficiency
-        contamination_removal_rate = self.oil_contamination_level * filtration_efficiency * 0.01  # 1% circulation rate
-        contamination_change = contamination_input - contamination_removal_rate + thermal_degradation_rate * 0.5
+        # ENHANCED Contamination dynamics with realistic filtration
+        # Base filtration efficiency reduced for more realistic behavior
+        base_filtration_efficiency = 0.75  # Reduced from 95% to 75%
+        
+        # Filter loading effect - efficiency decreases as contamination increases
+        filter_loading_factor = max(0.3, 1.0 - (self.oil_contamination_level / 30.0))
+        effective_filtration_efficiency = base_filtration_efficiency * filter_loading_factor
+        
+        # Reduced circulation rate for more realistic removal
+        circulation_rate = 0.003  # Reduced from 1% to 0.3% per time step
+        contamination_removal_rate = self.oil_contamination_level * effective_filtration_efficiency * circulation_rate
+        
+        # Enhanced thermal contamination generation
+        thermal_contamination_input = thermal_degradation_rate * 2.0  # Increased from 0.5
+        
+        # Temperature-accelerated contamination above 70°C
+        if self.oil_temperature > 70.0:
+            temp_acceleration = (self.oil_temperature - 70.0) * 0.05
+            thermal_contamination_input += temp_acceleration
+        
+        # Calculate net contamination change
+        contamination_change = contamination_input - contamination_removal_rate + thermal_contamination_input
         self.oil_contamination_level += contamination_change * dt
         self.oil_contamination_level = max(1.0, self.oil_contamination_level)  # Minimum 1 ppm
         
@@ -464,15 +483,40 @@ class BaseLubricationSystem(ABC):
         }
         
         if maintenance_type == "oil_change":
-            # Complete oil change
+            # Complete oil change - Enhanced with viscosity restoration
             old_hours = self.oil_operating_hours
-            self.oil_operating_hours = 0.0
-            self.oil_contamination_level = 1.0
-            self.oil_acidity_number = 0.05
-            self.oil_moisture_content = 0.01
-            self.oil_viscosity_change = 0.0
+            old_contamination = self.oil_contamination_level
+            old_viscosity_change = self.oil_viscosity_change
+            old_acidity = self.oil_acidity_number
             
-            # Restore additive package
+            # Reset oil operating hours
+            self.oil_operating_hours = 0.0
+            
+            # Restore fresh oil contamination levels
+            self.oil_contamination_level = 0.5  # Very clean fresh oil
+            self.oil_acidity_number = 0.02      # Fresh oil low acidity
+            self.oil_moisture_content = 0.005   # Dry fresh oil
+            
+            # ENHANCED: Restore fresh oil viscosity properties
+            self.oil_viscosity_change = 0.0     # Reset viscosity change
+            self.oil_viscosity_index = 95.0     # Fresh oil viscosity index
+            
+            # Restore viscosity at standard temperatures based on oil grade
+            if "VG 32" in self.config.oil_viscosity_grade:
+                self.oil_viscosity_at_40c = 32.0
+                self.oil_viscosity_at_100c = 5.4
+            elif "VG 46" in self.config.oil_viscosity_grade:
+                self.oil_viscosity_at_40c = 46.0
+                self.oil_viscosity_at_100c = 6.8
+            elif "VG 68" in self.config.oil_viscosity_grade:
+                self.oil_viscosity_at_40c = 68.0
+                self.oil_viscosity_at_100c = 8.8
+            else:
+                # Default to VG 46
+                self.oil_viscosity_at_40c = 46.0
+                self.oil_viscosity_at_100c = 6.8
+            
+            # Restore fresh additive package to 100%
             self.antioxidant_level = 100.0
             self.anti_wear_additive_level = 100.0
             self.corrosion_inhibitor_level = 100.0
@@ -481,26 +525,86 @@ class BaseLubricationSystem(ABC):
             self.oil_level = 95.0
             
             self.oil_changes_performed += 1
+            
+            # Calculate improvements achieved
+            contamination_improvement = old_contamination - self.oil_contamination_level
+            viscosity_improvement = abs(old_viscosity_change)
+            acidity_improvement = old_acidity - self.oil_acidity_number
+            
             results.update({
                 'duration_hours': 4.0,
                 'work_performed': f"Complete oil change on {self.config.system_id}",
-                'findings': f"Replaced {old_hours:.1f} hour old oil",
+                'findings': f"Replaced {old_hours:.1f} hour old oil. Improvements: "
+                           f"contamination -{contamination_improvement:.1f} ppm, "
+                           f"viscosity restored {viscosity_improvement:.1f}%, "
+                           f"acidity -{acidity_improvement:.2f} mg KOH/g",
                 'effectiveness_score': 1.0
             })
             
         elif maintenance_type == "oil_top_off":
-            # Oil top-off maintenance
+            # Enhanced oil top-off with dilution effects
             old_level = self.oil_level
-            target_level = kwargs.get('target_level', 95.0)
-            self.oil_level = min(100.0, target_level)
-            oil_added = self.oil_level - old_level
+            old_contamination = self.oil_contamination_level
+            old_acidity = self.oil_acidity_number
+            old_moisture = self.oil_moisture_content
+            old_viscosity_change = self.oil_viscosity_change
             
-            results.update({
-                'duration_hours': 0.5,
-                'work_performed': f"Oil top-off on {self.config.system_id}",
-                'findings': f"Added {oil_added:.1f}% oil, level now {self.oil_level:.1f}%",
-                'effectiveness_score': 1.0
-            })
+            target_level = kwargs.get('target_level', 95.0)
+            oil_added_percent = max(0.0, target_level - old_level)
+            
+            if oil_added_percent > 0:
+                self.oil_level = min(100.0, target_level)
+                
+                # Calculate dilution factor (fraction of fresh oil added)
+                dilution_factor = oil_added_percent / 100.0
+                
+                # DILUTION EFFECTS - fresh oil improves quality
+                # Contamination dilution (fresh oil is much cleaner)
+                contamination_dilution = dilution_factor * 0.7  # 70% improvement factor
+                self.oil_contamination_level = max(0.5, self.oil_contamination_level * (1.0 - contamination_dilution))
+                
+                # Acidity dilution (fresh oil has low acidity)
+                acidity_dilution = dilution_factor * 0.4  # 40% improvement factor
+                self.oil_acidity_number = max(0.02, self.oil_acidity_number * (1.0 - acidity_dilution))
+                
+                # Moisture dilution (fresh oil is dry)
+                moisture_dilution = dilution_factor * 0.5  # 50% improvement factor
+                self.oil_moisture_content = max(0.005, self.oil_moisture_content * (1.0 - moisture_dilution))
+                
+                # ADDITIVE RESTORATION - fresh oil has additives
+                additive_boost = dilution_factor * 30.0  # Up to 30% boost
+                self.antioxidant_level = min(100.0, self.antioxidant_level + additive_boost)
+                self.anti_wear_additive_level = min(100.0, self.anti_wear_additive_level + additive_boost * 0.8)
+                self.corrosion_inhibitor_level = min(100.0, self.corrosion_inhibitor_level + additive_boost * 0.6)
+                
+                # VISCOSITY IMPROVEMENT - fresh oil has better viscosity
+                viscosity_improvement = dilution_factor * 0.3  # 30% improvement factor
+                self.oil_viscosity_change *= (1.0 - viscosity_improvement)
+                
+                # Calculate improvements achieved
+                contamination_improvement = old_contamination - self.oil_contamination_level
+                acidity_improvement = old_acidity - self.oil_acidity_number
+                moisture_improvement = old_moisture - self.oil_moisture_content
+                viscosity_improvement_actual = abs(old_viscosity_change - self.oil_viscosity_change)
+                
+                results.update({
+                    'duration_hours': 0.5,
+                    'work_performed': f"Oil top-off on {self.config.system_id}",
+                    'findings': f"Added {oil_added_percent:.1f}% fresh oil, level now {self.oil_level:.1f}%. "
+                               f"Dilution improvements: contamination -{contamination_improvement:.1f} ppm, "
+                               f"acidity -{acidity_improvement:.2f} mg KOH/g, "
+                               f"moisture -{moisture_improvement:.3f}%, "
+                               f"viscosity improved {viscosity_improvement_actual:.1f}%",
+                    'effectiveness_score': min(1.0, 0.5 + dilution_factor)  # Effectiveness scales with amount added
+                })
+            else:
+                # No oil added (already at or above target level)
+                results.update({
+                    'duration_hours': 0.1,
+                    'work_performed': f"Oil level check on {self.config.system_id}",
+                    'findings': f"Oil level already at {self.oil_level:.1f}%, no top-off needed",
+                    'effectiveness_score': 1.0
+                })
             
         elif maintenance_type == "filtration":
             # Enhanced filtration/cleaning

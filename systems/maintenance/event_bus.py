@@ -422,6 +422,51 @@ class MaintenanceEventBus:
         if monitor_id in self.parameter_monitors:
             self.parameter_monitors[monitor_id].threshold_value = new_threshold
     
+    def update_component_monitoring(self, component_id: str, new_monitoring_config: Dict[str, Dict[str, Any]]):
+        """
+        Update monitoring configuration for an existing component
+        
+        This method allows updating the monitoring thresholds and actions
+        for a component that has already been registered.
+        
+        Args:
+            component_id: Component to update
+            new_monitoring_config: New monitoring configuration
+        """
+        if component_id not in self.components:
+            print(f"EVENT BUS: ⚠️ Component {component_id} not found for monitoring update")
+            return
+        
+        # Remove existing monitors for this component
+        existing_monitors = [mid for mid in self.parameter_monitors.keys() 
+                           if mid.startswith(f"{component_id}.")]
+        for monitor_id in existing_monitors:
+            del self.parameter_monitors[monitor_id]
+        
+        # Create new monitors with updated configuration
+        monitors_created = 0
+        for param_name, param_config in new_monitoring_config.items():
+            monitor_id = f"{component_id}.{param_name}"
+            
+            monitor = ParameterMonitor(
+                component_id=component_id,
+                parameter_name=param_name,
+                attribute_path=param_config.get('attribute', param_name),
+                threshold_value=param_config.get('threshold'),
+                comparison=param_config.get('comparison', 'greater_than'),
+                action=param_config.get('action'),
+                enabled=param_config.get('enabled', True),
+                cooldown_hours=param_config.get('cooldown_hours', 24.0)
+            )
+            
+            self.parameter_monitors[monitor_id] = monitor
+            monitors_created += 1
+        
+        # Update metadata
+        self.component_metadata[component_id]['monitoring_config'] = new_monitoring_config
+        
+        print(f"EVENT BUS: ✅ Updated {component_id} monitoring with {monitors_created} new monitors")
+    
     def clear_event_history(self):
         """Clear event history"""
         self.event_history.clear()

@@ -483,30 +483,50 @@ class EnhancedCondenserPhysics(HeatFlowProvider, ChemistryFlowProvider):
     Implements StateProvider interface for automatic state collection.
     """
     
-    def __init__(self, config: Optional[CondenserConfig] = None):
+    def __init__(self, config: Optional[CondenserConfig] = None, config_dict: Optional[Dict[str, Any]] = None):
         """Initialize enhanced condenser physics model"""
-        if config is None:
+        if config_dict is not None:
+            # Use unified configuration system (same pattern as feedwater)
+            try:
+                # Try to create CondenserConfig from dict if possible
+                if hasattr(CondenserConfig, 'from_dict'):
+                    self.config = CondenserConfig.from_dict(config_dict)
+                    print(f"CONDENSER: Using unified configuration system")
+                else:
+                    # Fallback: use default config and store raw data
+                    from .config import create_standard_condenser_config
+                    self.config = create_standard_condenser_config()
+                    self.config._raw_config_data = config_dict
+                    print(f"CONDENSER: Using default config with raw config data")
+            except Exception as e:
+                print(f"CONDENSER: Failed to create config from dict: {e}")
+                from .config import create_standard_condenser_config
+                self.config = create_standard_condenser_config()
+                self.config._raw_config_data = config_dict
+        elif config is not None:
+            self.config = config
+            print(f"CONDENSER: Using provided CondenserConfig")
+        else:
             from .config import create_standard_condenser_config
-            config = create_standard_condenser_config()
-        
-        self.config = config
+            self.config = create_standard_condenser_config()
+            print(f"CONDENSER: Using default configuration")
         
         # Initialize sub-models using centralized configuration
-        tube_config = config.tube_degradation
-        fouling_config = config.fouling_system
+        tube_config = self.config.tube_degradation
+        fouling_config = self.config.fouling_system
         
         # Create vacuum system configuration from centralized config
-        vacuum_config = config.vacuum_system
+        vacuum_config = self.config.vacuum_system
         
         # Create steam ejector configurations for vacuum system
         if not hasattr(vacuum_config, 'ejector_configs') or vacuum_config.ejector_configs is None:
             # Create ejector configs from steam_ejectors list in main config
-            ejector_configs = config.steam_ejectors
+            ejector_configs = self.config.steam_ejectors
             vacuum_config.ejector_configs = ejector_configs
         
         # Initialize or use provided unified water chemistry system
         if hasattr(config, 'water_chemistry') and config.water_chemistry is not None:
-            self.water_chemistry = config.water_chemistry
+            self.water_chemistry = self.config.water_chemistry
         else:
             # Create own instance if not provided (for standalone use)
             self.water_chemistry = WaterChemistry(WaterChemistryConfig())
@@ -537,6 +557,9 @@ class EnhancedCondenserPhysics(HeatFlowProvider, ChemistryFlowProvider):
         # Performance tracking
         self.thermal_performance_factor = 1.0  # Overall performance degradation
         self.operating_hours = 0.0             # Total operating time
+        
+        # CRITICAL: Apply initial conditions after creating components (same pattern as feedwater)
+        self._apply_initial_conditions()
         
     def calculate_enhanced_heat_transfer(self,
                                        steam_flow: float,
@@ -1118,11 +1141,10 @@ class EnhancedCondenserPhysics(HeatFlowProvider, ChemistryFlowProvider):
                 }
             }
             
-            # Add maintenance integration to ejector
-            ejector.setup_maintenance_integration = lambda ms, cid: self._setup_ejector_maintenance(ejector, ms, cid)
-            ejector.perform_maintenance = lambda mt, **kwargs: self._perform_ejector_maintenance(ejector, mt, **kwargs)
-            
-            ejector.setup_maintenance_integration(maintenance_system, ejector_id)
+            # Individual ejectors now have their own maintenance methods
+            # No need for dynamic method injection
+            if hasattr(ejector, 'setup_maintenance_integration'):
+                ejector.setup_maintenance_integration(maintenance_system, ejector_id)
             
             maintenance_system.register_component(
                 component_id=ejector_id,
@@ -1162,72 +1184,6 @@ class EnhancedCondenserPhysics(HeatFlowProvider, ChemistryFlowProvider):
         """Set up maintenance integration for individual ejector"""
         print(f"VACUUM EJECTOR {component_id}: Setting up maintenance integration")
     
-    def _perform_ejector_maintenance(self, ejector, maintenance_type: str, **kwargs):
-        """Perform maintenance on individual ejector"""
-        # Import here to avoid circular imports
-        from ...maintenance.maintenance_actions import create_maintenance_result
-        
-        if maintenance_type == "vacuum_ejector_cleaning":
-            # Clean ejector nozzles and diffusers
-            cleaning_type = kwargs.get('cleaning_type', 'chemical')
-            ejector.perform_cleaning(cleaning_type)
-            
-            performance_improvement = (1.0 - ejector.overall_performance_factor) * 100
-            
-            return create_maintenance_result(
-                success=True,
-                duration=4.0,
-                work_description=f"Cleaned ejector {ejector.config.ejector_id} using {cleaning_type} method",
-                findings=f"Nozzle fouling factor improved from {ejector.nozzle_fouling_factor:.3f} to {min(1.0, ejector.nozzle_fouling_factor + 0.3):.3f}",
-                performance_improvement=performance_improvement,
-                parts_used=[f"{cleaning_type}_cleaning_solution"],
-                next_maintenance_due=4380.0  # 6 months
-            )
-        
-        elif maintenance_type == "vacuum_ejector_nozzle_replacement":
-            # Replace worn nozzles
-            old_performance = ejector.overall_performance_factor
-            ejector.perform_cleaning("replacement")
-            
-            performance_improvement = (ejector.overall_performance_factor - old_performance) * 100
-            
-            return create_maintenance_result(
-                success=True,
-                duration=8.0,
-                work_description=f"Replaced nozzles in ejector {ejector.config.ejector_id}",
-                findings="Nozzles showed significant erosion and fouling",
-                performance_improvement=performance_improvement,
-                parts_used=["ejector_nozzle_assembly", "gaskets", "bolts"],
-                cost=15000.0,
-                next_maintenance_due=17520.0  # 2 years
-            )
-        
-        elif maintenance_type == "vacuum_ejector_inspection":
-            # Inspect ejector condition
-            findings = []
-            if ejector.nozzle_fouling_factor < 0.9:
-                findings.append("Nozzle fouling detected")
-            if ejector.diffuser_fouling_factor < 0.9:
-                findings.append("Diffuser fouling detected")
-            if ejector.nozzle_erosion_factor < 0.9:
-                findings.append("Nozzle erosion detected")
-            
-            return create_maintenance_result(
-                success=True,
-                duration=3.0,
-                work_description=f"Inspected ejector {ejector.config.ejector_id}",
-                findings="; ".join(findings) if findings else "No significant issues found",
-                performance_improvement=0.0,
-                next_maintenance_due=8760.0  # Annual
-            )
-        
-        else:
-            return create_maintenance_result(
-                success=False,
-                duration=0.0,
-                work_description=f"Unknown maintenance type: {maintenance_type}",
-                error_message=f"Maintenance type '{maintenance_type}' not supported for vacuum ejector"
-            )
     
     def perform_maintenance(self, maintenance_type: str, **kwargs):
         """
@@ -1414,6 +1370,188 @@ class EnhancedCondenserPhysics(HeatFlowProvider, ChemistryFlowProvider):
                 work_description=f"Unknown maintenance type: {maintenance_type}",
                 error_message=f"Maintenance type '{maintenance_type}' not supported for condenser"
             )
+
+    def _apply_initial_conditions(self) -> None:
+        """
+        Apply initial conditions from configuration to condenser state
+        
+        Args:
+            initial_conditions: CondenserInitialConditions object with initial condition parameters
+        """
+        print(f"CONDENSER: Applying initial conditions...")
+        initial_conditions = self.config.initial_conditions
+        
+        # Steam conditions
+        if hasattr(initial_conditions, 'steam_inlet_pressure') and initial_conditions.steam_inlet_pressure is not None:
+            self.steam_inlet_pressure = initial_conditions.steam_inlet_pressure
+            print(f"  Steam inlet pressure: {self.steam_inlet_pressure} MPa")
+        
+        if hasattr(initial_conditions, 'steam_inlet_temperature') and initial_conditions.steam_inlet_temperature is not None:
+            self.steam_inlet_temperature = initial_conditions.steam_inlet_temperature
+            print(f"  Steam inlet temperature: {self.steam_inlet_temperature} °C")
+        
+        if hasattr(initial_conditions, 'steam_inlet_flow') and initial_conditions.steam_inlet_flow is not None:
+            self.steam_inlet_flow = initial_conditions.steam_inlet_flow
+            print(f"  Steam inlet flow: {self.steam_inlet_flow} kg/s")
+        
+        if hasattr(initial_conditions, 'steam_inlet_quality') and initial_conditions.steam_inlet_quality is not None:
+            self.steam_inlet_quality = initial_conditions.steam_inlet_quality
+            print(f"  Steam inlet quality: {self.steam_inlet_quality}")
+        
+        # Condensate conditions
+        if hasattr(initial_conditions, 'condensate_temperature') and initial_conditions.condensate_temperature is not None:
+            self.condensate_temperature = initial_conditions.condensate_temperature
+            print(f"  Condensate temperature: {self.condensate_temperature} °C")
+        
+        if hasattr(initial_conditions, 'condensate_flow') and initial_conditions.condensate_flow is not None:
+            self.condensate_flow = initial_conditions.condensate_flow
+            print(f"  Condensate flow: {self.condensate_flow} kg/s")
+        
+        # Cooling water conditions
+        if hasattr(initial_conditions, 'cooling_water_inlet_temp') and initial_conditions.cooling_water_inlet_temp is not None:
+            self.cooling_water_inlet_temp = initial_conditions.cooling_water_inlet_temp
+            print(f"  Cooling water inlet temp: {self.cooling_water_inlet_temp} °C")
+        
+        if hasattr(initial_conditions, 'cooling_water_outlet_temp') and initial_conditions.cooling_water_outlet_temp is not None:
+            self.cooling_water_outlet_temp = initial_conditions.cooling_water_outlet_temp
+            print(f"  Cooling water outlet temp: {self.cooling_water_outlet_temp} °C")
+        
+        if hasattr(initial_conditions, 'cooling_water_flow') and initial_conditions.cooling_water_flow is not None:
+            self.cooling_water_flow = initial_conditions.cooling_water_flow
+            print(f"  Cooling water flow: {self.cooling_water_flow} kg/s")
+        
+        # Heat transfer conditions
+        if hasattr(initial_conditions, 'heat_rejection_rate') and initial_conditions.heat_rejection_rate is not None:
+            self.heat_rejection_rate = initial_conditions.heat_rejection_rate
+            print(f"  Heat rejection rate: {self.heat_rejection_rate/1e6:.1f} MW")
+        
+        if hasattr(initial_conditions, 'overall_htc') and initial_conditions.overall_htc is not None:
+            self.overall_htc = initial_conditions.overall_htc
+            print(f"  Overall HTC: {self.overall_htc} W/m²/K")
+        
+        if hasattr(initial_conditions, 'thermal_performance_factor') and initial_conditions.thermal_performance_factor is not None:
+            self.thermal_performance_factor = initial_conditions.thermal_performance_factor
+            print(f"  Thermal performance factor: {self.thermal_performance_factor}")
+        
+        # Vacuum system conditions
+        if hasattr(initial_conditions, 'condenser_pressure') and initial_conditions.condenser_pressure is not None:
+            # Apply to vacuum system
+            self.vacuum_system.condenser_pressure = initial_conditions.condenser_pressure
+            print(f"  Condenser pressure: {initial_conditions.condenser_pressure} MPa")
+        
+        if hasattr(initial_conditions, 'air_partial_pressure') and initial_conditions.air_partial_pressure is not None:
+            # Apply to vacuum system
+            if hasattr(self.vacuum_system, 'air_partial_pressure'):
+                self.vacuum_system.air_partial_pressure = initial_conditions.air_partial_pressure
+            print(f"  Air partial pressure: {initial_conditions.air_partial_pressure} MPa")
+        
+        if hasattr(initial_conditions, 'air_removal_rate') and initial_conditions.air_removal_rate is not None:
+            # Apply to vacuum system
+            if hasattr(self.vacuum_system, 'air_removal_rate'):
+                self.vacuum_system.air_removal_rate = initial_conditions.air_removal_rate
+            print(f"  Air removal rate: {initial_conditions.air_removal_rate} kg/s")
+        
+        # Tube conditions
+        if hasattr(initial_conditions, 'active_tube_count') and initial_conditions.active_tube_count is not None:
+            self.tube_degradation.active_tube_count = initial_conditions.active_tube_count
+            print(f"  Active tube count: {self.tube_degradation.active_tube_count}")
+        
+        if hasattr(initial_conditions, 'plugged_tube_count') and initial_conditions.plugged_tube_count is not None:
+            self.tube_degradation.plugged_tube_count = initial_conditions.plugged_tube_count
+            print(f"  Plugged tube count: {self.tube_degradation.plugged_tube_count}")
+        
+        if hasattr(initial_conditions, 'average_wall_thickness') and initial_conditions.average_wall_thickness is not None:
+            self.tube_degradation.average_wall_thickness = initial_conditions.average_wall_thickness
+            print(f"  Average wall thickness: {self.tube_degradation.average_wall_thickness} m")
+        
+        if hasattr(initial_conditions, 'tube_leak_rate') and initial_conditions.tube_leak_rate is not None:
+            self.tube_degradation.tube_leak_rate = initial_conditions.tube_leak_rate
+            print(f"  Tube leak rate: {self.tube_degradation.tube_leak_rate} kg/s")
+        
+        # Fouling conditions
+        if hasattr(initial_conditions, 'biofouling_thickness') and initial_conditions.biofouling_thickness is not None:
+            self.fouling_model.biofouling_thickness = initial_conditions.biofouling_thickness
+            print(f"  Biofouling thickness: {self.fouling_model.biofouling_thickness} mm")
+        
+        if hasattr(initial_conditions, 'scale_thickness') and initial_conditions.scale_thickness is not None:
+            self.fouling_model.scale_thickness = initial_conditions.scale_thickness
+            print(f"  Scale thickness: {self.fouling_model.scale_thickness} mm")
+        
+        if hasattr(initial_conditions, 'corrosion_thickness') and initial_conditions.corrosion_thickness is not None:
+            self.fouling_model.corrosion_product_thickness = initial_conditions.corrosion_thickness
+            print(f"  Corrosion thickness: {self.fouling_model.corrosion_product_thickness} mm")
+        
+        if hasattr(initial_conditions, 'total_fouling_resistance') and initial_conditions.total_fouling_resistance is not None:
+            self.fouling_model.total_fouling_resistance = initial_conditions.total_fouling_resistance
+            print(f"  Total fouling resistance: {self.fouling_model.total_fouling_resistance} m²K/W")
+        
+        if hasattr(initial_conditions, 'time_since_cleaning') and initial_conditions.time_since_cleaning is not None:
+            self.fouling_model.time_since_cleaning = initial_conditions.time_since_cleaning
+            print(f"  Time since cleaning: {self.fouling_model.time_since_cleaning} hours")
+        
+        # Water quality conditions (apply to water chemistry system)
+        water_quality_updates = {}
+        if hasattr(initial_conditions, 'water_ph') and initial_conditions.water_ph is not None:
+            water_quality_updates['ph'] = initial_conditions.water_ph
+            print(f"  Water pH: {initial_conditions.water_ph}")
+        
+        if hasattr(initial_conditions, 'water_hardness') and initial_conditions.water_hardness is not None:
+            water_quality_updates['hardness'] = initial_conditions.water_hardness
+            print(f"  Water hardness: {initial_conditions.water_hardness} mg/L")
+        
+        if hasattr(initial_conditions, 'chlorine_residual') and initial_conditions.chlorine_residual is not None:
+            water_quality_updates['chlorine_residual'] = initial_conditions.chlorine_residual
+            print(f"  Chlorine residual: {initial_conditions.chlorine_residual} mg/L")
+        
+        if hasattr(initial_conditions, 'dissolved_oxygen') and initial_conditions.dissolved_oxygen is not None:
+            water_quality_updates['dissolved_oxygen'] = initial_conditions.dissolved_oxygen
+            print(f"  Dissolved oxygen: {initial_conditions.dissolved_oxygen} mg/L")
+        
+        # Apply water quality updates to water chemistry system
+        if water_quality_updates:
+            # Update water chemistry system with initial conditions
+            if hasattr(self.water_chemistry, 'apply_initial_conditions'):
+                self.water_chemistry.apply_initial_conditions(water_quality_updates)
+            else:
+                # Fallback: directly set parameters if method not available
+                for param, value in water_quality_updates.items():
+                    if hasattr(self.water_chemistry, param):
+                        setattr(self.water_chemistry, param, value)
+        
+        # Operating conditions
+        if hasattr(initial_conditions, 'operating_hours') and initial_conditions.operating_hours is not None:
+            self.operating_hours = initial_conditions.operating_hours
+            print(f"  Operating hours: {self.operating_hours}")
+        
+        # Update derived parameters after applying initial conditions
+        self._update_derived_parameters()
+        
+        print(f"CONDENSER: Initial conditions applied successfully")
+    
+    def _update_derived_parameters(self) -> None:
+        """Update derived parameters after initial conditions are applied"""
+        
+        # Update tube degradation derived parameters
+        if self.tube_degradation.active_tube_count > 0:
+            self.tube_degradation.effective_heat_transfer_area_factor = (
+                self.tube_degradation.active_tube_count / self.config.heat_transfer.tube_count
+            )
+        
+        # Recalculate fouling resistance if individual components were set
+        if (self.fouling_model.biofouling_thickness > 0 or 
+            self.fouling_model.scale_thickness > 0 or 
+            self.fouling_model.corrosion_product_thickness > 0):
+            
+            # Only recalculate if total wasn't explicitly set
+            if self.fouling_model.total_fouling_resistance == 0.0:
+                self.fouling_model.total_fouling_resistance = self.fouling_model.calculate_total_fouling_resistance()
+        
+        # Update thermal performance factor based on degradation
+        area_factor = self.tube_degradation.effective_heat_transfer_area_factor
+        fouling_factor = max(0.3, 1.0 - self.fouling_model.total_fouling_resistance * 5)
+        vacuum_factor = getattr(self.vacuum_system, 'system_efficiency', 1.0)
+        
+        self.thermal_performance_factor = area_factor * fouling_factor * vacuum_factor
 
     def reset(self) -> None:
         """Reset enhanced condenser to initial conditions"""

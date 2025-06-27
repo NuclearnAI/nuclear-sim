@@ -181,7 +181,8 @@ class FeedwaterProtectionConfig:
     enable_pump_runback: bool = True                # Enable pump runback on trip
     enable_backup_pump_start: bool = True          # Enable backup pump auto-start
     enable_emergency_feedwater: bool = True        # Enable emergency feedwater system
-    
+    enable_steam_dump: bool = True
+
     # Protection system testing
     test_interval_hours: float = 168.0              # Weekly protection test
     calibration_interval_hours: float = 4380.0      # Semi-annual calibration
@@ -230,10 +231,79 @@ class FeedwaterInitialConditions:
     copper_concentration: float = 0.05              # mg/L copper concentration
     conductivity: float = 1.0                       # µS/cm conductivity
     
-    # Performance monitoring
+    # Performance monitoring (existing)
     pump_vibrations: List[float] = field(default_factory=lambda: [5.0, 5.0, 5.0, 0.0])  # mm/s pump vibrations
     bearing_temperatures: List[float] = field(default_factory=lambda: [80.0, 80.0, 80.0, 25.0])  # °C bearing temps
     seal_leakages: List[float] = field(default_factory=lambda: [0.1, 0.1, 0.1, 0.0])  # L/min seal leakages
+    pump_oil_levels: List[float] = field(default_factory=lambda: [100.0, 100.0, 100.0, 100.0])  # % pump oil levels
+    
+    # === EXTENDED OIL & LUBRICATION PARAMETERS ===
+    # Oil quality parameters - FIXED: Match YAML structure (single values for system-wide parameters)
+    pump_oil_contamination: float = 5.0             # ppm oil contamination (system-wide)
+    pump_oil_viscosity: float = 46.0                # cSt oil viscosity (system-wide)
+    pump_oil_water_content: float = 0.05            # % water content (system-wide)
+    pump_oil_acid_number: float = 1.0               # mg KOH/g acid number (system-wide)
+    oil_temperature: float = 45.0                   # °C oil temperature (system-wide)
+    oil_system_debris_count: float = 200.0          # particles/ml debris count (system-wide)
+    
+    # Oil filtration parameters - FIXED: Match YAML structure (single values)
+    oil_filter_pressure_drop: float = 0.15          # MPa filter pressure drop (system-wide)
+    oil_filter_contamination: float = 50.0          # % filter capacity used (system-wide)
+    
+    # Lubrication system parameters - FIXED: Match YAML structure (single value)
+    lubrication_system_pressure: float = 0.25       # MPa lubrication system pressure (system-wide)
+    oil_pressure: List[float] = field(default_factory=lambda: [0.25, 0.25, 0.25, 0.25])  # MPa oil pressure per pump
+    oil_flow_rate: List[float] = field(default_factory=lambda: [1.0, 1.0, 1.0, 1.0])  # Fraction of design flow per pump
+    oil_cooler_effectiveness: List[float] = field(default_factory=lambda: [0.95, 0.95, 0.95, 0.95])  # Heat transfer effectiveness per pump
+    
+    # === EXTENDED MECHANICAL PARAMETERS ===
+    # Enhanced bearing parameters
+    bearing_vibrations: List[float] = field(default_factory=lambda: [10.0, 10.0, 10.0, 10.0])  # mm/s bearing vibrations per pump
+    bearing_wear: List[float] = field(default_factory=lambda: [0.5, 0.5, 0.5, 0.5])  # Fraction of bearing life used per pump
+    bearing_noise_level: List[float] = field(default_factory=lambda: [70.0, 70.0, 70.0, 70.0])  # dB bearing noise per pump
+    
+    # Enhanced seal parameters
+    seal_face_wear: List[float] = field(default_factory=lambda: [0.3, 0.3, 0.3, 0.3])  # Fraction of seal life used per pump
+    seal_temperature: List[float] = field(default_factory=lambda: [70.0, 70.0, 70.0, 70.0])  # °C seal temperature per pump
+    seal_pressure_drop: List[float] = field(default_factory=lambda: [0.08, 0.08, 0.08, 0.08])  # MPa seal pressure drop per pump
+    seal_leakage_rate: List[float] = field(default_factory=lambda: [0.02, 0.02, 0.02, 0.02])  # L/min seal leakage rate per pump
+    
+    # Enhanced impeller parameters
+    impeller_wear: List[float] = field(default_factory=lambda: [0.3, 0.3, 0.3, 0.3])  # Fraction of impeller life used per pump
+    impeller_cavitation_damage: List[float] = field(default_factory=lambda: [0.1, 0.1, 0.1, 0.1])  # Cavitation damage fraction per pump
+    impeller_vibration: List[float] = field(default_factory=lambda: [8.0, 8.0, 8.0, 8.0])  # mm/s impeller vibration per pump
+    impeller_damage: List[float] = field(default_factory=lambda: [0.05, 0.05, 0.05, 0.05])  # Impeller damage fraction per pump
+    
+    # Motor parameters
+    motor_temperature: List[float] = field(default_factory=lambda: [70.0, 70.0, 70.0, 70.0])  # °C motor temperature per pump
+    
+    # === EXTENDED PERFORMANCE & SYSTEM PARAMETERS ===
+    # Performance parameters (as fractions of design values)
+    pump_head: List[float] = field(default_factory=lambda: [1.0, 1.0, 1.0, 1.0])  # Fraction of design head per pump
+    pump_flow: List[float] = field(default_factory=lambda: [1.0, 1.0, 1.0, 1.0])  # Fraction of design flow per pump
+    pump_power: List[float] = field(default_factory=lambda: [1.0, 1.0, 1.0, 1.0])  # Fraction of design power per pump
+    
+    # NPSH and cavitation parameters
+    npsh_available: List[float] = field(default_factory=lambda: [12.0, 12.0, 12.0, 12.0])  # m NPSH available per pump
+    cavitation_inception: List[float] = field(default_factory=lambda: [1.0, 1.0, 1.0, 1.0])  # Fraction of design flow for cavitation per pump
+    cavitation_intensity: List[float] = field(default_factory=lambda: [0.05, 0.05, 0.05, 0.05])  # Cavitation intensity index per pump
+    noise_level: List[float] = field(default_factory=lambda: [75.0, 75.0, 75.0, 75.0])  # dB noise level per pump
+    
+    # === SYSTEM CHECK PARAMETERS ===
+    # Suction system parameters
+    suction_line_pressure_drop: List[float] = field(default_factory=lambda: [0.03, 0.03, 0.03, 0.03])  # MPa suction line pressure drop per pump
+    suction_strainer_dp: List[float] = field(default_factory=lambda: [0.01, 0.01, 0.01, 0.01])  # MPa suction strainer pressure drop per pump
+    suction_line_air_content: List[float] = field(default_factory=lambda: [1.0, 1.0, 1.0, 1.0])  # % air content by volume per pump
+    
+    # Discharge system parameters
+    discharge_valve_position: List[float] = field(default_factory=lambda: [1.0, 1.0, 1.0, 1.0])  # Fraction valve open per pump
+    discharge_line_vibration: List[float] = field(default_factory=lambda: [8.0, 8.0, 8.0, 8.0])  # mm/s discharge line vibration per pump
+    
+    # === COOLING SYSTEM PARAMETERS ===
+    # Cooling water parameters
+    cooling_water_temperature: List[float] = field(default_factory=lambda: [25.0, 25.0, 25.0, 25.0])  # °C cooling water temperature per pump
+    cooling_water_flow: List[float] = field(default_factory=lambda: [1.0, 1.0, 1.0, 1.0])  # Fraction of design flow per pump
+    heat_exchanger_fouling: List[float] = field(default_factory=lambda: [0.1, 0.1, 0.1, 0.1])  # Fouling factor per pump
     
     # Protection system
     protection_system_armed: bool = True            # Protection system status
@@ -245,8 +315,10 @@ class FeedwaterInitialConditions:
 class FeedwaterMaintenanceConfig:
     """Maintenance configuration for feedwater system"""
     
-    # Pump performance monitoring
-    pump_efficiency_threshold: float = 0.80         # 80% pump efficiency threshold
+    # Pump performance monitoring (factor-based thresholds)
+    efficiency_factor_threshold: float = 0.80       # 80% efficiency factor threshold
+    flow_factor_threshold: float = 0.90             # 90% flow factor threshold
+    head_factor_threshold: float = 0.92             # 92% head factor threshold
     system_efficiency_threshold: float = 0.75       # 75% system efficiency threshold
     performance_factor_threshold: float = 0.85      # 85% performance factor threshold
     
@@ -508,6 +580,7 @@ class FeedwaterConfig(YAMLWizard, JSONWizard, TOMLWizard):
             'initial_vibration': self.initial_conditions.pump_vibrations[pump_index],
             'initial_bearing_temperature': self.initial_conditions.bearing_temperatures[pump_index],
             'initial_seal_leakage': self.initial_conditions.seal_leakages[pump_index],
+            'initial_oil_level': self.initial_conditions.pump_oil_levels[pump_index],
             'variable_speed_control': self.pump_system.variable_speed_control,
             'minimum_speed_fraction': self.pump_system.minimum_speed_fraction,
             'maximum_speed_fraction': self.pump_system.maximum_speed_fraction

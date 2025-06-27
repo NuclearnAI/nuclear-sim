@@ -269,15 +269,22 @@ def infer_equipment_type_from_class_name(class_name: str) -> EquipmentType:
     """
     class_name_lower = class_name.lower()
     
+    print(f"EQUIPMENT TYPE DETECTION: Analyzing class '{class_name}' (lowercase: '{class_name_lower}')")
+    
     for equipment_type, keywords in EQUIPMENT_TYPE_KEYWORDS.items():
         if all(keyword in class_name_lower for keyword in keywords):
+            print(f"  ✅ ALL keywords match for {equipment_type}: {keywords}")
             return equipment_type
     
     # Single keyword fallback
     for equipment_type, keywords in EQUIPMENT_TYPE_KEYWORDS.items():
         if any(keyword in class_name_lower for keyword in keywords):
+            matching_keywords = [kw for kw in keywords if kw in class_name_lower]
+            print(f"  ✅ SOME keywords match for {equipment_type}: {matching_keywords} (from {keywords})")
             return equipment_type
     
+    print(f"  ❌ NO keywords matched for '{class_name}' - returning UNKNOWN")
+    print(f"  Available keyword sets: {list(EQUIPMENT_TYPE_KEYWORDS.values())}")
     return EquipmentType.UNKNOWN
 
 

@@ -342,29 +342,40 @@ class SteamGenerator(ChemistryFlowProvider):
         equilibrium_pressure += demand_pressure_effect
         equilibrium_pressure = np.clip(equilibrium_pressure, 3.0, 8.5)
         
-        # Pressure change rate toward equilibrium (first-order response)
+        # FIXED PRESSURE DYNAMICS - Using proper exponential decay for timestep stability
+        # This eliminates oscillations by using mathematically correct first-order system response
         pressure_time_constant = 60.0  # seconds (realistic for steam generator pressure response)
-        pressure_error = equilibrium_pressure - self.secondary_pressure
-        base_pressure_change_rate = pressure_error / pressure_time_constant
         
-        # Additional pressure effects for transient conditions
+        # Calculate base equilibrium pressure approach using exponential decay
+        # This is stable for any timestep size, unlike the previous linear method
+        decay_factor = np.exp(-dt / pressure_time_constant)
+        base_new_pressure = equilibrium_pressure + (self.secondary_pressure - equilibrium_pressure) * decay_factor
+        
+        # Additional pressure effects for transient conditions (applied as corrections)
+        pressure_corrections = 0.0
+        
         # 1. Inventory depletion effect (only for severe conditions)
         if feedwater_flow_in < 0.1 and steam_flow_out > 100.0:
             # Rapid pressure drop when steam is extracted without feedwater replacement
             inventory_depletion_rate = -steam_flow_out / self.config.secondary_water_mass  # 1/s
-            pressure_drop_rate = inventory_depletion_rate * self.secondary_pressure * 2.0
-            base_pressure_change_rate += pressure_drop_rate
+            pressure_drop_correction = inventory_depletion_rate * self.secondary_pressure * 2.0 * dt
+            pressure_corrections += pressure_drop_correction
         
         # 2. Steam generation vs demand imbalance (short-term effect)
         steam_supply_factor = steam_generation_rate / self.config.secondary_design_flow if self.config.secondary_design_flow > 0 else 0.0
         supply_demand_imbalance = steam_supply_factor - steam_demand_factor
-        imbalance_effect = supply_demand_imbalance * 0.005  # Small short-term effect
+        imbalance_correction = supply_demand_imbalance * 0.005 * dt  # Small short-term effect
+        pressure_corrections += imbalance_correction
         
-        pressure_change_rate = base_pressure_change_rate + imbalance_effect
-        pressure_change_rate = np.clip(pressure_change_rate, -0.02, 0.02)  # Limit rate of change
+        # Apply corrections with reasonable limits
+        pressure_corrections = np.clip(pressure_corrections, -0.2, 0.2)  # Limit total corrections
         
-        new_pressure = self.secondary_pressure + pressure_change_rate * dt
-        new_pressure = np.clip(new_pressure, 0.1, 8.5)  # Physical limits
+        # Calculate final pressure with stability margins to prevent boundary oscillations
+        new_pressure = base_new_pressure + pressure_corrections
+        new_pressure = np.clip(new_pressure, 1.0, 8.0)  # Avoid extreme bounds that cause oscillations
+        
+        # Calculate pressure change rate for reporting (backwards compatible)
+        pressure_change_rate = (new_pressure - self.secondary_pressure) / dt
         
         # Water level dynamics with swell effects
         # Cross-sectional area of steam generator (simplified cylindrical geometry)
@@ -526,11 +537,11 @@ class SteamGenerator(ChemistryFlowProvider):
         avg_velocity = primary_flow / (1000.0 * total_flow_area)  # m/s (assuming water density ~1000 kg/m³)
         
         # Update TSP fouling state using unified water chemistry
-        # Note: dt is passed in minutes from the simulation system
+        # Note: dt is passed in seconds from the simulation system
         tsp_result = self.tsp_fouling.update_fouling_state(
             temperature=self.secondary_temperature,
             flow_velocity=avg_velocity,
-            dt_hours=dt / 60.0  # Convert minutes to hours
+            dt_hours=dt / 3600.0  # Convert seconds to hours
         )
         
         # Calculate performance metrics
@@ -686,7 +697,7 @@ class SteamGenerator(ChemistryFlowProvider):
     
     def get_state_dict(self) -> Dict[str, float]:
         """Get current state as dictionary for logging/monitoring"""
-        return {
+        state_dict = {
             'primary_inlet_temp': self.primary_inlet_temp,
             'primary_outlet_temp': self.primary_outlet_temp,
             'secondary_pressure': self.secondary_pressure,
@@ -702,6 +713,25 @@ class SteamGenerator(ChemistryFlowProvider):
             'overall_htc': self.overall_htc,
             'heat_flux': self.heat_flux
         }
+        
+        # Add TSP fouling state if available
+        if hasattr(self, 'tsp_fouling'):
+            tsp_state = self.tsp_fouling.get_state_dict()
+            state_dict.update({
+                'tsp_fouling_fraction': tsp_state['tsp_fouling_fraction'],
+                'tsp_heat_transfer_degradation': tsp_state['tsp_heat_transfer_degradation'],
+                'tsp_pressure_drop_ratio': tsp_state['tsp_pressure_drop_ratio'],
+                'tsp_fouling_stage_numeric': tsp_state['tsp_fouling_stage_numeric'],
+                'tsp_operating_years': tsp_state['tsp_operating_years'],
+                'tsp_shutdown_required': tsp_state['tsp_shutdown_required'],
+                'tsp_replacement_recommended': tsp_state['tsp_replacement_recommended'],
+                'tsp_cleaning_cycles': tsp_state['tsp_cleaning_cycles'],
+                'tsp_years_since_cleaning': tsp_state['tsp_years_since_cleaning'],
+                'tsp_average_deposit_thickness': tsp_state['tsp_average_deposit_thickness'],
+                'tsp_maximum_deposit_thickness': tsp_state['tsp_maximum_deposit_thickness']
+            })
+        
+        return state_dict
     
     def perform_tsp_cleaning(self, cleaning_type: str = "chemical") -> Dict[str, float]:
         """

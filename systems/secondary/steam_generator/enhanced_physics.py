@@ -148,6 +148,177 @@ class EnhancedSteamGeneratorPhysics(HeatFlowProvider, ChemistryFlowProvider):
         self.control_mode = "automatic"                 # Control mode
         self.load_demand = 1.0                         # Load demand (0-1)
         
+        # CRITICAL: Apply initial conditions after creating components
+        self._apply_initial_conditions()
+        
+        print(f"STEAM GENERATOR: Applied initial conditions from config")
+    
+    def _apply_initial_conditions(self):
+        """
+        Apply initial conditions from config to steam generator components
+        
+        This method reads the initial_conditions from the SteamGeneratorConfig dataclass
+        and applies them to the actual component states. This is critical for
+        maintenance scenarios that start with pre-degraded conditions.
+        """
+        ic = self.config.initial_conditions
+        
+        print(f"STEAM GENERATOR: Applying initial conditions:")
+        print(f"  SG levels: {ic.sg_levels}")
+        print(f"  SG pressures: {ic.sg_pressures}")
+        print(f"  SG temperatures: {ic.sg_temperatures}")
+        print(f"  SG steam qualities: {ic.sg_steam_qualities}")
+        print(f"  TSP fouling thicknesses: {ic.tsp_fouling_thicknesses}")
+        print(f"  TSP heat transfer degradations: {ic.tsp_heat_transfer_degradations}")
+        
+        # Apply initial conditions to individual steam generators
+        for i, sg in enumerate(self.steam_generators):
+            print(f"  Applying initial conditions to SG-{i}:")
+            
+            # Apply operational conditions
+            if i < len(ic.sg_levels):
+                sg.water_level = ic.sg_levels[i]
+                print(f"    Water level: {ic.sg_levels[i]} m")
+            
+            if i < len(ic.sg_pressures):
+                sg.secondary_pressure = ic.sg_pressures[i]
+                print(f"    Secondary pressure: {ic.sg_pressures[i]} MPa")
+            
+            if i < len(ic.sg_temperatures):
+                sg.secondary_temperature = ic.sg_temperatures[i]
+                print(f"    Secondary temperature: {ic.sg_temperatures[i]}°C")
+            
+            if i < len(ic.sg_steam_qualities):
+                sg.steam_quality = ic.sg_steam_qualities[i]
+                print(f"    Steam quality: {ic.sg_steam_qualities[i]}")
+            
+            # Apply steam flow conditions
+            if i < len(ic.sg_steam_flows):
+                sg.steam_flow_rate = ic.sg_steam_flows[i]
+                print(f"    Steam flow rate: {ic.sg_steam_flows[i]} kg/s")
+            
+            # Apply feedwater flow conditions
+            if i < len(ic.sg_feedwater_flows):
+                sg.feedwater_flow_rate = ic.sg_feedwater_flows[i]
+                print(f"    Feedwater flow rate: {ic.sg_feedwater_flows[i]} kg/s")
+            
+            # Apply primary side conditions (EXPANDED COVERAGE)
+            if i < len(ic.primary_inlet_temps):
+                sg.primary_inlet_temp = ic.primary_inlet_temps[i]
+                print(f"    Primary inlet temp: {ic.primary_inlet_temps[i]}°C")
+            
+            if i < len(ic.primary_outlet_temps):
+                sg.primary_outlet_temp = ic.primary_outlet_temps[i]
+                print(f"    Primary outlet temp: {ic.primary_outlet_temps[i]}°C")
+            
+            # TODO: Verify if primary_flow_rate exists as state variable in SteamGenerator
+            # if i < len(ic.primary_flow_rates):
+            #     sg.primary_flow_rate = ic.primary_flow_rates[i]  # COMMENTED OUT - verify state variable exists
+            #     print(f"    Primary flow rate: {ic.primary_flow_rates[i]} kg/s")
+            
+            # Apply heat transfer conditions (EXPANDED COVERAGE)
+            if i < len(ic.tube_wall_temperature):
+                sg.tube_wall_temp = ic.tube_wall_temperature[i]
+                print(f"    Tube wall temperature: {ic.tube_wall_temperature[i]}°C")
+            
+            # Apply TSP fouling conditions
+            if i < len(ic.tsp_fouling_thicknesses):
+                if hasattr(sg, 'tsp_fouling'):
+                    sg.tsp_fouling.fouling_thickness = ic.tsp_fouling_thicknesses[i]
+                    print(f"    TSP fouling thickness: {ic.tsp_fouling_thicknesses[i]} mm")
+            
+            if i < len(ic.tsp_heat_transfer_degradations):
+                if hasattr(sg, 'tsp_fouling'):
+                    sg.tsp_fouling.heat_transfer_degradation = ic.tsp_heat_transfer_degradations[i]
+                    print(f"    TSP heat transfer degradation: {ic.tsp_heat_transfer_degradations[i]}")
+        
+        # Apply system-level initial conditions
+        self.total_thermal_power = sum(ic.primary_inlet_temps[i] - ic.primary_outlet_temps[i] 
+                                     for i in range(min(len(ic.primary_inlet_temps), len(ic.primary_outlet_temps))))
+        self.total_steam_flow = sum(ic.sg_steam_flows)
+        self.average_steam_pressure = sum(ic.sg_pressures) / len(ic.sg_pressures) if ic.sg_pressures else 6.895
+        self.average_steam_temperature = sum(ic.sg_temperatures) / len(ic.sg_temperatures) if ic.sg_temperatures else 285.8
+        self.average_steam_quality = sum(ic.sg_steam_qualities) / len(ic.sg_steam_qualities) if ic.sg_steam_qualities else 0.99
+        
+        print(f"STEAM GENERATOR: Initial conditions applied successfully")
+        
+        # Validate that critical initial conditions were applied
+        self._validate_initial_conditions_applied()
+    
+    def _validate_initial_conditions_applied(self):
+        """Validate that initial conditions were properly applied"""
+        ic = self.config.initial_conditions
+        
+        print(f"STEAM GENERATOR: Validating initial conditions application:")
+        
+        for i, sg in enumerate(self.steam_generators):
+            print(f"  SG-{i} verification:")
+            
+            # Validate water level application
+            if i < len(ic.sg_levels):
+                expected = ic.sg_levels[i]
+                actual = sg.water_level
+                if abs(actual - expected) < 0.1:
+                    print(f"    ✓ Water level: {actual} m (expected {expected} m)")
+                else:
+                    print(f"    ✗ Water level mismatch: {actual} m (expected {expected} m)")
+            
+            # Validate pressure application
+            if i < len(ic.sg_pressures):
+                expected = ic.sg_pressures[i]
+                actual = sg.secondary_pressure
+                if abs(actual - expected) < 0.01:
+                    print(f"    ✓ Secondary pressure: {actual} MPa (expected {expected} MPa)")
+                else:
+                    print(f"    ✗ Secondary pressure mismatch: {actual} MPa (expected {expected} MPa)")
+            
+            # Validate primary inlet temperature application (EXPANDED VALIDATION)
+            if i < len(ic.primary_inlet_temps):
+                expected = ic.primary_inlet_temps[i]
+                actual = sg.primary_inlet_temp
+                if abs(actual - expected) < 0.1:
+                    print(f"    ✓ Primary inlet temp: {actual}°C (expected {expected}°C)")
+                else:
+                    print(f"    ✗ Primary inlet temp mismatch: {actual}°C (expected {expected}°C)")
+            
+            # Validate primary outlet temperature application (EXPANDED VALIDATION)
+            if i < len(ic.primary_outlet_temps):
+                expected = ic.primary_outlet_temps[i]
+                actual = sg.primary_outlet_temp
+                if abs(actual - expected) < 0.1:
+                    print(f"    ✓ Primary outlet temp: {actual}°C (expected {expected}°C)")
+                else:
+                    print(f"    ✗ Primary outlet temp mismatch: {actual}°C (expected {expected}°C)")
+            
+            # Validate tube wall temperature application (EXPANDED VALIDATION)
+            if i < len(ic.tube_wall_temperature):
+                expected = ic.tube_wall_temperature[i]
+                actual = sg.tube_wall_temp
+                if abs(actual - expected) < 0.1:
+                    print(f"    ✓ Tube wall temp: {actual}°C (expected {expected}°C)")
+                else:
+                    print(f"    ✗ Tube wall temp mismatch: {actual}°C (expected {expected}°C)")
+            
+            # Validate TSP fouling application
+            if i < len(ic.tsp_fouling_thicknesses) and hasattr(sg, 'tsp_fouling'):
+                expected = ic.tsp_fouling_thicknesses[i]
+                actual = sg.tsp_fouling.fouling_thickness
+                if abs(actual - expected) < 0.001:
+                    print(f"    ✓ TSP fouling thickness: {actual} mm (expected {expected} mm)")
+                else:
+                    print(f"    ✗ TSP fouling thickness mismatch: {actual} mm (expected {expected} mm)")
+            
+            # Validate TSP heat transfer degradation application
+            if i < len(ic.tsp_heat_transfer_degradations) and hasattr(sg, 'tsp_fouling'):
+                expected = ic.tsp_heat_transfer_degradations[i]
+                actual = sg.tsp_fouling.heat_transfer_degradation
+                if abs(actual - expected) < 0.001:
+                    print(f"    ✓ TSP heat transfer degradation: {actual} (expected {expected})")
+                else:
+                    print(f"    ✗ TSP heat transfer degradation mismatch: {actual} (expected {expected})")
+        
+        print(f"STEAM GENERATOR: Initial conditions validation complete")
+        
     def update_system(self,
                      primary_conditions: Dict[str, List[float]],
                      steam_demands: Dict[str, float],

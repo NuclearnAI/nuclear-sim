@@ -107,38 +107,30 @@ class TSPFoulingConfig:
 @dataclass_json
 @dataclass
 class SteamGeneratorInitialConditions:
-    """Initial conditions for steam generator system"""
+    """
+    Initial conditions for steam generator system
     
-    # Steam generator levels (m)
-    sg_levels: List[float] = field(default_factory=lambda: [12.5, 12.5, 12.5])
+    CLEANED VERSION - Only parameters that map to actual physics model state variables.
+    This dataclass now perfectly matches the cleaned YAML template initial_conditions section.
+    """
     
-    # Steam generator pressures (MPa)
-    sg_pressures: List[float] = field(default_factory=lambda: [6.9, 6.9, 6.9])
+    # Basic SG operational parameters (map to SteamGenerator class state)
+    sg_levels: List[float] = field(default_factory=lambda: [12.5, 12.5, 12.5])                    # → water_level
+    sg_pressures: List[float] = field(default_factory=lambda: [6.9, 6.9, 6.9])                    # → secondary_pressure
+    sg_temperatures: List[float] = field(default_factory=lambda: [285.8, 285.8, 285.8])           # → secondary_temperature
+    sg_steam_qualities: List[float] = field(default_factory=lambda: [0.99, 0.99, 0.99])           # → steam_quality
+    sg_steam_flows: List[float] = field(default_factory=lambda: [500.0, 500.0, 500.0])            # → steam_flow_rate
+    sg_feedwater_flows: List[float] = field(default_factory=lambda: [500.0, 500.0, 500.0])        # → feedwater_flow_rate
+    primary_inlet_temps: List[float] = field(default_factory=lambda: [327.0, 327.0, 327.0])       # → primary_inlet_temp
+    primary_outlet_temps: List[float] = field(default_factory=lambda: [293.0, 293.0, 293.0])      # → primary_outlet_temp
+    primary_flow_rates: List[float] = field(default_factory=lambda: [5700.0, 5700.0, 5700.0])     # → primary flow parameter
     
-    # Steam generator temperatures (°C)
-    sg_temperatures: List[float] = field(default_factory=lambda: [285.8, 285.8, 285.8])
+    # TSP fouling parameters (map to TSPFoulingModel class state)
+    tsp_fouling_thicknesses: List[float] = field(default_factory=lambda: [0.0, 0.0, 0.0])         # → deposits.get_total_thickness()
+    tsp_heat_transfer_degradations: List[float] = field(default_factory=lambda: [0.0, 0.0, 0.0])  # → heat_transfer_degradation
     
-    # Steam qualities (0-1)
-    sg_steam_qualities: List[float] = field(default_factory=lambda: [0.99, 0.99, 0.99])
-    
-    # Steam flow rates (kg/s per SG)
-    sg_steam_flows: List[float] = field(default_factory=lambda: [500.0, 500.0, 500.0])
-    
-    # Feedwater flow rates (kg/s per SG)
-    sg_feedwater_flows: List[float] = field(default_factory=lambda: [500.0, 500.0, 500.0])
-    
-    # Primary side inlet temperatures (°C)
-    primary_inlet_temps: List[float] = field(default_factory=lambda: [327.0, 327.0, 327.0])
-    
-    # Primary side outlet temperatures (°C)
-    primary_outlet_temps: List[float] = field(default_factory=lambda: [293.0, 293.0, 293.0])
-    
-    # Primary side flow rates (kg/s)
-    primary_flow_rates: List[float] = field(default_factory=lambda: [5700.0, 5700.0, 5700.0])
-    
-    # TSP fouling initial conditions
-    tsp_fouling_thicknesses: List[float] = field(default_factory=lambda: [0.0, 0.0, 0.0])
-    tsp_heat_transfer_degradations: List[float] = field(default_factory=lambda: [0.0, 0.0, 0.0])
+    # Heat transfer parameters (map to SteamGenerator class state)
+    tube_wall_temperature: List[float] = field(default_factory=lambda: [300.0, 300.0, 300.0])     # → tube_wall_temp
 
 
 @dataclass_json
@@ -374,6 +366,9 @@ class SteamGeneratorConfig(YAMLWizard, JSONWizard, TOMLWizard):
         
         while len(self.initial_conditions.tsp_heat_transfer_degradations) < self.num_steam_generators:
             self.initial_conditions.tsp_heat_transfer_degradations.append(self.tsp_fouling.initial_heat_transfer_degradation)
+        
+        while len(self.initial_conditions.tube_wall_temperature) < self.num_steam_generators:
+            self.initial_conditions.tube_wall_temperature.append(300.0)
         
         # Ensure TSP fouling rate factors array is correct length
         while len(self.tsp_fouling.fouling_rate_factors) < self.num_steam_generators:
