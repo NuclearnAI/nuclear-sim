@@ -557,32 +557,27 @@ class FeedwaterPumpLubricationSystem(BaseLubricationSystem):
         Returns:
             Dictionary with maintenance results compatible with MaintenanceResult
         """
-        if maintenance_type == "oil_change":
-            return self._perform_oil_change(**kwargs)
-        elif maintenance_type == "oil_top_off":
-            return self._perform_oil_top_off(**kwargs)
-        elif maintenance_type == "bearing_replacement":
-            return self._perform_bearing_replacement(**kwargs)
-        elif maintenance_type == "seal_replacement":
-            return self._perform_seal_replacement(**kwargs)
-        elif maintenance_type == "component_overhaul":
-            return self._perform_component_overhaul(**kwargs)
-        elif maintenance_type == "system_cleaning":
-            return self._perform_system_cleaning(**kwargs)
-        elif maintenance_type == "bearing_inspection":
-            return self._perform_bearing_inspection(**kwargs)
-        elif maintenance_type == "impeller_inspection":
-            return self._perform_impeller_inspection(**kwargs)
-        elif maintenance_type == "impeller_replacement":
-            return self._perform_impeller_replacement(**kwargs)
-        elif maintenance_type == "lubrication_system_check":
-            return self._perform_lubrication_system_check(**kwargs)
-        elif maintenance_type == "motor_inspection":
-            return self._perform_motor_inspection(**kwargs)
-        elif maintenance_type == "oil_analysis":
-            return self._perform_oil_analysis(**kwargs)
-        elif maintenance_type == "vibration_analysis":
-            return self._perform_vibration_analysis(**kwargs)
+        
+        # Dictionary mapping maintenance types to their handler methods
+        maintenance_handlers = {
+            "oil_change": self._perform_oil_change,
+            "oil_top_off": self._perform_oil_top_off,
+            "bearing_replacement": self._perform_bearing_replacement,
+            "seal_replacement": self._perform_seal_replacement,
+            "component_overhaul": self._perform_component_overhaul,
+            "system_cleaning": self._perform_system_cleaning,
+            "bearing_inspection": self._perform_bearing_inspection,
+            "impeller_inspection": self._perform_impeller_inspection,
+            "impeller_replacement": self._perform_impeller_replacement,
+            "lubrication_system_check": self._perform_lubrication_system_check,
+            "motor_inspection": self._perform_motor_inspection,
+            "oil_analysis": self._perform_oil_analysis,
+            "vibration_analysis": self._perform_vibration_analysis
+        }
+        
+        # Execute the appropriate maintenance handler
+        if maintenance_type in maintenance_handlers:
+            return maintenance_handlers[maintenance_type](**kwargs)
         else:
             # Unknown maintenance type
             return {
