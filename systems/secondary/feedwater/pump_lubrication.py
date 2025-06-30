@@ -294,7 +294,7 @@ class FeedwaterPumpLubricationSystem(BaseLubricationSystem):
         
         # Calculate seal leakage based on seal wear
         seal_wear = self.component_wear.get('mechanical_seals', 0.0)
-        base_seal_leakage = 0.005  # L/min base leakage (5 mL/min) - realistic for modern seals
+        base_seal_leakage = self.seal_leakage_rate  # L/min base leakage (5 mL/min) - realistic for modern seals
         wear_leakage = seal_wear * 0.02  # Additional leakage from wear (reduced from 0.8)
         cavitation_leakage = cavitation_intensity * 0.01  # Cavitation damages seals (reduced from 0.5)
         
@@ -553,7 +553,6 @@ def integrate_lubrication_with_pump(pump, lubrication_system: FeedwaterPumpLubri
             pump.state.oil_temperature = lubrication_state['oil_temperature']
             pump.state.bearing_wear = lubrication_state['pump_bearing_wear']
             pump.state.seal_wear = lubrication_state['seal_wear']
-            pump.state.seal_leakage = lubrication_state['seal_leakage_rate']
             
             # Apply performance factors
             pump.state.efficiency_factor = lubrication_state['efficiency_factor']

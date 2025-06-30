@@ -91,7 +91,6 @@ class FeedwaterPumpState(BasePumpState):
     impeller_wear: float = 0.0                  # % impeller wear (0-100)
     bearing_wear: float = 0.0                   # % bearing wear (0-100)
     seal_wear: float = 0.0                      # % seal wear (0-100)
-    seal_leakage: float = 0.0                   # L/min seal leakage rate
     
     # Performance Factors (Multipliers: 1.0 = perfect, 0.85 = 85% performance)
     flow_factor: float = 1.0                    # Flow capacity multiplier
@@ -169,6 +168,13 @@ class FeedwaterPump(BasePump):
         self.combined_wear_trip_threshold = 40.0        # % total wear
         self.performance_degradation_trip_threshold = 25.0  # % efficiency loss
         self.seal_leakage_trip_threshold = 10.0         # L/min
+    
+    @property
+    def seal_leakage(self) -> float:
+        """Get seal leakage rate from lubrication system"""
+        if hasattr(self, 'lubrication_system'):
+            return self.lubrication_system.seal_leakage_rate
+        return 0.0
     
     def _calculate_flow_rate(self, system_conditions: Dict):
         """Calculate feedwater pump flow rate based on head-flow curve"""
@@ -367,7 +373,7 @@ class FeedwaterPump(BasePump):
             return True
             
         # Seal leakage limit
-        if self.state.seal_leakage > self.seal_leakage_trip_threshold:
+        if self.seal_leakage > self.seal_leakage_trip_threshold:
             self._trip_pump("Excessive Seal Leakage")
             return True
             
@@ -433,7 +439,7 @@ class FeedwaterPump(BasePump):
         self._simulate_cavitation(dt, system_conditions)
         self._simulate_mechanical_wear(dt, system_conditions)
         self._apply_performance_degradation()
-        self._simulate_sensors(system_conditions)
+        self._simulate_sensors(dt, system_conditions)
         
         # Add enhanced diagnostics to result
         result.update({
@@ -447,7 +453,7 @@ class FeedwaterPump(BasePump):
             'impeller_wear': self.state.impeller_wear,
             'bearing_wear': self.state.bearing_wear,
             'seal_wear': self.state.seal_wear,
-            'seal_leakage': self.state.seal_leakage,
+            'seal_leakage': self.seal_leakage,
             
             # Performance factors
             'flow_factor': self.state.flow_factor,
@@ -662,7 +668,7 @@ class FeedwaterPump(BasePump):
         self.state.efficiency_factor = max(0.5, 1.0 - total_efficiency_loss)
         self.state.head_factor = max(0.7, 1.0 - impeller_flow_loss * 0.8)
     
-    def _simulate_sensors(self, system_conditions: Dict):
+    def _simulate_sensors(self, dt: float, system_conditions: Dict):
         """Simulate sensor readings based on current state and system inputs"""
         # Oil level drops slowly while running (ensure proper bounds)
         if self.state.status == PumpStatus.RUNNING:
@@ -674,9 +680,70 @@ class FeedwaterPump(BasePump):
         # Load factor for thermal and electrical simulation
         load_factor = self.state.flow_rate / self.config.rated_flow if self.config.rated_flow > 0 else 0.0
         
-        # Temperatures (°C) - oil temperature now handled by lubrication system
-        self.state.bearing_temperature = 45.0 + 25.0 * load_factor
-        self.state.motor_temperature = 60.0 + 30.0 * load_factor
+        # === ENHANCED BEARING TEMPERATURE PHYSICS WITH THERMAL TIME CONSTANTS ===
+        # FIXED: Realistic thermal model with proper time constants and additive effects
+        
+        # Target steady-state temperature based on operating conditions
+        base_temp = 35.0 + 15.0 * load_factor  # 35-50°C range for normal operation
+        
+        # FRICTION-RELATED FACTORS (additive - more realistic than multiplicative)
+        # Wear factor - linear relationship for small wear amounts
+        wear_temp_increase = (self.state.bearing_wear / 100.0) * 20.0  # Max +20°C at 100% wear
+        
+        # Lubrication effectiveness factor (additive, not multiplicative)
+        if hasattr(self, 'lubrication_system'):
+            lub_effectiveness = getattr(self.lubrication_system, 'lubrication_effectiveness', 1.0)
+            # Poor lubrication adds temperature, but not dramatically
+            lub_temp_increase = (1.0 - lub_effectiveness) * 15.0  # Max +15°C for poor lubrication
+        else:
+            lub_temp_increase = 0.0
+        
+        # Target temperature (steady-state)
+        target_temp = base_temp + wear_temp_increase + lub_temp_increase
+        
+        # THERMAL TIME CONSTANTS (dt is in MINUTES from main simulator)
+        # Bearings have thermal mass and don't heat up instantly
+        thermal_time_constant = 15.0  # minutes - realistic bearing thermal time constant
+        
+        # Exponential approach to target temperature: T(t) = T_target + (T_initial - T_target) * exp(-t/τ)
+        # Rearranged: T_new = T_current + (T_target - T_current) * (1 - exp(-dt/τ))
+        import math
+        temp_change_rate = (target_temp - self.state.bearing_temperature) * (1.0 - math.exp(-dt / thermal_time_constant))
+        
+        # Apply maximum temperature change rate limit (safety check)
+        max_temp_change_per_minute = 2.0  # °C/minute maximum change rate
+        if abs(temp_change_rate) > max_temp_change_per_minute:
+            temp_change_rate = math.copysign(max_temp_change_per_minute, temp_change_rate)
+        
+        # Calculate new bearing temperature
+        new_bearing_temp = self.state.bearing_temperature + temp_change_rate
+        
+        # HEAT REMOVAL FACTORS (additive - affect heat transfer/accumulation)
+        # Oil condition factor (low oil level reduces heat removal capacity)
+        # 100% oil = no penalty, 50% oil = +4°C, 20% oil = +8°C penalty
+        oil_cooling_penalty = max(0, (100.0 - self.state.oil_level) / 100.0) * 8.0  # Max +8°C
+        
+        # Oil contamination factor (contaminated oil reduces heat transfer efficiency)
+        if hasattr(self, 'lubrication_system'):
+            # oil_contamination_level in ppm, normal < 50 ppm, high > 200 ppm
+            contamination_ppm = getattr(self.lubrication_system, 'oil_contamination_level', 25.0)
+            contamination_penalty = min(3.0, contamination_ppm / 50.0)  # Max +3°C
+        else:
+            contamination_penalty = 0.0
+        
+        # Apply oil cooling and contamination penalties to the new temperature
+        final_bearing_temp = new_bearing_temp + oil_cooling_penalty + contamination_penalty
+        
+        # Set the final bearing temperature
+        self.state.bearing_temperature = final_bearing_temp
+        
+        # Ensure reasonable temperature bounds (bearing failure occurs around 150°C)
+        self.state.bearing_temperature = min(150.0, self.state.bearing_temperature)
+        
+        # Motor temperature (less affected by bearing wear, more by electrical load)
+        motor_base_temp = 60.0 + 30.0 * load_factor
+        motor_cooling_factor = 1.0 + max(0, (100.0 - self.state.oil_level) / 200.0) * 0.1  # Minor oil cooling effect
+        self.state.motor_temperature = motor_base_temp * motor_cooling_factor
         
         # Vibration Level (mm/s) - base vibration plus wear effects
         base_vibration = 1.0 + 0.05 * self.state.speed_percent
@@ -754,6 +821,8 @@ class FeedwaterPump(BasePump):
             return self._perform_impeller_inspection()
         elif maintenance_type == "impeller_replacement":
             return self._perform_impeller_replacement()
+        elif maintenance_type == "bearing_inspection":
+            return self._perform_bearing_inspection()
         elif maintenance_type == "bearing_replacement":
             return self._perform_bearing_replacement()
         elif maintenance_type == "seal_replacement":
@@ -872,6 +941,30 @@ class FeedwaterPump(BasePump):
             'next_maintenance_due': 17520.0  # 2 years
         }
     
+    def _perform_bearing_inspection(self) -> Dict[str, Any]:
+        """Perform bearing inspection"""
+        wear_before = self.state.bearing_wear
+        
+        # Inspection can detect and partially address minor wear
+        if self.state.bearing_wear > 5.0:
+            self.state.bearing_wear *= 0.9  # 10% improvement from cleaning
+            improvement = wear_before - self.state.bearing_wear
+            findings = f"Bearing wear: {wear_before:.1f}% -> {self.state.bearing_wear:.1f}% (cleaned)"
+            recommendations = ["Monitor bearing wear closely", "Consider replacement if wear exceeds 25%"]
+        else:
+            findings = f"Bearings in good condition, wear: {self.state.bearing_wear:.1f}%"
+            recommendations = ["Continue normal operation"]
+        
+        return {
+            'success': True,
+            'duration_hours': 4.0,
+            'work_performed': f"Bearing inspection on {self.config.pump_id}",
+            'findings': findings,
+            'recommendations': recommendations,
+            'effectiveness_score': 0.9,
+            'next_maintenance_due': 4380.0  # 6 months
+        }
+    
     def _perform_bearing_replacement(self) -> Dict[str, Any]:
         """Perform bearing replacement"""
         old_wear = self.state.bearing_wear
@@ -892,9 +985,9 @@ class FeedwaterPump(BasePump):
     def _perform_seal_replacement(self) -> Dict[str, Any]:
         """Perform seal replacement"""
         old_wear = self.state.seal_wear
-        old_leakage = self.state.seal_leakage
+        old_leakage = self.seal_leakage
         self.state.seal_wear = 0.0
-        self.state.seal_leakage = 0.0
+        self.lubrication_system.seal_leakage_rate = 0.0
         
         return {
             'success': True,
@@ -1043,7 +1136,6 @@ class FeedwaterPump(BasePump):
         self.state.impeller_wear = 0.0
         self.state.bearing_wear = 0.0
         self.state.seal_wear = 0.0
-        self.state.seal_leakage = 0.0
         
         # Reset performance factors to optimal
         self.state.flow_factor = 1.0
@@ -1069,7 +1161,8 @@ class FeedwaterPump(BasePump):
             f'cavitation_intensity': self.state.cavitation_intensity,
             f'impeller_wear': self.state.impeller_wear,
             f'bearing_wear': self.state.bearing_wear,
-            f'vibration_level': self.state.vibration_level
+            f'vibration_level': self.state.vibration_level,
+            f'bearing_temperature': self.state.bearing_temperature
         }
         
         # Add lubrication system state if available
@@ -1079,10 +1172,8 @@ class FeedwaterPump(BasePump):
                 'oil_level': lubrication_state['oil_level'],
                 'oil_temperature': lubrication_state['oil_temperature'],
                 'oil_contamination': lubrication_state['oil_contamination_level'],
-                'bearing_temperature': lubrication_state.get('motor_bearing_temperature', 
-                                                           lubrication_state.get('motor_bearing_wear', 0.0) * 5.0 + 80.0),
                 'efficiency_factor': lubrication_state['efficiency_factor'],
-                'seal_leakage_rate': lubrication_state['seal_leakage_rate'],
+                'seal_leakage_rate': self.seal_leakage,
                 'vibration_increase': lubrication_state['vibration_increase'],
                 'lubrication_effectiveness': lubrication_state['lubrication_effectiveness'],
                 'system_health_factor': lubrication_state['system_health_factor'],

@@ -234,7 +234,7 @@ class FeedwaterInitialConditions:
     # Performance monitoring (existing)
     pump_vibrations: List[float] = field(default_factory=lambda: [5.0, 5.0, 5.0, 0.0])  # mm/s pump vibrations
     bearing_temperatures: List[float] = field(default_factory=lambda: [80.0, 80.0, 80.0, 25.0])  # °C bearing temps
-    seal_leakages: List[float] = field(default_factory=lambda: [0.1, 0.1, 0.1, 0.0])  # L/min seal leakages
+    seal_leakage_rate: List[float] = field(default_factory=lambda: [0.1, 0.1, 0.1, 0.0])  # L/min seal leakage rates (authoritative)
     pump_oil_levels: List[float] = field(default_factory=lambda: [100.0, 100.0, 100.0, 100.0])  # % pump oil levels
     
     # === EXTENDED OIL & LUBRICATION PARAMETERS ===
@@ -514,9 +514,6 @@ class FeedwaterConfig(YAMLWizard, JSONWizard, TOMLWizard):
         while len(self.initial_conditions.bearing_temperatures) < self.pump_system.num_pumps:
             self.initial_conditions.bearing_temperatures.append(25.0)
         
-        while len(self.initial_conditions.seal_leakages) < self.pump_system.num_pumps:
-            self.initial_conditions.seal_leakages.append(0.0)
-        
         # Set initial conditions for running pumps
         for i in range(self.pump_system.pumps_normally_running):
             if i < len(self.initial_conditions.running_pumps):
@@ -526,8 +523,11 @@ class FeedwaterConfig(YAMLWizard, JSONWizard, TOMLWizard):
                 self.initial_conditions.pump_heads[i] = self.pump_system.design_head_per_pump
                 self.initial_conditions.pump_efficiencies[i] = self.pump_system.pump_efficiency
                 self.initial_conditions.pump_vibrations[i] = 5.0
-                self.initial_conditions.bearing_temperatures[i] = 80.0
-                self.initial_conditions.seal_leakages[i] = 0.1
+                # CRITICAL FIX: Only set bearing temperature if it's still at default (25.0°C)
+                # This prevents overriding scenario-specific initial conditions
+                # TEMPORARILY COMMENTED OUT to preserve scenario initial conditions
+                # if self.initial_conditions.bearing_temperatures[i] == 25.0:
+                #     self.initial_conditions.bearing_temperatures[i] = 80.0
         
         # Trim arrays if too long
         self.initial_conditions.sg_levels = self.initial_conditions.sg_levels[:self.num_steam_generators]
@@ -542,7 +542,6 @@ class FeedwaterConfig(YAMLWizard, JSONWizard, TOMLWizard):
         self.initial_conditions.running_pumps = self.initial_conditions.running_pumps[:self.pump_system.num_pumps]
         self.initial_conditions.pump_vibrations = self.initial_conditions.pump_vibrations[:self.pump_system.num_pumps]
         self.initial_conditions.bearing_temperatures = self.initial_conditions.bearing_temperatures[:self.pump_system.num_pumps]
-        self.initial_conditions.seal_leakages = self.initial_conditions.seal_leakages[:self.pump_system.num_pumps]
         
         # Update control system setpoint
         self.control_system.level_setpoint = self.design_sg_level

@@ -241,9 +241,10 @@ class EnhancedFeedwaterPhysics(HeatFlowProvider, ChemistryFlowProvider):
                     pump.state.vibration_level = ic.pump_vibrations[i]
                     print(f"    Vibration level: {ic.pump_vibrations[i]} mm/s")
                 
-                if i < len(ic.seal_leakages):
-                    pump.state.seal_leakage = ic.seal_leakages[i]
-                    print(f"    Seal leakage: {ic.seal_leakages[i]} L/min")
+                # Seal leakage is now handled by lubrication system only
+                if hasattr(pump, 'lubrication_system') and i < len(ic.seal_leakage_rate):
+                    pump.lubrication_system.seal_leakage_rate = ic.seal_leakage_rate[i]
+                    print(f"    Seal leakage: {ic.seal_leakage_rate[i]} L/min (applied to lubrication system)")
                 
                 # Hydraulic conditions
                 if hasattr(ic, 'suction_pressure'):
@@ -285,7 +286,7 @@ class EnhancedFeedwaterPhysics(HeatFlowProvider, ChemistryFlowProvider):
                 
                 # Performance degradation factors
                 if i < len(ic.pump_efficiencies):
-                    pump.state.efficiency_degradation_factor = ic.pump_efficiencies[i]
+                    pump.state.efficiency_factor = ic.pump_efficiencies[i]
                     print(f"    Efficiency factor: {ic.pump_efficiencies[i]}")
                 
                 if hasattr(ic, 'pump_flow') and i < len(ic.pump_flow):
