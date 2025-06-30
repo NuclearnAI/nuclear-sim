@@ -71,31 +71,24 @@ class FeedwaterPumpState(BasePumpState):
     discharge_pressure: float = 8.0             # MPa discharge pressure
     npsh_available: float = 20.0                # m Net Positive Suction Head available
     
-    # Enhanced monitoring
-    oil_level: float = 100.0                    # % oil level
-    oil_temperature: float = 40.0               # °C oil temperature
-    bearing_temperature: float = 45.0           # °C bearing temperature
-    motor_temperature: float = 60.0             # °C motor temperature
+    # Enhanced monitoring (pump-specific only)
+    motor_temperature: float = 60.0             # °C motor temperature (electrical windings)
     motor_current: float = 0.0                  # A motor current
     motor_voltage: float = 6.6                  # kV motor voltage
-    vibration_level: float = 1.5                # mm/s vibration level
+    vibration_level: float = 1.5                # mm/s vibration level (combined signature)
     differential_pressure: float = 0.0          # MPa differential pressure
     
-    # Enhanced Cavitation Modeling
+    # Enhanced Cavitation Modeling (pump hydraulic specific)
     cavitation_intensity: float = 0.0           # 0-1 scale cavitation intensity
     cavitation_damage: float = 0.0              # Accumulated damage (0-100 scale)
     cavitation_time: float = 0.0                # Time spent cavitating (seconds)
     cavitation_noise_level: float = 0.0         # Additional noise from cavitation (dB)
     
-    # Detailed Mechanical Wear
-    impeller_wear: float = 0.0                  # % impeller wear (0-100)
-    bearing_wear: float = 0.0                   # % bearing wear (0-100)
-    seal_wear: float = 0.0                      # % seal wear (0-100)
-    
-    # Performance Factors (Multipliers: 1.0 = perfect, 0.85 = 85% performance)
-    flow_factor: float = 1.0                    # Flow capacity multiplier
-    efficiency_factor: float = 1.0              # Efficiency multiplier
-    head_factor: float = 1.0                    # Head capacity multiplier
+    # DELEGATION ARCHITECTURE - NO DUPLICATE STATE VARIABLES:
+    # All lubrication data (oil_level, oil_temperature, bearing_temperature, 
+    # bearing_wear, seal_wear, impeller_wear, efficiency_factor, flow_factor, 
+    # head_factor) is accessed directly from lubrication_system when needed.
+    # This ensures single source of truth and eliminates state duplication.
 
 
 @auto_register("SECONDARY", "feedwater", id_source="config.pump_id",
@@ -206,7 +199,8 @@ class FeedwaterPump(BasePump):
             self._apply_system_effects(system_conditions)
             
             # Apply performance degradation from wear and cavitation
-            self.state.flow_rate *= self.state.flow_factor
+            flow_factor = self.lubrication_system.pump_flow_factor if hasattr(self, 'lubrication_system') else 1.0
+            self.state.flow_rate *= flow_factor
             
             # Minimum flow constraint only when running at very low speeds
             if self.state.status == PumpStatus.RUNNING and self.state.speed_percent < 20.0:
@@ -267,7 +261,8 @@ class FeedwaterPump(BasePump):
             # ENHANCED: Apply efficiency factor (bearing wear increases power consumption)
             # efficiency_factor is a multiplier: 1.0 = perfect, 0.85 = 85% efficiency
             # Lower efficiency requires more electrical power for same hydraulic work
-            self.state.power_consumption = base_power / self.state.efficiency_factor
+            efficiency_factor = self.lubrication_system.pump_efficiency_factor if hasattr(self, 'lubrication_system') else 1.0
+            self.state.power_consumption = base_power / efficiency_factor
             
             # Minimum power when starting
             if self.state.status == PumpStatus.STARTING:
@@ -326,11 +321,12 @@ class FeedwaterPump(BasePump):
         if self._check_cavitation_trips():
             return
         
-        if self._check_wear_trips():
-            return
-        
-        if self._check_oil_level_trips():
-            return
+        # Delegate lubrication protection to lubrication system
+        if hasattr(self, 'lubrication_system'):
+            lub_trip_reason = self.lubrication_system.check_protection_trips()
+            if lub_trip_reason:
+                self._trip_pump(f"Lubrication: {lub_trip_reason}")
+                return
     
     def _check_cavitation_trips(self):
         """Check cavitation-related trip conditions"""
@@ -357,61 +353,6 @@ class FeedwaterPump(BasePump):
             
         return False
     
-    def _check_wear_trips(self):
-        """Check mechanical wear-related trip conditions"""
-        # Individual component wear limits
-        if self.state.impeller_wear > self.impeller_wear_trip_threshold:
-            self._trip_pump("Excessive Impeller Wear")
-            return True
-            
-        if self.state.bearing_wear > self.bearing_wear_trip_threshold:
-            self._trip_pump("Bearing Failure")
-            return True
-            
-        if self.state.seal_wear > self.seal_wear_trip_threshold:
-            self._trip_pump("Seal Failure")
-            return True
-            
-        # Seal leakage limit
-        if self.seal_leakage > self.seal_leakage_trip_threshold:
-            self._trip_pump("Excessive Seal Leakage")
-            return True
-            
-        # Combined wear threshold
-        total_wear = (self.state.impeller_wear + 
-                     self.state.bearing_wear + 
-                     self.state.seal_wear)
-        if total_wear > self.combined_wear_trip_threshold:
-            self._trip_pump("Combined Wear Limit")
-            return True
-            
-        # Performance degradation threshold
-        efficiency_loss = (1.0 - self.state.efficiency_factor) * 100.0
-        if efficiency_loss > self.performance_degradation_trip_threshold:
-            self._trip_pump("Performance Degradation")
-            return True
-            
-        return False
-    
-    def _check_oil_level_trips(self):
-        """Check oil level-related trip conditions"""
-        # Very low oil level - immediate trip
-        if self.state.oil_level < 10.0:  # Below 10%
-            self._trip_pump("Very Low Oil Level")
-            return True
-        
-        # Low oil level - trip if running (allow startup with low oil)
-        if (self.state.status == PumpStatus.RUNNING and 
-            self.state.oil_level < 20.0):  # Below 20%
-            self._trip_pump("Low Oil Level")
-            return True
-        
-        # High oil level - overfill protection
-        if self.state.oil_level > 105.0:  # Above 105% (impossible overfill)
-            self._trip_pump("Oil System Overfill")
-            return True
-        
-        return False
     
     def set_flow_demand(self, flow_demand: float):
         """Set flow demand from level control system"""
@@ -441,7 +382,23 @@ class FeedwaterPump(BasePump):
         self._apply_performance_degradation()
         self._simulate_sensors(dt, system_conditions)
         
-        # Add enhanced diagnostics to result
+        # Add enhanced diagnostics to result - get from lubrication system where applicable
+        impeller_wear = self.lubrication_system.component_wear.get('pump_bearings', 0.0) if hasattr(self, 'lubrication_system') else 0.0
+        bearing_wear = max(
+            self.lubrication_system.component_wear.get('motor_bearings', 0.0),
+            self.lubrication_system.component_wear.get('pump_bearings', 0.0),
+            self.lubrication_system.component_wear.get('thrust_bearing', 0.0)
+        ) if hasattr(self, 'lubrication_system') else 0.0
+        seal_wear = self.lubrication_system.component_wear.get('mechanical_seals', 0.0) if hasattr(self, 'lubrication_system') else 0.0
+        
+        oil_level = self.lubrication_system.oil_level if hasattr(self, 'lubrication_system') else 100.0
+        oil_temperature = self.lubrication_system.oil_temperature if hasattr(self, 'lubrication_system') else 40.0
+        bearing_temperature = oil_temperature + 5.0  # Bearing temp slightly higher than oil temp
+        
+        flow_factor = self.lubrication_system.pump_flow_factor if hasattr(self, 'lubrication_system') else 1.0
+        efficiency_factor = self.lubrication_system.pump_efficiency_factor if hasattr(self, 'lubrication_system') else 1.0
+        head_factor = self.lubrication_system.pump_head_factor if hasattr(self, 'lubrication_system') else 1.0
+        
         result.update({
             # Cavitation diagnostics
             'cavitation_intensity': self.state.cavitation_intensity,
@@ -449,25 +406,25 @@ class FeedwaterPump(BasePump):
             'cavitation_time': self.state.cavitation_time,
             'cavitation_noise_level': self.state.cavitation_noise_level,
             
-            # Mechanical wear diagnostics
-            'impeller_wear': self.state.impeller_wear,
-            'bearing_wear': self.state.bearing_wear,
-            'seal_wear': self.state.seal_wear,
+            # Mechanical wear diagnostics - from lubrication system
+            'impeller_wear': impeller_wear,
+            'bearing_wear': bearing_wear,
+            'seal_wear': seal_wear,
             'seal_leakage': self.seal_leakage,
             
-            # Performance factors
-            'flow_factor': self.state.flow_factor,
-            'efficiency_factor': self.state.efficiency_factor,
-            'head_factor': self.state.head_factor,
+            # Performance factors - from lubrication system
+            'flow_factor': flow_factor,
+            'efficiency_factor': efficiency_factor,
+            'head_factor': head_factor,
             
             # Enhanced sensor readings
             'npsh_available': self.state.npsh_available,
             'suction_pressure': self.state.suction_pressure,
             'discharge_pressure': self.state.discharge_pressure,
             'differential_pressure': self.state.differential_pressure,
-            'oil_level': self.state.oil_level,
-            'oil_temperature': self.state.oil_temperature,
-            'bearing_temperature': self.state.bearing_temperature,
+            'oil_level': oil_level,
+            'oil_temperature': oil_temperature,
+            'bearing_temperature': bearing_temperature,
             'motor_temperature': self.state.motor_temperature,
             'motor_current': self.state.motor_current,
             'motor_voltage': self.state.motor_voltage,
@@ -523,296 +480,167 @@ class FeedwaterPump(BasePump):
             self.state.cavitation_time = max(0.0, self.state.cavitation_time - dt * 6.0)
     
     def _simulate_mechanical_wear(self, dt: float, system_conditions: Dict):
-        """Simulate detailed mechanical wear with realistic physics and chemistry effects"""
+        """
+        Simplified mechanical wear simulation - DRY principle applied
+        
+        Most wear calculations now handled by lubrication system.
+        This method only handles pump-specific hydraulic effects.
+        """
         if self.state.status != PumpStatus.RUNNING:
             return
         
-        # Load factors for wear calculation
-        flow_factor = (self.state.flow_rate / self.config.rated_flow) ** 1.5
-        speed_factor = (self.state.speed_percent / 100.0) ** 2
-        
-        # ENHANCED: Get chemistry parameters from water chemistry system
-        chemistry_params = self._get_chemistry_degradation_factors(system_conditions)
-        
-        # === IMPELLER WEAR (Enhanced with chemistry effects) ===
-        # Base wear rate modified by chemistry
-        chemistry_impeller_factor = (
-            chemistry_params['water_aggressiveness'] *  # General aggressiveness
-            chemistry_params['particle_content'] *      # Abrasive particles
-            chemistry_params['corrosion_factor']        # Corrosion acceleration
-        )
-        
-        impeller_wear_rate = (self.base_impeller_wear_rate * 
-                             flow_factor * speed_factor * chemistry_impeller_factor)
-        self.state.impeller_wear += impeller_wear_rate * dt / 60.0  # Convert minutes to hours
-        
-        # === BEARING WEAR (Enhanced with chemistry effects) ===
-        load_factor = (self.state.power_consumption / self.config.rated_power) ** 1.2
-        temp_factor = max(1.0, (self.state.bearing_temperature - 60.0) / 30.0)
-        oil_factor = max(1.0, (100.0 - self.state.oil_level) / 50.0)
-        
-        # Chemistry effects on bearing wear
-        chemistry_bearing_factor = (
-            chemistry_params['corrosion_factor'] *      # Corrosion of bearing materials
-            chemistry_params['scaling_factor']          # Scale formation affecting lubrication
-        )
-        
-        bearing_wear_rate = (self.base_bearing_wear_rate * 
-                           load_factor * temp_factor * oil_factor * chemistry_bearing_factor)
-        self.state.bearing_wear += bearing_wear_rate * dt / 60.0  # Convert minutes to hours
-        
-        # === SEAL WEAR (Enhanced with chemistry effects) ===
-        pressure_factor = (self.state.differential_pressure / 7.5) ** 1.5
-        temp_factor_seal = max(1.0, (self.state.oil_temperature - 50.0) / 40.0)
-        
-        # Chemistry effects on seal wear
-        chemistry_seal_factor = (
-            chemistry_params['corrosion_factor'] *      # Seal material corrosion
-            chemistry_params['ph_factor']               # pH effects on elastomers
-        )
-        
-        seal_wear_rate = (self.base_seal_wear_rate * 
-                         pressure_factor * temp_factor_seal * chemistry_seal_factor)
-        self.state.seal_wear += seal_wear_rate * dt / 60.0  # Convert minutes to hours
-        
-        # === SEAL LEAKAGE (Enhanced with chemistry effects) ===
-        # Base leakage plus chemistry-accelerated degradation
-        base_leakage = self.state.seal_wear * 0.5  # L/min per % wear
-        chemistry_leakage_factor = chemistry_params['scaling_factor']  # Scale affects sealing
-        self.state.seal_leakage = base_leakage * chemistry_leakage_factor
-        
-        # Oil level decreases due to seal leakage
-        if self.state.seal_leakage > 0:
-            oil_loss_rate = self.state.seal_leakage * dt / 100.0
-            self.state.oil_level = max(0.0, self.state.oil_level - oil_loss_rate)
-        
-        # === VIBRATION EFFECTS FROM WEAR (Enhanced) ===
-        wear_vibration = (self.state.bearing_wear * 0.1 + 
-                         self.state.impeller_wear * 0.05)
-        
-        # Chemistry can increase vibration through deposits and corrosion
-        chemistry_vibration = chemistry_params['scaling_factor'] * 0.5
-        self.state.vibration_level += wear_vibration + chemistry_vibration
+        # Only handle cavitation damage (pump hydraulic specific)
+        # All other wear is handled by lubrication system
+        if self.state.cavitation_intensity > 0.1:
+            damage_rate = (self.state.cavitation_intensity ** 2) * dt / 60.0
+            self.state.cavitation_damage += damage_rate
     
-    def _get_chemistry_degradation_factors(self, system_conditions: Dict) -> Dict[str, float]:
-        """
-        Get chemistry-based degradation factors from water chemistry system
-        
-        Returns:
-            Dictionary with chemistry factors affecting pump performance
-        """
-        # Get water chemistry parameters from system conditions
-        water_chemistry = system_conditions.get('water_chemistry_params', {})
-        
-        # If no chemistry data provided, use defaults
-        if not water_chemistry:
-            return {
-                'water_aggressiveness': 1.0,
-                'particle_content': 1.0,
-                'corrosion_factor': 1.0,
-                'scaling_factor': 1.0,
-                'ph_factor': 1.0
-            }
-        
-        # Extract chemistry parameters (these come from WaterChemistry.get_pump_degradation_parameters())
-        water_aggressiveness = water_chemistry.get('water_aggressiveness', 1.0)
-        particle_content = water_chemistry.get('particle_content', 1.0)
-        ph = water_chemistry.get('ph', 9.2)
-        scaling_tendency = water_chemistry.get('scaling_tendency', 0.0)
-        corrosion_tendency = water_chemistry.get('corrosion_tendency', 7.0)
-        
-        # Calculate degradation factors
-        
-        # pH factor (optimal around 9.2 for PWR)
-        ph_factor = 1.0 + 0.3 * abs(ph - 9.2)  # Increases wear as pH deviates from optimal
-        
-        # Scaling factor (positive LSI increases scaling)
-        scaling_factor = max(1.0, 1.0 + scaling_tendency * 0.2)  # LSI > 0 increases scaling
-        
-        # Corrosion factor (higher RSI indicates more corrosive)
-        # RSI < 6.5 is corrosive, RSI > 7.5 is scale-forming
-        if corrosion_tendency < 6.5:
-            corrosion_factor = 1.0 + (6.5 - corrosion_tendency) * 0.1  # More corrosive
-        elif corrosion_tendency > 7.5:
-            corrosion_factor = 1.0 + (corrosion_tendency - 7.5) * 0.05  # Scale-forming
-        else:
-            corrosion_factor = 1.0  # Balanced
-        
-        return {
-            'water_aggressiveness': water_aggressiveness,
-            'particle_content': particle_content,
-            'corrosion_factor': corrosion_factor,
-            'scaling_factor': scaling_factor,
-            'ph_factor': ph_factor
-        }
+    # REMOVED: _get_chemistry_degradation_factors() - DRY principle applied
+    # Chemistry degradation logic moved to lubrication system's calculate_chemistry_degradation_factors()
+    # This eliminates duplicate chemistry calculations and follows single source of truth
     
     def _apply_performance_degradation(self):
-        """Apply performance degradation based on cavitation damage and mechanical wear"""
-        # === CAVITATION EFFECTS ===
-        cavitation_efficiency_loss = min(0.3, self.state.cavitation_damage * 0.01)
-        cavitation_flow_loss = cavitation_efficiency_loss * 0.5
+        """
+        Simplified performance degradation - DRY principle applied
         
-        # === WEAR EFFECTS ===
-        impeller_flow_loss = self.state.impeller_wear * 0.02
-        impeller_efficiency_loss = self.state.impeller_wear * 0.015
-        bearing_efficiency_loss = self.state.bearing_wear * 0.01
+        Performance factors now calculated entirely by lubrication system.
+        This method only handles pump-specific hydraulic effects not covered by lubrication.
         
-        # === COMBINED DEGRADATION FACTORS ===
-        total_flow_loss = cavitation_flow_loss + impeller_flow_loss
-        total_efficiency_loss = (cavitation_efficiency_loss + 
-                               impeller_efficiency_loss + 
-                               bearing_efficiency_loss)
-        
-        # Update performance factors
-        self.state.flow_factor = max(0.5, 1.0 - total_flow_loss)
-        self.state.efficiency_factor = max(0.5, 1.0 - total_efficiency_loss)
-        self.state.head_factor = max(0.7, 1.0 - impeller_flow_loss * 0.8)
+        All mechanical wear, chemistry effects, and performance factor calculations
+        are now handled by the lubrication system's comprehensive update method.
+        """
+        # Performance factors are now calculated by lubrication system
+        # No duplicate calculations needed here
+        pass
     
     def _simulate_sensors(self, dt: float, system_conditions: Dict):
-        """Simulate sensor readings based on current state and system inputs"""
-        # Oil level drops slowly while running (ensure proper bounds)
-        if self.state.status == PumpStatus.RUNNING:
-            self.state.oil_level = max(0.0, self.state.oil_level - 0.01)
+        """
+        Simulate sensor readings with DRY-compliant delegation architecture
         
-        # Apply strict bounds checking to oil level (0-100%)
-        self.state.oil_level = min(100.0, max(0.0, self.state.oil_level))
+        ARCHITECTURE:
+        - Hydraulic sensors: Calculated locally (pump responsibility)
+        - Electrical sensors: Calculated locally (pump motor responsibility)
+        - Lubrication sensors: Accessed directly from lubrication system when needed
+        - Vibration sensors: Hybrid approach combining pump and lubrication effects
+        - No duplicate state management or state copying
+        """
         
-        # Load factor for thermal and electrical simulation
+        # === PUMP-SPECIFIC HYDRAULIC SENSORS (Local Responsibility) ===
+        self._simulate_hydraulic_sensors(system_conditions)
+        
+        # === ELECTRICAL SENSORS (Local Responsibility) ===  
+        self._simulate_electrical_sensors(system_conditions)
+        
+        # === VIBRATION SENSORS (Hybrid - Base + Lubrication Effects) ===
+        self._simulate_vibration_sensors()
+        
+        # NOTE: Lubrication sensors (oil_level, oil_temperature, bearing_temperature,
+        # component_wear, performance_factors) are accessed directly from lubrication_system
+        # when needed. No state copying or duplication.
+    
+    def _simulate_hydraulic_sensors(self, system_conditions: Dict):
+        """
+        Simulate pump-specific hydraulic sensor readings
+        
+        These sensors are pump-specific and not managed by lubrication system:
+        - Suction/discharge pressures
+        - Differential pressure  
+        - NPSH calculations
+        - Cavitation effects on hydraulic performance
+        """
+        # Suction pressure from system conditions
+        self.state.suction_pressure = system_conditions.get('suction_pressure', 0.5)
+        
+        # Discharge pressure from system conditions
+        self.state.discharge_pressure = system_conditions.get('discharge_pressure', 8.0)
+        
+        # Calculate differential pressure
+        self.state.differential_pressure = self.state.discharge_pressure - self.state.suction_pressure
+        
+        # NPSH calculation (pump hydraulic responsibility)
+        feedwater_temp = system_conditions.get('feedwater_temperature', 227.0)
+        vapor_pressure = self._vapor_pressure(feedwater_temp)
+        npsh_available = (self.state.suction_pressure - vapor_pressure) * 100.0  # Convert to meters
+        self.state.npsh_available = max(0, npsh_available)
+    
+    def _simulate_electrical_sensors(self, system_conditions: Dict):
+        """
+        Simulate electrical sensor readings (pump motor responsibility)
+        
+        These sensors are specific to the pump motor and electrical system:
+        - Motor current based on hydraulic load
+        - Motor voltage (typically constant)
+        - Motor temperature (electrical heating effects only)
+        """
+        # Load factor for electrical calculations
         load_factor = self.state.flow_rate / self.config.rated_flow if self.config.rated_flow > 0 else 0.0
         
-        # === ENHANCED BEARING TEMPERATURE PHYSICS WITH THERMAL TIME CONSTANTS ===
-        # FIXED: Realistic thermal model with proper time constants and additive effects
+        # Motor current based on hydraulic load
+        base_current = 200.0  # Base current at no load
+        load_current = 100.0 * load_factor  # Additional current from hydraulic load
+        self.state.motor_current = base_current + load_current
         
-        # Target steady-state temperature based on operating conditions
-        base_temp = 35.0 + 15.0 * load_factor  # 35-50°C range for normal operation
+        # Motor voltage (typically constant for grid-connected motors)
+        self.state.motor_voltage = 6.6  # kV constant
         
-        # FRICTION-RELATED FACTORS (additive - more realistic than multiplicative)
-        # Wear factor - linear relationship for small wear amounts
-        wear_temp_increase = (self.state.bearing_wear / 100.0) * 20.0  # Max +20°C at 100% wear
-        
-        # Lubrication effectiveness factor (additive, not multiplicative)
-        if hasattr(self, 'lubrication_system'):
-            lub_effectiveness = getattr(self.lubrication_system, 'lubrication_effectiveness', 1.0)
-            # Poor lubrication adds temperature, but not dramatically
-            lub_temp_increase = (1.0 - lub_effectiveness) * 15.0  # Max +15°C for poor lubrication
-        else:
-            lub_temp_increase = 0.0
-        
-        # Target temperature (steady-state)
-        target_temp = base_temp + wear_temp_increase + lub_temp_increase
-        
-        # THERMAL TIME CONSTANTS (dt is in MINUTES from main simulator)
-        # Bearings have thermal mass and don't heat up instantly
-        thermal_time_constant = 15.0  # minutes - realistic bearing thermal time constant
-        
-        # Exponential approach to target temperature: T(t) = T_target + (T_initial - T_target) * exp(-t/τ)
-        # Rearranged: T_new = T_current + (T_target - T_current) * (1 - exp(-dt/τ))
-        import math
-        temp_change_rate = (target_temp - self.state.bearing_temperature) * (1.0 - math.exp(-dt / thermal_time_constant))
-        
-        # Apply maximum temperature change rate limit (safety check)
-        max_temp_change_per_minute = 2.0  # °C/minute maximum change rate
-        if abs(temp_change_rate) > max_temp_change_per_minute:
-            temp_change_rate = math.copysign(max_temp_change_per_minute, temp_change_rate)
-        
-        # Calculate new bearing temperature
-        new_bearing_temp = self.state.bearing_temperature + temp_change_rate
-        
-        # HEAT REMOVAL FACTORS (additive - affect heat transfer/accumulation)
-        # Oil condition factor (low oil level reduces heat removal capacity)
-        # 100% oil = no penalty, 50% oil = +4°C, 20% oil = +8°C penalty
-        oil_cooling_penalty = max(0, (100.0 - self.state.oil_level) / 100.0) * 8.0  # Max +8°C
-        
-        # Oil contamination factor (contaminated oil reduces heat transfer efficiency)
-        if hasattr(self, 'lubrication_system'):
-            # oil_contamination_level in ppm, normal < 50 ppm, high > 200 ppm
-            contamination_ppm = getattr(self.lubrication_system, 'oil_contamination_level', 25.0)
-            contamination_penalty = min(3.0, contamination_ppm / 50.0)  # Max +3°C
-        else:
-            contamination_penalty = 0.0
-        
-        # Apply oil cooling and contamination penalties to the new temperature
-        final_bearing_temp = new_bearing_temp + oil_cooling_penalty + contamination_penalty
-        
-        # Set the final bearing temperature
-        self.state.bearing_temperature = final_bearing_temp
-        
-        # Ensure reasonable temperature bounds (bearing failure occurs around 150°C)
-        self.state.bearing_temperature = min(150.0, self.state.bearing_temperature)
-        
-        # Motor temperature (less affected by bearing wear, more by electrical load)
-        motor_base_temp = 60.0 + 30.0 * load_factor
-        motor_cooling_factor = 1.0 + max(0, (100.0 - self.state.oil_level) / 200.0) * 0.1  # Minor oil cooling effect
-        self.state.motor_temperature = motor_base_temp * motor_cooling_factor
-        
-        # Vibration Level (mm/s) - base vibration plus wear effects
-        base_vibration = 1.0 + 0.05 * self.state.speed_percent
-        self.state.vibration_level = base_vibration
-        
-        # Electrical Load (A)
-        self.state.motor_current = 200.0 + 100.0 * load_factor
-        self.state.motor_voltage = 6.6  # constant
-        
-        # Hydraulic Conditions (MPa)
-        self.state.discharge_pressure = system_conditions.get("discharge_pressure", 8.0)
-        self.state.differential_pressure = self.state.discharge_pressure - self.state.suction_pressure
+        # Motor temperature (electrical heating only - no lubrication effects)
+        # Lubrication system handles bearing temperature; this is winding temperature
+        motor_base_temp = 60.0  # Base winding temperature
+        electrical_heating = 20.0 * load_factor  # Electrical losses heating (reduced from 30.0)
+        self.state.motor_temperature = motor_base_temp + electrical_heating
     
-    def sync_oil_level_to_lubrication(self):
-        """Sync pump oil level to lubrication system"""
-        if hasattr(self, 'lubrication_system'):
-            self.lubrication_system.oil_level = self.state.oil_level
-            print(f"SYNC: {self.config.pump_id} pump oil level {self.state.oil_level}% → lubrication system")
-
-    def sync_oil_level_from_lubrication(self):
-        """Sync lubrication system oil level to pump"""
-        if hasattr(self, 'lubrication_system'):
-            old_level = self.state.oil_level
-            self.state.oil_level = self.lubrication_system.oil_level
-            if abs(old_level - self.state.oil_level) > 0.1:  # Only log significant changes
-                print(f"SYNC: {self.config.pump_id} lubrication system {self.lubrication_system.oil_level}% → pump oil level")
-
-    def sync_oil_levels_bidirectional(self, source: str = "auto"):
+    
+    def _simulate_vibration_sensors(self):
         """
-        Ensure pump and lubrication system oil levels are synchronized
+        Simulate vibration sensors with hybrid approach
         
-        Args:
-            source: "pump", "lubrication", or "auto" to determine sync direction
+        HYBRID APPROACH:
+        - Base mechanical vibration: Calculated locally from pump operation
+        - Lubrication-induced vibration: From lubrication system wear effects
+        - Cavitation-induced vibration: From pump hydraulic effects
+        - Combined signature: Sum of all vibration sources
         """
-        if not hasattr(self, 'lubrication_system'):
-            return
-            
-        pump_level = self.state.oil_level
-        lub_level = self.lubrication_system.oil_level
+        # Base mechanical vibration from pump operation
+        base_vibration = 1.0 + 0.05 * self.state.speed_percent  # Speed-dependent base vibration
         
-        # If levels are already in sync, no action needed
-        if abs(pump_level - lub_level) < 0.01:
-            return
-            
-        if source == "pump":
-            # Pump state changed, sync to lubrication
-            self.sync_oil_level_to_lubrication()
-        elif source == "lubrication":
-            # Lubrication system changed, sync to pump
-            self.sync_oil_level_from_lubrication()
-        else:
-            # Auto-detect: use the higher value (assumes recent maintenance or top-off)
-            if pump_level > lub_level:
-                self.sync_oil_level_to_lubrication()
-            else:
-                self.sync_oil_level_from_lubrication()
+        # Lubrication-induced vibration (from bearing wear, oil quality, etc.)
+        lubrication_vibration = 0.0
+        if hasattr(self, 'lubrication_system'):
+            lub_state = self.lubrication_system.get_state_dict()
+            lubrication_vibration = lub_state.get('vibration_increase', 0.0)
+        
+        # Cavitation-induced vibration (pump hydraulic responsibility)
+        cavitation_vibration = getattr(self.state, 'cavitation_intensity', 0.0) * 2.0
+        
+        # Combined vibration signature
+        self.state.vibration_level = base_vibration + lubrication_vibration + cavitation_vibration
+        
+        # Ensure reasonable bounds
+        self.state.vibration_level = max(0.5, min(15.0, self.state.vibration_level))
+    
+    # REMOVED: All bidirectional sync methods eliminated
+    # Following DRY principles - states now live in single location (lubrication system)
+    # Pump can directly access lubrication system data without sync complexity
 
     def perform_maintenance(self, maintenance_type: str = "general", **kwargs) -> Dict[str, Any]:
         """
-        Perform maintenance on this individual pump
+        Clean maintenance dispatcher that delegates to lubrication system
         
         Args:
-            maintenance_type: Type of maintenance to perform
+            maintenance_type: Type of maintenance to perform (decided by orchestrator)
             **kwargs: Additional maintenance parameters
             
         Returns:
             Dictionary with maintenance results compatible with MaintenanceResult
         """
-        # Map maintenance types to specific actions
+        # Delegate to lubrication system - orchestrator already made the decision
+        if hasattr(self, 'lubrication_system'):
+            return self.lubrication_system.perform_maintenance(
+                maintenance_type=maintenance_type,
+                **kwargs
+            )
+        
+        # Fallback to individual pump maintenance methods if no lubrication system
         if maintenance_type == "oil_change":
             return self._perform_oil_change()
         elif maintenance_type == "oil_top_off":
@@ -838,166 +666,124 @@ class FeedwaterPump(BasePump):
             return self._perform_general_maintenance()
     
     def _perform_oil_change(self) -> Dict[str, Any]:
-        """Perform complete oil change - Enhanced to use lubrication system"""
-        # Delegate to lubrication system if available
+        """Perform complete oil change - Delegate to lubrication system (no sync needed)"""
+        # Delegate to comprehensive lubrication system maintenance
         if hasattr(self, 'lubrication_system'):
-            # Call the lubrication system's oil change method
-            lub_results = self.lubrication_system.perform_maintenance("oil_change")
-            
-            # Sync pump state with lubrication system results
-            self.state.oil_level = self.lubrication_system.oil_level
-            self.state.oil_temperature = self.lubrication_system.oil_temperature
-            
-            # Ensure bidirectional sync
-            self.sync_oil_levels_bidirectional("lubrication")
-            
-            # Return comprehensive lubrication system results
-            return lub_results
+            # Call the lubrication system's comprehensive oil change method
+            return self.lubrication_system.perform_maintenance("oil_change")
         else:
-            # Fallback to basic pump-level oil change (legacy behavior)
-            self.state.oil_level = 100.0
-            self.state.oil_temperature = 40.0
-            self.sync_oil_levels_bidirectional("pump")
+            # Fallback for systems without lubrication integration
             return {
                 'success': True,
                 'duration_hours': 2.0,
                 'work_performed': f"Basic oil change on {self.config.pump_id}",
                 'findings': "Oil level restored (no lubrication system integration)",
-                'effectiveness_score': 0.7,  # Lower effectiveness without proper lubrication system
+                'effectiveness_score': 0.7,
                 'next_maintenance_due': 8760.0
             }
     
     def _perform_oil_top_off(self, target_level: float = 95.0, **kwargs) -> Dict[str, Any]:
-        """Perform oil top-off - Enhanced to use lubrication system"""
-        # Delegate to lubrication system if available
+        """Perform oil top-off - Delegate to lubrication system (no sync needed)"""
+        # Delegate to comprehensive lubrication system maintenance
         if hasattr(self, 'lubrication_system'):
             # Call the lubrication system's oil top-off method
-            lub_results = self.lubrication_system.perform_maintenance("oil_top_off", target_level=target_level, **kwargs)
-            
-            # Sync pump state with lubrication system results
-            self.state.oil_level = self.lubrication_system.oil_level
-            self.state.oil_temperature = self.lubrication_system.oil_temperature
-            
-            # Ensure bidirectional sync
-            self.sync_oil_levels_bidirectional("lubrication")
-            
-            # Return comprehensive lubrication system results
-            return lub_results
+            return self.lubrication_system.perform_maintenance("oil_top_off", target_level=target_level, **kwargs)
         else:
-            # Fallback to basic pump-level oil top-off (legacy behavior)
-            old_level = self.state.oil_level
-            self.state.oil_level = min(100.0, target_level)
-            oil_added = self.state.oil_level - old_level
-            
-            # BIDIRECTIONAL SYNC: Sync pump state change to lubrication system
-            self.sync_oil_levels_bidirectional("pump")
-
+            # Fallback for systems without lubrication integration
             return {
                 'success': True,
                 'duration_hours': 0.5,
                 'work_performed': f"Basic oil top-off on {self.config.pump_id}",
-                'findings': f"Added {oil_added:.1f}% oil, level now {self.state.oil_level:.1f}% (no lubrication system integration)",
-                'effectiveness_score': 0.7  # Lower effectiveness without proper lubrication system
+                'findings': "Oil level restored (no lubrication system integration)",
+                'effectiveness_score': 0.7
             }
     
     def _perform_impeller_inspection(self) -> Dict[str, Any]:
-        """Perform impeller inspection"""
-        wear_before = self.state.impeller_wear
-        
-        # Inspection can detect and partially address minor wear
-        if self.state.impeller_wear > 5.0:
-            self.state.impeller_wear *= 0.9  # 10% improvement from cleaning
-            improvement = wear_before - self.state.impeller_wear
-            findings = f"Impeller wear: {wear_before:.1f}% -> {self.state.impeller_wear:.1f}% (cleaned)"
-            recommendations = ["Monitor impeller wear closely", "Consider replacement if wear exceeds 15%"]
+        """Perform impeller inspection - Delegate to lubrication system (no sync needed)"""
+        # Delegate to comprehensive lubrication system maintenance
+        if hasattr(self, 'lubrication_system'):
+            return self.lubrication_system.perform_maintenance("impeller_inspection")
         else:
-            findings = f"Impeller in good condition, wear: {self.state.impeller_wear:.1f}%"
-            recommendations = ["Continue normal operation"]
-        
-        return {
-            'success': True,
-            'duration_hours': 4.0,
-            'work_performed': f"Impeller inspection on {self.config.pump_id}",
-            'findings': findings,
-            'recommendations': recommendations,
-            'effectiveness_score': 0.9,
-            'next_maintenance_due': 4380.0  # 6 months
-        }
+            # Fallback for systems without lubrication integration
+            return {
+                'success': True,
+                'duration_hours': 4.0,
+                'work_performed': f"Basic impeller inspection on {self.config.pump_id}",
+                'findings': "Impeller inspection completed (no lubrication system integration)",
+                'effectiveness_score': 0.8,
+                'next_maintenance_due': 4380.0
+            }
     
     def _perform_impeller_replacement(self) -> Dict[str, Any]:
-        """Perform impeller replacement"""
-        old_wear = self.state.impeller_wear
-        self.state.impeller_wear = 0.0
-        self.state.flow_factor = 1.0
-        self.state.efficiency_factor = min(1.0, self.state.efficiency_factor + 0.15)
-        
-        return {
-            'success': True,
-            'duration_hours': 8.0,
-            'work_performed': f"Impeller replacement on {self.config.pump_id}",
-            'findings': f"Replaced impeller with {old_wear:.1f}% wear",
-            'performance_improvement': 15.0,  # 15% improvement
-            'effectiveness_score': 1.0,
-            'next_maintenance_due': 17520.0  # 2 years
-        }
+        """Perform impeller replacement - Delegate to lubrication system (no sync needed)"""
+        # Delegate to comprehensive lubrication system maintenance
+        if hasattr(self, 'lubrication_system'):
+            return self.lubrication_system.perform_maintenance("impeller_replacement")
+        else:
+            # Fallback for systems without lubrication integration
+            return {
+                'success': True,
+                'duration_hours': 8.0,
+                'work_performed': f"Basic impeller replacement on {self.config.pump_id}",
+                'findings': "Impeller replaced (no lubrication system integration)",
+                'effectiveness_score': 0.8,
+                'next_maintenance_due': 17520.0
+            }
     
     def _perform_bearing_inspection(self) -> Dict[str, Any]:
-        """Perform bearing inspection"""
-        wear_before = self.state.bearing_wear
-        
-        # Inspection can detect and partially address minor wear
-        if self.state.bearing_wear > 5.0:
-            self.state.bearing_wear *= 0.9  # 10% improvement from cleaning
-            improvement = wear_before - self.state.bearing_wear
-            findings = f"Bearing wear: {wear_before:.1f}% -> {self.state.bearing_wear:.1f}% (cleaned)"
-            recommendations = ["Monitor bearing wear closely", "Consider replacement if wear exceeds 25%"]
+        """Perform bearing inspection - Delegate to lubrication system (no sync needed)"""
+        # Delegate to comprehensive lubrication system maintenance
+        if hasattr(self, 'lubrication_system'):
+            return self.lubrication_system.perform_maintenance("bearing_inspection")
         else:
-            findings = f"Bearings in good condition, wear: {self.state.bearing_wear:.1f}%"
-            recommendations = ["Continue normal operation"]
-        
-        return {
-            'success': True,
-            'duration_hours': 4.0,
-            'work_performed': f"Bearing inspection on {self.config.pump_id}",
-            'findings': findings,
-            'recommendations': recommendations,
-            'effectiveness_score': 0.9,
-            'next_maintenance_due': 4380.0  # 6 months
-        }
+            # Fallback for systems without lubrication integration
+            return {
+                'success': True,
+                'duration_hours': 4.0,
+                'work_performed': f"Basic bearing inspection on {self.config.pump_id}",
+                'findings': "Bearing inspection completed (no lubrication system integration)",
+                'effectiveness_score': 0.8,
+                'next_maintenance_due': 4380.0
+            }
     
     def _perform_bearing_replacement(self) -> Dict[str, Any]:
-        """Perform bearing replacement"""
-        old_wear = self.state.bearing_wear
-        self.state.bearing_wear = 0.0
-        self.state.vibration_level = max(1.0, self.state.vibration_level - 2.0)
-        self.state.efficiency_factor = min(1.0, self.state.efficiency_factor + 0.1)
-        
-        return {
-            'success': True,
-            'duration_hours': 8.0,
-            'work_performed': f"Bearing replacement on {self.config.pump_id}",
-            'findings': f"Replaced bearings with {old_wear:.1f}% wear",
-            'performance_improvement': 10.0,
-            'effectiveness_score': 1.0,
-            'next_maintenance_due': 17520.0  # 2 years
-        }
+        """Perform bearing replacement - Delegate to lubrication system (no sync needed)"""
+        # Delegate to comprehensive lubrication system maintenance
+        if hasattr(self, 'lubrication_system'):
+            # Use lubrication system's comprehensive bearing replacement
+            lub_result = self.lubrication_system.perform_maintenance("bearing_replacement")
+            
+            # Add pump-specific effects (vibration reduction, etc.)
+            self.state.vibration_level = max(1.0, self.state.vibration_level - 2.0)
+            
+            return lub_result
+        else:
+            # Fallback for systems without lubrication integration
+            return {
+                'success': True,
+                'duration_hours': 8.0,
+                'work_performed': f"Basic bearing replacement on {self.config.pump_id}",
+                'findings': "Bearings replaced (no lubrication system integration)",
+                'effectiveness_score': 0.8,
+                'next_maintenance_due': 17520.0
+            }
     
     def _perform_seal_replacement(self) -> Dict[str, Any]:
-        """Perform seal replacement"""
-        old_wear = self.state.seal_wear
-        old_leakage = self.seal_leakage
-        self.state.seal_wear = 0.0
-        self.lubrication_system.seal_leakage_rate = 0.0
-        
-        return {
-            'success': True,
-            'duration_hours': 6.0,
-            'work_performed': f"Seal replacement on {self.config.pump_id}",
-            'findings': f"Replaced seals, eliminated {old_leakage:.2f} L/min leakage",
-            'performance_improvement': 5.0,
-            'effectiveness_score': 1.0,
-            'next_maintenance_due': 8760.0  # 1 year
-        }
+        """Perform seal replacement - Delegate to lubrication system (no sync needed)"""
+        # Delegate to comprehensive lubrication system maintenance
+        if hasattr(self, 'lubrication_system'):
+            # Use lubrication system's comprehensive seal replacement
+            return self.lubrication_system.perform_maintenance("seal_replacement")
+        else:
+            # Fallback for systems without lubrication integration
+            return {
+                'success': True,
+                'duration_hours': 6.0,
+                'work_performed': f"Basic seal replacement on {self.config.pump_id}",
+                'findings': "Seals replaced (no lubrication system integration)",
+                'effectiveness_score': 0.8,
+                'next_maintenance_due': 8760.0
+            }
     
     def _perform_vibration_analysis(self) -> Dict[str, Any]:
         """Perform vibration analysis"""
@@ -1146,40 +932,31 @@ class FeedwaterPump(BasePump):
         self.flow_demand = self.config.rated_flow
         self.auto_level_control = True
         
-        # Sync oil levels after reset
-        #self.sync_oil_levels_bidirectional("pump")
+        # No sync needed - lubrication system is single source of truth
 
     def get_state_dict(self):
+        # Start with pump-specific state (no duplicated values)
         state_dict = {
-            f'flow_rate': self.state.flow_rate,
-            f'power_consumption': self.state.power_consumption,
-            f'speed_percent': self.state.speed_percent,
-            f'status': self.state.status.value,
-            f'available': float(self.state.available),
-            f'trip_active': float(self.state.trip_active),
-            f'npsh_available': self.state.npsh_available,
-            f'cavitation_intensity': self.state.cavitation_intensity,
-            f'impeller_wear': self.state.impeller_wear,
-            f'bearing_wear': self.state.bearing_wear,
-            f'vibration_level': self.state.vibration_level,
-            f'bearing_temperature': self.state.bearing_temperature
+            'flow_rate': self.state.flow_rate,
+            'power_consumption': self.state.power_consumption,
+            'speed_percent': self.state.speed_percent,
+            'status': self.state.status.value,
+            'available': float(self.state.available),
+            'trip_active': float(self.state.trip_active),
+            'npsh_available': self.state.npsh_available,
+            'cavitation_intensity': self.state.cavitation_intensity,
+            'cavitation_damage': self.state.cavitation_damage,
+            'motor_temperature': self.state.motor_temperature,
+            'motor_current': self.state.motor_current,
+            'motor_voltage': self.state.motor_voltage,
+            'vibration_level': self.state.vibration_level
         }
         
-        # Add lubrication system state if available
+        # Merge lubrication system state at the same level (flat merge)
         if hasattr(self, 'lubrication_system'):
             lubrication_state = self.lubrication_system.get_state_dict()
-            state_dict.update({
-                'oil_level': lubrication_state['oil_level'],
-                'oil_temperature': lubrication_state['oil_temperature'],
-                'oil_contamination': lubrication_state['oil_contamination_level'],
-                'efficiency_factor': lubrication_state['efficiency_factor'],
-                'seal_leakage_rate': self.seal_leakage,
-                'vibration_increase': lubrication_state['vibration_increase'],
-                'lubrication_effectiveness': lubrication_state['lubrication_effectiveness'],
-                'system_health_factor': lubrication_state['system_health_factor'],
-                'maintenance_due': lubrication_state['maintenance_due']
-            })
-        
+            state_dict.update(lubrication_state)  # ← Flat merge, not nesting
+
         return state_dict
 
 @dataclass

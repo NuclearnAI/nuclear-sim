@@ -65,6 +65,9 @@ class StateManager(StateCollector):
         self.maintenance_config = None    # Parsed maintenance configuration
         self.threshold_event_subscribers = []  # Callbacks for threshold events
         
+        # Cache orchestrator for performance
+        self._maintenance_orchestrator = None
+        
         print(f"STATE MANAGER: Initialized with maintenance capabilities")
         if config:
             print(f"STATE MANAGER: Configuration provided - will load maintenance settings")
@@ -1197,7 +1200,7 @@ class StateManager(StateCollector):
     
     def _check_maintenance_thresholds(self, timestamp: float, row_data: dict):
         """
-        Check maintenance thresholds during state collection
+        Check maintenance thresholds during state collection with component-level batching
         
         Args:
             timestamp: Current simulation time
@@ -1206,9 +1209,12 @@ class StateManager(StateCollector):
         if not self.maintenance_thresholds:
             return  # No thresholds configured
         
-        violations_found = 0
+        # Step 1: Collect ALL violations by component
+        component_violations = {}  # component_id -> [violation_data, ...]
         
         for component_id, thresholds in self.maintenance_thresholds.items():
+            violations = []
+            
             for param_name, threshold_config in thresholds.items():
                 # Find the parameter value in row_data
                 param_value = self._find_parameter_in_row_data(component_id, param_name, row_data)
@@ -1216,12 +1222,34 @@ class StateManager(StateCollector):
                 if param_value is not None:
                     # Check if threshold is violated
                     if self._check_threshold_condition(param_value, threshold_config):
-                        # Emit threshold violation event
-                        self._emit_threshold_violation(component_id, param_name, param_value, threshold_config, timestamp)
-                        violations_found += 1
+                        violation_data = {
+                            'parameter': param_name,
+                            'value': param_value,
+                            'threshold': threshold_config.get('threshold'),
+                            'comparison': threshold_config.get('comparison'),
+                            'action': threshold_config.get('action'),
+                            'priority': threshold_config.get('priority', 'MEDIUM')
+                        }
+                        violations.append(violation_data)
+            
+            # Store violations for this component if any found
+            if violations:
+                component_violations[component_id] = violations
         
-        if violations_found > 0:
-            print(f"STATE MANAGER: 🚨 Found {violations_found} threshold violations at time {timestamp:.2f}")
+        # Step 2: Process each component's violations through orchestrator
+        total_violations = sum(len(violations) for violations in component_violations.values())
+        
+        for component_id, violations in component_violations.items():
+            # Get orchestrated action for ALL violations of this component
+            optimal_action = self._get_orchestrated_action_for_violations(
+                component_id, violations, timestamp
+            )
+            
+            # Emit single threshold event with optimal action
+            self._emit_batched_threshold_violation(component_id, violations, optimal_action, timestamp)
+        
+        if total_violations > 0:
+            print(f"STATE MANAGER: 🚨 Found {total_violations} threshold violations across {len(component_violations)} components at time {timestamp:.2f}")
     
     def _find_parameter_in_row_data(self, component_id: str, param_name: str, row_data: dict) -> Optional[float]:
         """
@@ -1304,13 +1332,20 @@ class StateManager(StateCollector):
             threshold_config: Threshold configuration
             timestamp: Current simulation time
         """
+        # CRITICAL FIX: Call orchestrator to get optimal action
+        original_action = threshold_config.get('action')
+        optimal_action = self._get_orchestrated_action(
+            component_id, param_name, value, threshold_config, original_action
+        )
+        
         violation_data = {
             'component_id': component_id,
             'parameter': param_name,
             'value': value,
             'threshold': threshold_config.get('threshold'),
             'comparison': threshold_config.get('comparison'),
-            'action': threshold_config.get('action'),
+            'action': optimal_action,  # Use orchestrator's decision!
+            'original_action': original_action,  # Keep for reference
             'priority': threshold_config.get('priority', 'MEDIUM'),
             'timestamp': timestamp
         }
@@ -1327,7 +1362,146 @@ class StateManager(StateCollector):
             except Exception as e:
                 print(f"STATE MANAGER: ❌ Error in threshold event callback: {e}")
         
-        print(f"STATE MANAGER: 🚨 Threshold violation: {component_id}.{param_name} = {value:.2f} {threshold_config.get('comparison')} {threshold_config.get('threshold')} -> {threshold_config.get('action')}")
+        # Show orchestration result in log
+        if optimal_action != original_action:
+            print(f"STATE MANAGER: 🚨 Threshold violation: {component_id}.{param_name} = {value:.2f} {threshold_config.get('comparison')} {threshold_config.get('threshold')} -> {original_action} ➜ {optimal_action} (orchestrated)")
+        else:
+            print(f"STATE MANAGER: 🚨 Threshold violation: {component_id}.{param_name} = {value:.2f} {threshold_config.get('comparison')} {threshold_config.get('threshold')} -> {optimal_action}")
+    
+    def _get_orchestrated_action(self, component_id: str, param_name: str, value: float, 
+                               threshold_config: dict, original_action: str) -> str:
+        """
+        Get orchestrated maintenance action for a threshold violation
+        
+        Args:
+            component_id: Component ID
+            param_name: Parameter name
+            value: Current parameter value
+            threshold_config: Threshold configuration
+            original_action: Original action from threshold config
+            
+        Returns:
+            Optimal action determined by orchestrator
+        """
+        try:
+            # Use cached orchestrator or create once
+            if self._maintenance_orchestrator is None:
+                from systems.maintenance.maintenance_orchestrator import get_maintenance_orchestrator
+                self._maintenance_orchestrator = get_maintenance_orchestrator()
+            
+            # Create violation data for orchestrator
+            violation_data = {
+                'parameter': param_name,
+                'value': value,
+                'action': original_action,
+                'threshold': threshold_config.get('threshold'),
+                'comparison': threshold_config.get('comparison')
+            }
+            
+            # Call orchestrator for decision (decision_only mode)
+            decision = self._maintenance_orchestrator.orchestrate_maintenance(
+                component=None,
+                component_id=component_id,
+                violations=[violation_data],
+                requested_action=original_action,
+                decision_only=True
+            )
+            
+            return decision.get('selected_action', original_action)
+            
+        except Exception as e:
+            print(f"STATE MANAGER: ⚠️ Orchestrator call failed for {component_id}: {e}")
+            return original_action  # Fallback to original action
+    
+    def _get_orchestrated_action_for_violations(self, component_id: str, violations: List[dict], timestamp: float) -> str:
+        """
+        Get orchestrated maintenance action for multiple violations of a component
+        
+        Args:
+            component_id: Component ID
+            violations: List of violation data dictionaries
+            timestamp: Current simulation time
+            
+        Returns:
+            Optimal action determined by orchestrator
+        """
+        try:
+            # Use cached orchestrator or create once
+            if self._maintenance_orchestrator is None:
+                from systems.maintenance.maintenance_orchestrator import get_maintenance_orchestrator
+                self._maintenance_orchestrator = get_maintenance_orchestrator()
+            
+            # Determine primary action from violations (highest priority or first one)
+            primary_action = violations[0]['action']  # Default to first violation's action
+            
+            # Call orchestrator for decision with ALL violations (decision_only mode)
+            decision = self._maintenance_orchestrator.orchestrate_maintenance(
+                component=None,
+                component_id=component_id,
+                violations=violations,
+                requested_action=primary_action,
+                decision_only=True
+            )
+            
+            return decision.get('selected_action', primary_action)
+            
+        except Exception as e:
+            print(f"STATE MANAGER: ⚠️ Orchestrator call failed for {component_id}: {e}")
+            # Fallback: return the action from the first violation
+            return violations[0]['action'] if violations else 'routine_maintenance'
+    
+    def _emit_batched_threshold_violation(self, component_id: str, violations: List[dict], optimal_action: str, timestamp: float):
+        """
+        Emit a single threshold violation event for multiple violations with orchestrated action
+        
+        Args:
+            component_id: Component ID
+            violations: List of violation data dictionaries
+            optimal_action: Orchestrated optimal action
+            timestamp: Current simulation time
+        """
+        # Create a summary violation event that represents all violations
+        primary_violation = violations[0]  # Use first violation as primary
+        
+        # Create violation summary
+        violation_summary = f"{len(violations)} violations: " + ", ".join([
+            f"{v['parameter']}={v['value']:.2f}" for v in violations
+        ])
+        
+        # Create combined violation data
+        violation_data = {
+            'component_id': component_id,
+            'parameter': 'multiple_violations',  # Indicate this is a batched event
+            'value': len(violations),  # Number of violations
+            'threshold': violation_summary,  # Summary of all violations
+            'comparison': 'batched',
+            'action': optimal_action,  # Use orchestrator's decision!
+            'original_actions': [v['action'] for v in violations],  # Keep all original actions for reference
+            'violations': violations,  # Include all violation details
+            'priority': max([v['priority'] for v in violations], key=lambda p: {'LOW': 1, 'MEDIUM': 2, 'HIGH': 3, 'CRITICAL': 4, 'EMERGENCY': 5}.get(p, 2)),
+            'timestamp': timestamp
+        }
+        
+        # Store violation for tracking (use primary violation's parameter for key)
+        if component_id not in self.threshold_violations:
+            self.threshold_violations[component_id] = {}
+        
+        # Store under a special key for batched violations
+        self.threshold_violations[component_id]['batched_violations'] = violation_data
+        
+        # Notify all subscribers
+        for callback in self.threshold_event_subscribers:
+            try:
+                callback(violation_data)
+            except Exception as e:
+                print(f"STATE MANAGER: ❌ Error in threshold event callback: {e}")
+        
+        # Show orchestration result in log
+        original_actions = [v['action'] for v in violations]
+        if optimal_action not in original_actions:
+            print(f"STATE MANAGER: 🚨 Batched threshold violations: {component_id} ({len(violations)} violations) -> {original_actions} ➜ {optimal_action} (orchestrated)")
+        else:
+            print(f"STATE MANAGER: 🚨 Batched threshold violations: {component_id} ({len(violations)} violations) -> {optimal_action}")
     
     def get_current_threshold_violations(self) -> dict:
         """
@@ -1545,6 +1719,7 @@ class StateManager(StateCollector):
         self.maintenance_history.clear()
         self.maintenance_config = None
         self.threshold_event_subscribers.clear()
+        self._maintenance_orchestrator = None
         
         # Clear any pending registrations
         if hasattr(self.__class__, '_pending_registrations'):

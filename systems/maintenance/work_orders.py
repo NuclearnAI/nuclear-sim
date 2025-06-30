@@ -228,8 +228,9 @@ class WorkOrder:
             'trigger_id': self.trigger_id,
             'num_actions': len(self.maintenance_actions),
             'num_notes': len(self.notes),
-            # Enhanced simulation time fields
-            'created_sim_time_hours': self.created_date / 60.0,
+            # FIXED: Standardized simulation time fields - all times in minutes
+            'created_sim_time_minutes': self.created_date,  # Primary time field (minutes)
+            'created_sim_time_hours': self.created_date / 60.0,  # Derived for display
             'created_sim_time_formatted': self._format_simulation_time(self.created_date),
             'actual_start_sim_time_formatted': self._format_simulation_time(self.actual_start_date) if self.actual_start_date else None,
             'actual_completion_sim_time_formatted': self._format_simulation_time(self.actual_completion_date) if self.actual_completion_date else None,

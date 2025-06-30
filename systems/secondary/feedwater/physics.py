@@ -188,8 +188,7 @@ class EnhancedFeedwaterPhysics(HeatFlowProvider, ChemistryFlowProvider):
         and applies them to the actual component states. This is critical for
         maintenance scenarios that start with pre-degraded conditions.
         
-        Uses smart parameter application - only applies parameters that actually
-        exist in the target system states.
+        Following DRY principles - applies parameters to single source of truth only.
         """
         ic = self.config.initial_conditions
         
@@ -218,89 +217,11 @@ class EnhancedFeedwaterPhysics(HeatFlowProvider, ChemistryFlowProvider):
                 
                 print(f"  Applying initial conditions to pump {pump_id}:")
                 
-                # === APPLY PARAMETERS THAT EXIST IN PUMP.STATE ===
-                # Basic oil conditions
-                if i < len(ic.pump_oil_levels):
-                    pump.state.oil_level = ic.pump_oil_levels[i]
-                    print(f"    Oil level: {ic.pump_oil_levels[i]}%")
-                
-                if hasattr(ic, 'oil_temperature'):
-                    pump.state.oil_temperature = ic.oil_temperature
-                    print(f"    Oil temperature: {ic.oil_temperature}°C")
-                
-                # Basic mechanical conditions
-                if i < len(ic.bearing_temperatures):
-                    pump.state.bearing_temperature = ic.bearing_temperatures[i]
-                    print(f"    Bearing temperature: {ic.bearing_temperatures[i]}°C")
-                
-                if hasattr(ic, 'motor_temperature') and i < len(ic.motor_temperature):
-                    pump.state.motor_temperature = ic.motor_temperature[i]
-                    print(f"    Motor temperature: {ic.motor_temperature[i]}°C")
-                
-                if i < len(ic.pump_vibrations):
-                    pump.state.vibration_level = ic.pump_vibrations[i]
-                    print(f"    Vibration level: {ic.pump_vibrations[i]} mm/s")
-                
-                # Seal leakage is now handled by lubrication system only
-                if hasattr(pump, 'lubrication_system') and i < len(ic.seal_leakage_rate):
-                    pump.lubrication_system.seal_leakage_rate = ic.seal_leakage_rate[i]
-                    print(f"    Seal leakage: {ic.seal_leakage_rate[i]} L/min (applied to lubrication system)")
-                
-                # Hydraulic conditions
-                if hasattr(ic, 'suction_pressure'):
-                    pump.state.suction_pressure = ic.suction_pressure
-                    print(f"    Suction pressure: {ic.suction_pressure} MPa")
-                
-                if hasattr(ic, 'discharge_pressure'):
-                    pump.state.discharge_pressure = ic.discharge_pressure
-                    print(f"    Discharge pressure: {ic.discharge_pressure} MPa")
-                
-                if hasattr(ic, 'npsh_available') and i < len(ic.npsh_available):
-                    pump.state.npsh_available = ic.npsh_available[i]
-                    print(f"    NPSH available: {ic.npsh_available[i]} m")
-                
-                # Cavitation and wear conditions
-                if hasattr(ic, 'cavitation_intensity') and i < len(ic.cavitation_intensity):
-                    pump.state.cavitation_intensity = ic.cavitation_intensity[i]
-                    print(f"    Cavitation intensity: {ic.cavitation_intensity[i]}")
-                
-                if hasattr(ic, 'cavitation_damage'):
-                    # Use impeller_cavitation_damage if available, otherwise use cavitation_damage
-                    if hasattr(ic, 'impeller_cavitation_damage') and i < len(ic.impeller_cavitation_damage):
-                        pump.state.cavitation_damage = ic.impeller_cavitation_damage[i] * 10.0  # Scale to damage units
-                        print(f"    Cavitation damage: {pump.state.cavitation_damage}")
-                
-                if hasattr(ic, 'impeller_wear') and i < len(ic.impeller_wear):
-                    pump.state.impeller_wear = ic.impeller_wear[i] * 100.0  # Convert fraction to percentage
-                    print(f"    Impeller wear: {pump.state.impeller_wear}%")
-                
-                if hasattr(ic, 'bearing_wear') and i < len(ic.bearing_wear):
-                    pump.state.bearing_wear = ic.bearing_wear[i] * 100.0  # Convert fraction to percentage
-                    print(f"    Bearing wear: {pump.state.bearing_wear}%")
-                
-                if hasattr(ic, 'seal_wear'):
-                    # Use seal_face_wear if available, otherwise use seal_wear
-                    if hasattr(ic, 'seal_face_wear') and i < len(ic.seal_face_wear):
-                        pump.state.seal_wear = ic.seal_face_wear[i] * 100.0  # Convert fraction to percentage
-                        print(f"    Seal wear: {pump.state.seal_wear}%")
-                
-                # Performance degradation factors
-                if i < len(ic.pump_efficiencies):
-                    pump.state.efficiency_factor = ic.pump_efficiencies[i]
-                    print(f"    Efficiency factor: {ic.pump_efficiencies[i]}")
-                
-                if hasattr(ic, 'pump_flow') and i < len(ic.pump_flow):
-                    pump.state.flow_degradation_factor = ic.pump_flow[i]
-                    print(f"    Flow degradation factor: {ic.pump_flow[i]}")
-                
-                if hasattr(ic, 'pump_head') and i < len(ic.pump_head):
-                    pump.state.head_degradation_factor = ic.pump_head[i]
-                    print(f"    Head degradation factor: {ic.pump_head[i]}")
-                
-                # === APPLY TO LUBRICATION SYSTEM ===
+                # === APPLY TO LUBRICATION SYSTEM (SINGLE SOURCE OF TRUTH) ===
                 if hasattr(pump, 'lubrication_system'):
                     print(f"    Applying lubrication system parameters:")
-                    # Oil quality parameters - FIXED: Handle single values (system-wide parameters)
+                    
+                    # Oil quality parameters (system-wide, single values)
                     if hasattr(ic, 'pump_oil_contamination'):
                         pump.lubrication_system.oil_contamination_level = ic.pump_oil_contamination
                         print(f"      Oil contamination: {ic.pump_oil_contamination} ppm")
@@ -313,17 +234,72 @@ class EnhancedFeedwaterPhysics(HeatFlowProvider, ChemistryFlowProvider):
                         pump.lubrication_system.oil_acidity_number = ic.pump_oil_acid_number
                         print(f"      Oil acidity: {ic.pump_oil_acid_number} mg KOH/g")
                     
-                    # Sync oil level to lubrication system
-                    pump.lubrication_system.oil_level = pump.state.oil_level
-                    pump.lubrication_system.oil_temperature = pump.state.oil_temperature
+                    # Oil level and temperature (per-pump)
+                    if i < len(ic.pump_oil_levels):
+                        pump.lubrication_system.oil_level = ic.pump_oil_levels[i]
+                        print(f"      Oil level: {ic.pump_oil_levels[i]}%")
                     
-                    # Apply component wear to lubrication system
-                    if hasattr(ic, 'bearing_wear') and i < len(ic.bearing_wear):
-                        pump.lubrication_system.component_wear['pump_bearings'] = ic.bearing_wear[i] * 100.0
-                        pump.lubrication_system.component_wear['motor_bearings'] = ic.bearing_wear[i] * 100.0 * 0.8
+                    if hasattr(ic, 'oil_temperature'):
+                        pump.lubrication_system.oil_temperature = ic.oil_temperature
+                        print(f"      Oil temperature: {ic.oil_temperature}°C")
                     
-                    if hasattr(ic, 'seal_face_wear') and i < len(ic.seal_face_wear):
-                        pump.lubrication_system.component_wear['mechanical_seals'] = ic.seal_face_wear[i] * 100.0
+                    # Component wear with additive approach
+                    base_bearing_wear = ic.bearing_wear[i] * 100.0 if i < len(ic.bearing_wear) else 0.0
+                    impeller_contribution = ic.impeller_wear[i] * 100.0 if (hasattr(ic, 'impeller_wear') and i < len(ic.impeller_wear)) else 0.0
+                    seal_wear_value = ic.seal_face_wear[i] * 100.0 if (hasattr(ic, 'seal_face_wear') and i < len(ic.seal_face_wear)) else 0.0
+                    
+                    # Apply to lubrication system components
+                    pump.lubrication_system.component_wear['motor_bearings'] = base_bearing_wear
+                    pump.lubrication_system.component_wear['pump_bearings'] = base_bearing_wear + impeller_contribution
+                    pump.lubrication_system.component_wear['thrust_bearing'] = base_bearing_wear
+                    pump.lubrication_system.component_wear['mechanical_seals'] = seal_wear_value
+                    
+                    print(f"      Motor bearing wear: {base_bearing_wear:.1f}%")
+                    print(f"      Pump bearing wear: {base_bearing_wear + impeller_contribution:.1f}% (bearing: {base_bearing_wear:.1f}% + impeller: {impeller_contribution:.1f}%)")
+                    print(f"      Thrust bearing wear: {base_bearing_wear:.1f}%")
+                    print(f"      Seal wear: {seal_wear_value:.1f}%")
+                    
+                    # Seal leakage (per-pump)
+                    if hasattr(ic, 'seal_leakage_rate') and i < len(ic.seal_leakage_rate):
+                        pump.lubrication_system.seal_leakage_rate = ic.seal_leakage_rate[i]
+                        print(f"      Seal leakage: {ic.seal_leakage_rate[i]} L/min")
+                    
+                    # Recalculate performance factors after setting initial conditions
+                    pump.lubrication_system._calculate_pump_performance_factors()
+                    print(f"      Performance factors recalculated")
+                
+                # === APPLY HYDRAULIC CONDITIONS TO PUMP STATE ===
+                # Hydraulic conditions (pump state only)
+                if hasattr(ic, 'suction_pressure'):
+                    pump.state.suction_pressure = ic.suction_pressure
+                    print(f"    Suction pressure: {ic.suction_pressure} MPa")
+                
+                if hasattr(ic, 'discharge_pressure'):
+                    pump.state.discharge_pressure = ic.discharge_pressure
+                    print(f"    Discharge pressure: {ic.discharge_pressure} MPa")
+                
+                if hasattr(ic, 'npsh_available') and i < len(ic.npsh_available):
+                    pump.state.npsh_available = ic.npsh_available[i]
+                    print(f"    NPSH available: {ic.npsh_available[i]} m")
+                
+                # Cavitation conditions (pump hydraulic specific)
+                if hasattr(ic, 'cavitation_intensity') and i < len(ic.cavitation_intensity):
+                    pump.state.cavitation_intensity = ic.cavitation_intensity[i]
+                    print(f"    Cavitation intensity: {ic.cavitation_intensity[i]}")
+                
+                if hasattr(ic, 'impeller_cavitation_damage') and i < len(ic.impeller_cavitation_damage):
+                    pump.state.cavitation_damage = ic.impeller_cavitation_damage[i] * 10.0  # Scale to damage units
+                    print(f"    Cavitation damage: {pump.state.cavitation_damage}")
+                
+                # Motor conditions (pump electrical specific)
+                if hasattr(ic, 'motor_temperature') and i < len(ic.motor_temperature):
+                    pump.state.motor_temperature = ic.motor_temperature[i]
+                    print(f"    Motor temperature: {ic.motor_temperature[i]}°C")
+                
+                # Vibration (pump mechanical specific)
+                if i < len(ic.pump_vibrations):
+                    pump.state.vibration_level = ic.pump_vibrations[i]
+                    print(f"    Vibration level: {ic.pump_vibrations[i]} mm/s")
                 
                 # === APPLY OPERATIONAL CONDITIONS ===
                 # Apply running status and speed
@@ -354,11 +330,8 @@ class EnhancedFeedwaterPhysics(HeatFlowProvider, ChemistryFlowProvider):
                     pump.state.power_consumption = ic.pump_power[i] * design_power
                     print(f"    Power consumption: {pump.state.power_consumption} MW")
                 
-                # === SYNC WITH LUBRICATION SYSTEM ===
-                if hasattr(pump, 'sync_oil_levels_bidirectional'):
-                    pump.sync_oil_levels_bidirectional("pump")
-                elif hasattr(pump, 'sync_oil_level_to_lubrication'):
-                    pump.sync_oil_level_to_lubrication()
+                # NO SYNC NEEDED - unidirectional flow from lubrication system to pump state
+                # The integration function handles this automatically
         
         # === APPLY SYSTEM-LEVEL CONDITIONS ===
         # Apply system-wide parameters to main feedwater physics state
@@ -422,44 +395,224 @@ class EnhancedFeedwaterPhysics(HeatFlowProvider, ChemistryFlowProvider):
         self._validate_initial_conditions_applied()
     
     def _validate_initial_conditions_applied(self):
-        """Validate that initial conditions were properly applied"""
+        """
+        Validate that initial conditions were properly applied to the new DRY architecture
+        
+        This method validates that parameters were applied to the correct systems:
+        - Lubrication system: oil quality, component wear, performance factors
+        - Pump state: hydraulic conditions, operational status
+        - System-wide: lubrication pressure, cooling water temperature
+        """
         ic = self.config.initial_conditions
         
         print(f"FEEDWATER: Validating initial conditions application:")
+        
+        validation_errors = []
+        validation_successes = []
         
         if hasattr(self.pump_system, 'pumps'):
             pump_ids = list(self.pump_system.pumps.keys())
             for i, pump_id in enumerate(pump_ids):
                 pump = self.pump_system.pumps[pump_id]
                 
-                # Validate oil level application
-                if i < len(ic.pump_oil_levels):
-                    expected = ic.pump_oil_levels[i]
-                    actual = pump.state.oil_level
-                    if abs(actual - expected) > 0.1:
-                        print(f"  WARNING: Pump {pump_id} oil level mismatch: expected {expected}%, got {actual}%")
+                # === VALIDATE LUBRICATION SYSTEM PARAMETERS ===
+                if hasattr(pump, 'lubrication_system'):
+                    
+                    # Validate oil quality parameters (system-wide)
+                    if hasattr(ic, 'pump_oil_contamination'):
+                        expected = ic.pump_oil_contamination
+                        actual = pump.lubrication_system.oil_contamination_level
+                        if abs(actual - expected) > 0.1:
+                            validation_errors.append(f"Pump {pump_id} oil contamination mismatch: expected {expected} ppm, got {actual} ppm")
+                        else:
+                            validation_successes.append(f"Pump {pump_id} oil contamination: {actual} ppm")
+                    
+                    if hasattr(ic, 'pump_oil_water_content'):
+                        expected = ic.pump_oil_water_content
+                        actual = pump.lubrication_system.oil_moisture_content
+                        if abs(actual - expected) > 0.01:
+                            validation_errors.append(f"Pump {pump_id} oil moisture mismatch: expected {expected}%, got {actual}%")
+                        else:
+                            validation_successes.append(f"Pump {pump_id} oil moisture: {actual}%")
+                    
+                    if hasattr(ic, 'pump_oil_acid_number'):
+                        expected = ic.pump_oil_acid_number
+                        actual = pump.lubrication_system.oil_acidity_number
+                        if abs(actual - expected) > 0.1:
+                            validation_errors.append(f"Pump {pump_id} oil acidity mismatch: expected {expected} mg KOH/g, got {actual} mg KOH/g")
+                        else:
+                            validation_successes.append(f"Pump {pump_id} oil acidity: {actual} mg KOH/g")
+                    
+                    # Validate oil level (per-pump)
+                    if i < len(ic.pump_oil_levels):
+                        expected = ic.pump_oil_levels[i]
+                        actual = pump.lubrication_system.oil_level
+                        if abs(actual - expected) > 0.1:
+                            validation_errors.append(f"Pump {pump_id} oil level mismatch: expected {expected}%, got {actual}%")
+                        else:
+                            validation_successes.append(f"Pump {pump_id} oil level: {actual}%")
+                    
+                    # Validate component wear with additive approach
+                    if i < len(ic.bearing_wear) and hasattr(ic, 'impeller_wear') and i < len(ic.impeller_wear):
+                        expected_motor_bearing = ic.bearing_wear[i] * 100.0
+                        expected_pump_bearing = (ic.bearing_wear[i] + ic.impeller_wear[i]) * 100.0
+                        expected_thrust_bearing = ic.bearing_wear[i] * 100.0
+                        
+                        actual_motor_bearing = pump.lubrication_system.component_wear.get('motor_bearings', 0.0)
+                        actual_pump_bearing = pump.lubrication_system.component_wear.get('pump_bearings', 0.0)
+                        actual_thrust_bearing = pump.lubrication_system.component_wear.get('thrust_bearing', 0.0)
+                        
+                        if abs(actual_motor_bearing - expected_motor_bearing) > 0.1:
+                            validation_errors.append(f"Pump {pump_id} motor bearing wear mismatch: expected {expected_motor_bearing:.1f}%, got {actual_motor_bearing:.1f}%")
+                        else:
+                            validation_successes.append(f"Pump {pump_id} motor bearing wear: {actual_motor_bearing:.1f}%")
+                        
+                        if abs(actual_pump_bearing - expected_pump_bearing) > 0.1:
+                            validation_errors.append(f"Pump {pump_id} pump bearing wear mismatch: expected {expected_pump_bearing:.1f}%, got {actual_pump_bearing:.1f}%")
+                        else:
+                            validation_successes.append(f"Pump {pump_id} pump bearing wear: {actual_pump_bearing:.1f}% (additive: {ic.bearing_wear[i]*100:.1f}% + {ic.impeller_wear[i]*100:.1f}%)")
+                        
+                        if abs(actual_thrust_bearing - expected_thrust_bearing) > 0.1:
+                            validation_errors.append(f"Pump {pump_id} thrust bearing wear mismatch: expected {expected_thrust_bearing:.1f}%, got {actual_thrust_bearing:.1f}%")
+                        else:
+                            validation_successes.append(f"Pump {pump_id} thrust bearing wear: {actual_thrust_bearing:.1f}%")
+                    
+                    # Validate seal wear
+                    if hasattr(ic, 'seal_face_wear') and i < len(ic.seal_face_wear):
+                        expected_seal_wear = ic.seal_face_wear[i] * 100.0
+                        actual_seal_wear = pump.lubrication_system.component_wear.get('mechanical_seals', 0.0)
+                        if abs(actual_seal_wear - expected_seal_wear) > 0.1:
+                            validation_errors.append(f"Pump {pump_id} seal wear mismatch: expected {expected_seal_wear:.1f}%, got {actual_seal_wear:.1f}%")
+                        else:
+                            validation_successes.append(f"Pump {pump_id} seal wear: {actual_seal_wear:.1f}%")
+                    
+                    # Validate performance factors were recalculated
+                    efficiency_factor = pump.lubrication_system.pump_efficiency_factor
+                    flow_factor = pump.lubrication_system.pump_flow_factor
+                    head_factor = pump.lubrication_system.pump_head_factor
+                    
+                    if not (0.5 <= efficiency_factor <= 1.0):
+                        validation_errors.append(f"Pump {pump_id} invalid efficiency factor: {efficiency_factor}")
                     else:
-                        print(f"  ✓ Pump {pump_id} oil level applied: {actual}%")
-                
-                # Validate bearing temperature application
-                if i < len(ic.bearing_temperatures):
-                    expected = ic.bearing_temperatures[i]
-                    actual = pump.state.bearing_temperature
-                    if abs(actual - expected) > 1.0:
-                        print(f"  WARNING: Pump {pump_id} bearing temp mismatch: expected {expected}°C, got {actual}°C")
+                        validation_successes.append(f"Pump {pump_id} efficiency factor: {efficiency_factor:.3f}")
+                    
+                    if not (0.5 <= flow_factor <= 1.0):
+                        validation_errors.append(f"Pump {pump_id} invalid flow factor: {flow_factor}")
                     else:
-                        print(f"  ✓ Pump {pump_id} bearing temperature applied: {actual}°C")
+                        validation_successes.append(f"Pump {pump_id} flow factor: {flow_factor:.3f}")
+                    
+                    if not (0.5 <= head_factor <= 1.0):
+                        validation_errors.append(f"Pump {pump_id} invalid head factor: {head_factor}")
+                    else:
+                        validation_successes.append(f"Pump {pump_id} head factor: {head_factor:.3f}")
                 
-                # Validate vibration level application
+                else:
+                    validation_errors.append(f"Pump {pump_id} missing lubrication system integration")
+                
+                # === VALIDATE PUMP STATE (HYDRAULIC PARAMETERS ONLY) ===
+                
+                # Validate hydraulic conditions
+                if hasattr(ic, 'suction_pressure'):
+                    expected = ic.suction_pressure
+                    actual = pump.state.suction_pressure
+                    if abs(actual - expected) > 0.01:
+                        validation_errors.append(f"Pump {pump_id} suction pressure mismatch: expected {expected} MPa, got {actual} MPa")
+                    else:
+                        validation_successes.append(f"Pump {pump_id} suction pressure: {actual} MPa")
+                
+                if hasattr(ic, 'discharge_pressure'):
+                    expected = ic.discharge_pressure
+                    actual = pump.state.discharge_pressure
+                    if abs(actual - expected) > 0.01:
+                        validation_errors.append(f"Pump {pump_id} discharge pressure mismatch: expected {expected} MPa, got {actual} MPa")
+                    else:
+                        validation_successes.append(f"Pump {pump_id} discharge pressure: {actual} MPa")
+                
+                # Validate vibration (pump mechanical specific)
                 if i < len(ic.pump_vibrations):
                     expected = ic.pump_vibrations[i]
                     actual = pump.state.vibration_level
                     if abs(actual - expected) > 0.1:
-                        print(f"  WARNING: Pump {pump_id} vibration mismatch: expected {expected} mm/s, got {actual} mm/s")
+                        validation_errors.append(f"Pump {pump_id} vibration mismatch: expected {expected} mm/s, got {actual} mm/s")
                     else:
-                        print(f"  ✓ Pump {pump_id} vibration level applied: {actual} mm/s")
+                        validation_successes.append(f"Pump {pump_id} vibration: {actual} mm/s")
+                
+                # Validate cavitation conditions
+                if hasattr(ic, 'cavitation_intensity') and i < len(ic.cavitation_intensity):
+                    expected = ic.cavitation_intensity[i]
+                    actual = pump.state.cavitation_intensity
+                    if abs(actual - expected) > 0.01:
+                        validation_errors.append(f"Pump {pump_id} cavitation intensity mismatch: expected {expected}, got {actual}")
+                    else:
+                        validation_successes.append(f"Pump {pump_id} cavitation intensity: {actual}")
+                
+                # === VALIDATE OPERATIONAL CONDITIONS ===
+                
+                # Validate running status
+                if i < len(ic.running_pumps):
+                    expected_running = ic.running_pumps[i]
+                    from systems.primary.coolant.pump_models import PumpStatus
+                    actual_running = (pump.state.status == PumpStatus.RUNNING)
+                    if expected_running != actual_running:
+                        validation_errors.append(f"Pump {pump_id} running status mismatch: expected {expected_running}, got {actual_running}")
+                    else:
+                        validation_successes.append(f"Pump {pump_id} running status: {actual_running}")
+                
+                # Validate flow rate
+                if i < len(ic.pump_flows):
+                    expected = ic.pump_flows[i]
+                    actual = pump.state.flow_rate
+                    if abs(actual - expected) > 1.0:  # Allow 1 kg/s tolerance
+                        validation_errors.append(f"Pump {pump_id} flow rate mismatch: expected {expected} kg/s, got {actual} kg/s")
+                    else:
+                        validation_successes.append(f"Pump {pump_id} flow rate: {actual} kg/s")
+        
+        # === VALIDATE SYSTEM-WIDE PARAMETERS ===
+        
+        # Validate system lubrication pressure
+        if hasattr(ic, 'lubrication_system_pressure'):
+            if hasattr(self, 'lubrication_system_pressure'):
+                expected = ic.lubrication_system_pressure
+                actual = self.lubrication_system_pressure
+                if abs(actual - expected) > 0.01:
+                    validation_errors.append(f"System lubrication pressure mismatch: expected {expected} MPa, got {actual} MPa")
+                else:
+                    validation_successes.append(f"System lubrication pressure: {actual} MPa")
+        
+        # Validate system cooling water temperature
+        if hasattr(ic, 'cooling_water_temperature') and ic.cooling_water_temperature:
+            if hasattr(self, 'cooling_water_temperature'):
+                expected_avg = sum(ic.cooling_water_temperature) / len(ic.cooling_water_temperature)
+                actual = self.cooling_water_temperature
+                if abs(actual - expected_avg) > 1.0:
+                    validation_errors.append(f"System cooling water temp mismatch: expected {expected_avg}°C, got {actual}°C")
+                else:
+                    validation_successes.append(f"System cooling water temp: {actual}°C")
+        
+        # === PRINT VALIDATION RESULTS ===
+        
+        print(f"  Validation Results:")
+        print(f"    ✓ Successful validations: {len(validation_successes)}")
+        print(f"    ⚠ Validation errors: {len(validation_errors)}")
+        
+        if validation_errors:
+            print(f"  Validation Errors:")
+            for error in validation_errors[:5]:  # Show first 5 errors
+                print(f"    ⚠ {error}")
+            if len(validation_errors) > 5:
+                print(f"    ... and {len(validation_errors) - 5} more errors")
+        
+        if validation_successes:
+            print(f"  Sample Successful Validations:")
+            for success in validation_successes[:3]:  # Show first 3 successes
+                print(f"    ✓ {success}")
+            if len(validation_successes) > 3:
+                print(f"    ... and {len(validation_successes) - 3} more successful validations")
         
         print(f"FEEDWATER: Initial conditions validation complete")
+        
+        # Return validation status for testing
+        return len(validation_errors) == 0
         
     def update_state(self,
                     sg_conditions: Dict[str, List[float]],
@@ -980,8 +1133,26 @@ class EnhancedFeedwaterPhysics(HeatFlowProvider, ChemistryFlowProvider):
         extraction_heating = feedwater_enthalpy_output - condensate_enthalpy_input - pump_work_input
         extraction_heating = max(0.0, extraction_heating)  # Ensure positive
         
-        # Internal losses (approximately 2% of pump work)
-        internal_losses = pump_work_input * 0.02
+        # Get heat flow contributions from lubrication system with temperature integration
+        if hasattr(self.pump_system, 'pumps'):
+            total_lube_heat_flows = {'mechanical_losses_mw': 0.0, 'motor_heat_to_feedwater_mw': 0.0}
+            
+            for pump in self.pump_system.pumps.values():
+                if hasattr(pump, 'lubrication_system'):
+                    pump_work = pump.state.power_consumption  # MW for this pump
+                    lube_heat_flows = pump.lubrication_system.calculate_heat_flow_contributions(
+                        pump_work, feedwater_temp
+                    )
+                    total_lube_heat_flows['mechanical_losses_mw'] += lube_heat_flows['mechanical_losses_mw']
+                    total_lube_heat_flows['motor_heat_to_feedwater_mw'] += lube_heat_flows['motor_heat_to_feedwater_mw']
+            
+            # Use calculated losses instead of fixed 2%
+            internal_losses = total_lube_heat_flows['mechanical_losses_mw']
+            motor_heat_to_feedwater = total_lube_heat_flows['motor_heat_to_feedwater_mw']
+        else:
+            # Fallback to fixed losses if lubrication system not available
+            internal_losses = pump_work_input * 0.02
+            motor_heat_to_feedwater = 0.0
         
         return {
             'condensate_enthalpy_input': condensate_enthalpy_input,

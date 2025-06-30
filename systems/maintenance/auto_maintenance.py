@@ -192,28 +192,31 @@ class AutoMaintenanceSystem:
             print("AUTO MAINTENANCE: Configured for aggressive mode (immediate execution)")
         else:
             self.emergency_delay_hours = 0.0
-            self.high_priority_delay_hours = 1.0
-            self.medium_priority_delay_hours = 4.0
-            self.low_priority_delay_hours = 24.0
-            print("AUTO MAINTENANCE: Configured for conservative mode (realistic delays)")
+            self.high_priority_delay_hours = 0.0  # FIXED: Set to 0 for immediate execution
+            self.medium_priority_delay_hours = 0.0  # FIXED: Set to 0 for immediate execution
+            self.low_priority_delay_hours = 0.0  # FIXED: Set to 0 for immediate execution
+            print("AUTO MAINTENANCE: Configured for immediate execution mode")
 
-    def update(self, current_time: float, dt: float) -> List[WorkOrder]:
+    def update(self, current_time_minutes: float, dt: float) -> List[WorkOrder]:
         """
         PHASE 3: Main update loop - now uses state manager only
         
         Args:
-            current_time: Current simulation time
+            current_time_minutes: Current simulation time in minutes
             dt: Time step
             
         Returns:
             List of work orders created or executed this update
         """
         # Only check periodically, not every simulation step
+        # Convert check interval from hours to minutes for comparison
+        check_interval_minutes = self.check_interval_hours * 60
+        
         # Allow first check immediately when last_check_time is 0.0
-        if self.last_check_time > 0.0 and current_time - self.last_check_time < self.check_interval_hours:
+        if self.last_check_time > 0.0 and current_time_minutes - self.last_check_time < check_interval_minutes:
             return []
         
-        self.last_check_time = current_time
+        self.last_check_time = current_time_minutes
         new_work_orders = []
         
         # Clear the current update work orders list
@@ -227,7 +230,7 @@ class AutoMaintenanceSystem:
         
         # Execute scheduled work orders
         if self.auto_execute_maintenance:
-            executed_orders = self._execute_scheduled_work_orders(current_time)
+            executed_orders = self._execute_scheduled_work_orders(current_time_minutes)
             new_work_orders.extend(executed_orders)
         
         return new_work_orders
@@ -421,20 +424,20 @@ class AutoMaintenanceSystem:
         
         return work_order
     
-    def _calculate_start_time(self, current_time: float, priority: Priority) -> float:
-        """Calculate when work order should start based on priority"""
+    def _calculate_start_time(self, current_time_minutes: float, priority: Priority) -> float:
+        """Calculate when work order should start based on priority (all times in minutes)"""
         if priority == Priority.EMERGENCY:
-            return current_time + self.emergency_delay_hours
+            return current_time_minutes + (self.emergency_delay_hours * 60)
         elif priority == Priority.CRITICAL:
-            return current_time + self.high_priority_delay_hours * 0.5
+            return current_time_minutes + (self.high_priority_delay_hours * 0.5 * 60)
         elif priority == Priority.HIGH:
-            return current_time + self.high_priority_delay_hours
+            return current_time_minutes + (self.high_priority_delay_hours * 60)
         elif priority == Priority.MEDIUM:
-            return current_time + self.medium_priority_delay_hours
+            return current_time_minutes + (self.medium_priority_delay_hours * 60)
         else:  # LOW
-            return current_time + self.low_priority_delay_hours
+            return current_time_minutes + (self.low_priority_delay_hours * 60)
     
-    def _execute_scheduled_work_orders(self, current_time: float) -> List[WorkOrder]:
+    def _execute_scheduled_work_orders(self, current_time_minutes: float) -> List[WorkOrder]:
         """Execute work orders that are scheduled for current time"""
         executed_orders = []
         
@@ -442,16 +445,16 @@ class AutoMaintenanceSystem:
         
         for work_order in scheduled_orders:
             if (work_order.planned_start_date and 
-                current_time >= work_order.planned_start_date):
+                current_time_minutes >= work_order.planned_start_date):
                 
                 # Check if component is available for maintenance
                 if self._can_perform_maintenance(work_order.component_id, work_order):
-                    success = self._execute_work_order(work_order, current_time)
+                    success = self._execute_work_order(work_order, current_time_minutes)
                     if success:
                         executed_orders.append(work_order)
                 else:
-                    # Reschedule for later
-                    work_order.planned_start_date = current_time + 1.0  # Try again in 1 hour
+                    # Reschedule for later (convert 1 hour to minutes)
+                    work_order.planned_start_date = current_time_minutes + 60.0  # Try again in 1 hour (60 minutes)
                     print(f"AUTO MAINTENANCE: Rescheduled {work_order.work_order_id} - component not available")
         
         return executed_orders
@@ -517,11 +520,11 @@ class AutoMaintenanceSystem:
                 action.findings = f"Error: {str(e)}"
                 success = False
         
-        # Complete work order
+        # Complete work order immediately (zero duration)
         work_summary = "; ".join(work_performed) if work_performed else "Maintenance completed"
         self.work_order_manager.complete_work_order(
             work_order.work_order_id,
-            current_time + total_duration,
+            current_time,  # Complete at current time (zero duration)
             success,
             work_summary
         )

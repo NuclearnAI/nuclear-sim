@@ -314,6 +314,30 @@ class MaintenanceActionCatalog:
             applicable_component_types=["pump", "motor", "turbine"]
         )
         
+        # Motor Inspection
+        self.actions[MaintenanceActionType.MOTOR_INSPECTION] = MaintenanceActionMetadata(
+            action_type=MaintenanceActionType.MOTOR_INSPECTION,
+            display_name="Motor Inspection",
+            description="Inspect electric motor condition and performance",
+            category="Electrical",
+            typical_duration_hours=4.0,
+            equipment_shutdown_required=True,
+            typical_frequency_hours=4380.0,  # Semi-annual
+            applicable_component_types=["motor", "pump"]
+        )
+        
+        # Bearing Inspection
+        self.actions[MaintenanceActionType.BEARING_INSPECTION] = MaintenanceActionMetadata(
+            action_type=MaintenanceActionType.BEARING_INSPECTION,
+            display_name="Bearing Inspection",
+            description="Inspect bearing condition and clearances",
+            category="Mechanical",
+            typical_duration_hours=4.0,
+            equipment_shutdown_required=False,  # Can be done online with vibration/temperature monitoring
+            typical_frequency_hours=4380.0,  # Semi-annual
+            applicable_component_types=["pump", "motor", "turbine"]
+        )
+        
         # Seal Replacement
         self.actions[MaintenanceActionType.SEAL_REPLACEMENT] = MaintenanceActionMetadata(
             action_type=MaintenanceActionType.SEAL_REPLACEMENT,

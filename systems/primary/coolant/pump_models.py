@@ -130,7 +130,7 @@ class BasePump:
         self._calculate_power_consumption()
         
         # Check protection systems
-        self._simulate_sensors(system_conditions)
+        self._simulate_sensors(dt, system_conditions)
         self._check_protection_systems(system_conditions)
         
 
@@ -230,6 +230,15 @@ class BasePump:
                                                  self.rated_power * 0.3)
         else:
             self.state.power_consumption = 0.0
+    
+    def _simulate_sensors(self, dt: float, system_conditions: Dict):
+        """
+        Simulate sensor readings (base implementation)
+        
+        Derived classes should override to add pump-specific sensor simulation.
+        """
+        # Base implementation does nothing - sensors are handled by derived classes
+        pass
     
     def _check_protection_systems(self, system_conditions: Dict):
         """
