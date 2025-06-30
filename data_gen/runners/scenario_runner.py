@@ -43,6 +43,9 @@ from scenarios.scenario_generator import (
 from runners.maintenance_scenario_runner import MaintenanceScenarioRunner
 from simulator.core.sim import NuclearPlantSimulator
 
+# Import maintenance actions for validation
+from systems.maintenance.maintenance_actions import MaintenanceActionType
+
 
 class ScenarioRunner:
     """
@@ -658,9 +661,35 @@ class ScenarioRunner:
             print(f"   📊 Summary CSV: {summary_file}")
             print(f"   📁 Results directory: {results_dir}")
     
+    def validate_action(self, action: str) -> bool:
+        """Validate action against MaintenanceActionType enum"""
+        try:
+            MaintenanceActionType(action)
+            return True
+        except ValueError:
+            return False
+    
+    def suggest_similar_actions(self, invalid_action: str) -> List[str]:
+        """Suggest similar valid actions for typos using fuzzy matching"""
+        import difflib
+        
+        # Get all valid actions from enum
+        valid_actions = [action.value for action in MaintenanceActionType]
+        
+        # Use difflib to find close matches
+        suggestions = difflib.get_close_matches(
+            invalid_action, 
+            valid_actions, 
+            n=3,  # Return up to 3 suggestions
+            cutoff=0.6  # Minimum similarity threshold
+        )
+        
+        return suggestions
+    
     def list_available_actions(self) -> List[str]:
-        """List all available maintenance actions"""
-        return self.maintenance_composer.list_available_actions()
+        """List all available maintenance actions from enum"""
+        # Use enum as source of truth instead of composer
+        return [action.value for action in MaintenanceActionType]
     
     def list_available_scenarios(self) -> List[str]:
         """List all available operational scenario types"""
@@ -668,7 +697,10 @@ class ScenarioRunner:
     
     def get_actions_by_subsystem(self, subsystem: str) -> List[str]:
         """Get maintenance actions for a specific subsystem"""
-        return self.maintenance_composer.get_actions_by_subsystem(subsystem)
+        # Use composer for subsystem mapping but validate against enum
+        composer_actions = self.maintenance_composer.get_actions_by_subsystem(subsystem)
+        # Filter to only include valid enum actions
+        return [action for action in composer_actions if self.validate_action(action)]
     
     def _generate_operational_config(
         self, 
@@ -1078,10 +1110,32 @@ def main():
             interactive_mode(runner)
         
         elif args.action:
-            # Single maintenance scenario
+            # Single maintenance scenario with validation
+            action = args.action
+            
+            # Validate action against enum
+            if not runner.validate_action(action):
+                print(f"❌ Invalid action: '{action}'")
+                
+                # Suggest similar actions
+                suggestions = runner.suggest_similar_actions(action)
+                if suggestions:
+                    print(f"💡 Did you mean one of these?")
+                    for suggestion in suggestions:
+                        print(f"   • {suggestion}")
+                else:
+                    print(f"💡 Available actions:")
+                    actions = runner.list_available_actions()
+                    for i, valid_action in enumerate(actions[:10], 1):  # Show first 10
+                        print(f"   {i:2d}. {valid_action}")
+                    if len(actions) > 10:
+                        print(f"   ... and {len(actions) - 10} more (use --list-actions to see all)")
+                
+                return 1
+            
             aggressive_mode = args.aggressive
             runner.run_maintenance_scenario(
-                action=args.action,
+                action=action,
                 duration_hours=args.duration,
                 aggressive_mode=aggressive_mode
             )

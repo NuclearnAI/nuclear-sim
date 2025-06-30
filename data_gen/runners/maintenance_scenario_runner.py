@@ -501,11 +501,12 @@ class MaintenanceScenarioRunner:
         if not self.maintenance_system or not hasattr(self, 'auto_maintenance_system'):
             return events
         
-        time_hours = time_step / 60.0
+        time_minutes = time_step  # time_step is already in minutes
+        time_hours = time_minutes / 60.0  # Derived for compatibility
         
         try:
             # CRITICAL FIX: Check for new work orders created FIRST, before they get executed
-            self._check_work_order_creation(time_hours)
+            self._check_work_order_creation(time_minutes, time_hours)
             
             # CRITICAL FIX: Also check for work orders that were just created in this update cycle
             # These might not show up in get_recent_work_orders() if they were immediately executed
@@ -611,7 +612,7 @@ class MaintenanceScenarioRunner:
         
         return events
     
-    def _check_work_order_creation(self, time_hours: float):
+    def _check_work_order_creation(self, time_minutes: float, time_hours: float):
         """Check for new work orders being created"""
         try:
             # Get current work order count
@@ -641,14 +642,16 @@ class MaintenanceScenarioRunner:
                         continue
                     
                     # CRITICAL FIX: Only process work orders created recently
-                    created_time_hours = work_order_dict.get('created_date', 0) / 60.0
+                    created_time_minutes = work_order_dict.get('created_date', 0)  # Already in minutes
+                    created_time_hours = created_time_minutes / 60.0
                     time_since_creation = time_hours - created_time_hours
                     
                     # Only process if created very recently (within check interval)
                     if 0 <= time_since_creation <= self.auto_maintenance_system.check_interval_hours:
                         # Create work order event
                         work_order_event = {
-                            'time_hours': created_time_hours,  # Use actual creation time
+                            'time_minutes': created_time_minutes,  # Primary time field
+                            'time_hours': created_time_hours,  # Derived for compatibility
                             'work_order_id': work_order_id,
                             'component_id': work_order_dict['component_id'],
                             'work_order_type': work_order_dict.get('work_order_type', 'corrective'),
@@ -656,7 +659,7 @@ class MaintenanceScenarioRunner:
                             'status': work_order_dict.get('status', 'planned'),
                             'title': work_order_dict.get('title', ''),
                             'description': work_order_dict.get('description', ''),
-                            'created_date': work_order_dict.get('created_date', created_time_hours * 60),
+                            'created_date': created_time_minutes,  # Already in minutes
                             'planned_start_date': work_order_dict.get('planned_start_date'),
                             'planned_duration': work_order_dict.get('planned_duration', 0.0),
                             'auto_generated': work_order_dict.get('auto_generated', True),
@@ -689,9 +692,27 @@ class MaintenanceScenarioRunner:
         if work_order_id not in self._work_order_status_tracker:
             self._work_order_status_tracker[work_order_id] = current_status
         elif self._work_order_status_tracker[work_order_id] != current_status:
+            # FIXED: Use actual completion time if available, otherwise current time
+            event_time_minutes = None
+            event_time_hours = time_hours
+            
+            if current_status == 'completed' and work_order_dict.get('actual_completion_date'):
+                # Use actual completion time for completed work orders
+                event_time_minutes = work_order_dict['actual_completion_date']
+                event_time_hours = event_time_minutes / 60.0
+            elif current_status == 'in_progress' and work_order_dict.get('actual_start_date'):
+                # Use actual start time for in-progress work orders
+                event_time_minutes = work_order_dict['actual_start_date']
+                event_time_hours = event_time_minutes / 60.0
+            else:
+                # Use current simulation time
+                event_time_minutes = time_hours * 60.0
+                event_time_hours = time_hours
+            
             # Status changed - log the event
             status_change_event = {
-                'time_hours': time_hours,
+                'time_minutes': event_time_minutes,  # Primary time field
+                'time_hours': event_time_hours,      # Derived for compatibility
                 'work_order_id': work_order_id,
                 'component_id': work_order_dict['component_id'],
                 'old_status': self._work_order_status_tracker[work_order_id],
@@ -706,7 +727,7 @@ class MaintenanceScenarioRunner:
             self._work_order_status_tracker[work_order_id] = current_status
             
             if self.verbose:
-                print(f"   📋 WORK ORDER STATUS: {work_order_id} {status_change_event['old_status']} → {current_status} at {time_hours:.2f}h")
+                print(f"   📋 WORK ORDER STATUS: {work_order_id} {status_change_event['old_status']} → {current_status} at {event_time_hours:.2f}h")
     
     def _get_parameter_threshold(self, component_id: str, parameter: str) -> Optional[float]:
         """Get threshold for a component parameter"""
@@ -913,11 +934,15 @@ class MaintenanceScenarioRunner:
         work_order_data = []
         
         for event in self.work_order_events:
+            # FIXED: Use consistent time fields - minutes as primary, hours as derived
+            time_minutes = event.get('time_minutes', event.get('time_hours', 0) * 60)
+            time_hours = time_minutes / 60.0
+            
             row = {
-                # Timing
-                'timestamp_hours': event['time_hours'],
-                'timestamp_minutes': event['time_hours'] * 60,
-                'simulation_time_formatted': self._format_simulation_time(event['time_hours'] * 60),
+                # FIXED: Timing - minutes as primary, hours as derived
+                'timestamp_minutes': time_minutes,
+                'timestamp_hours': time_hours,
+                'simulation_time_formatted': self._format_simulation_time(time_minutes),
                 
                 # Work Order Details
                 'work_order_id': event['work_order_id'],
@@ -933,7 +958,7 @@ class MaintenanceScenarioRunner:
                 'old_status': event.get('old_status', ''),
                 'new_status': event.get('new_status', ''),
                 
-                # Scheduling
+                # Scheduling (all times in minutes)
                 'created_date': event.get('created_date'),
                 'planned_start_date': event.get('planned_start_date'),
                 'planned_duration': event.get('planned_duration', 0.0),
@@ -955,30 +980,28 @@ class MaintenanceScenarioRunner:
         return filename
 
     def _infer_action_type_from_work_order(self, work_order_dict: dict) -> str:
-        """Infer action type from work order title or description"""
+        """Get action type from work order - direct access preferred, enum lookup fallback"""
+        
+        # BEST: Direct access to stored action type (most reliable)
+        maintenance_actions = work_order_dict.get('maintenance_actions', [])
+        if maintenance_actions:
+            action = maintenance_actions[0]
+            if isinstance(action, dict) and 'action_type' in action:
+                return action['action_type']
+        
+        # FALLBACK: Enum lookup in title/description
+        from systems.maintenance.maintenance_actions import MaintenanceActionType
         title = work_order_dict.get('title', '').lower()
         description = work_order_dict.get('description', '').lower()
+        search_text = f"{title} {description}".strip()
         
-        # Check title and description for action keywords
-        if 'oil top off' in title or 'oil_top_off' in title or 'oil top off' in description:
-            return 'oil_top_off'
-        elif 'oil change' in title or 'oil_change' in title or 'oil change' in description:
-            return 'oil_change'
-        elif 'bearing inspection' in title or 'bearing_inspection' in title:
-            return 'bearing_inspection'
-        elif 'vibration analysis' in title or 'vibration_analysis' in title:
-            return 'vibration_analysis'
-        elif 'tsp cleaning' in title or 'tsp_chemical_cleaning' in title:
-            return 'tsp_chemical_cleaning'
-        elif 'condenser cleaning' in title or 'condenser_tube_cleaning' in title:
-            return 'condenser_tube_cleaning'
-        elif 'turbine oil' in title or 'turbine_oil_top_off' in title:
-            return 'turbine_oil_top_off'
-        elif 'efficiency analysis' in title or 'efficiency_analysis' in title:
-            return 'efficiency_analysis'
-        else:
-            # Default fallback based on target action
-            return self.target_action if hasattr(self, 'target_action') else 'maintenance_action'
+        # Try direct action type lookup - check if any enum value appears in text
+        for action_type in MaintenanceActionType:
+            if action_type.value in search_text:
+                return action_type.value
+        
+        # Final fallback
+        return getattr(self, 'target_action', 'routine_maintenance')
 
     def _get_action_display_name(self, action_type: str) -> str:
         """Get human-readable name for maintenance action"""

@@ -93,6 +93,7 @@ class ComprehensiveComposer:
             # Feedwater Actions
             "oil_top_off": "feedwater",
             "oil_change": "feedwater",
+            "motor_inspection": "feedwater",
             "pump_inspection": "feedwater",
             "impeller_inspection": "feedwater",
             "impeller_replacement": "feedwater",

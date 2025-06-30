@@ -448,7 +448,7 @@ secondary_system:
       # Performance monitoring
       pump_vibrations: [5.0, 5.0, 5.0, 0.0]  # mm/s pump vibrations
       bearing_temperatures: [50.0, 50.0, 50.0, 25.0]  # °C bearing temps
-      seal_leakage_rate: [0.1, 0.1, 0.1, 0.0]  # L/min seal leakage rates (authoritative)
+      seal_leakage_rate: [0.0, 0.0, 0.0, 0.0]  # L/min seal leakage rates (authoritative)
       pump_oil_levels: [100.0, 100.0, 100.0, 100.0]  # % pump oil levels
       
       # === EXTENDED OIL & LUBRICATION PARAMETERS ===
@@ -480,7 +480,6 @@ secondary_system:
       seal_face_wear: [0., 0., 0., 0.]   # Fraction of seal life used per pump
       seal_temperature: [70.0, 70.0, 70.0, 70.0]  # °C seal temperature per pump
       seal_pressure_drop: [0.0, 0.0, 0.0, 0.0]  # MPa seal pressure drop per pump
-      seal_leakage: [0.0, 0.0, 0.0, 0.0]  # L/min seal leakage rate per pump
       
       # Enhanced impeller parameters
       impeller_wear: [0.0, 0.0, 0.0, 0.0]    # Fraction of impeller life used per pump
@@ -682,30 +681,97 @@ maintenance_system:
   
   # Component-specific realistic maintenance configurations
   component_configs:
-    # Feedwater system maintenance - based on industry standards
+    # Feedwater system maintenance - CORRECTED based on actual state variables
     feedwater:
       check_interval_hours: 4.0
       cooldown_hours: 24.0
       thresholds:
-        # === EXISTING THRESHOLDS ===
-        oil_level:
-          threshold: 75.0              # % - Industry standard low oil alarm
-          comparison: "less_than"
-          action: "oil_top_off"
-          cooldown_hours: 168.0        # Weekly cooldown
-          priority: "HIGH"
-        oil_contamination:
+        # === LUBRICATION SYSTEM MAINTENANCE (HIGHEST PRIORITY) ===
+        # Oil contamination checked FIRST to ensure oil_change gets priority
+        oil_contamination_level:
           threshold: 15.0              # ppm - Typical change-out level
           comparison: "greater_than"
           action: "oil_change"
           cooldown_hours: 720.0        # Monthly cooldown
           priority: "MEDIUM"
+        
+        oil_level:
+          threshold: 60.0              # Oil level (lubrication_system.oil_level) - FIXED: Reduced from 75.0% to realistic 60%
+          comparison: "less_than"
+          action: "oil_top_off"
+          cooldown_hours: 168.0        # Weekly cooldown
+          priority: "HIGH"
+        
+        # === PERFORMANCE MONITORING THRESHOLDS ===
+        # Lubrication effectiveness checked AFTER oil_contamination
+        lubrication_effectiveness:
+          threshold: 0.5              # 85% lubrication effectiveness
+          comparison: "less_than"
+          action: "lubrication_system_check"
+          cooldown_hours: 720.0        # Monthly cooldown
+          priority: "MEDIUM"
+        
+        # === CAVITATION-BASED IMPELLER MAINTENANCE ===
+        # Impeller replacement triggered by cavitation damage, not non-existent wear tracking
+        cavitation_damage:
+          threshold: 8.0               # Accumulated cavitation damage (pump.state.cavitation_damage)
+          comparison: "greater_than"
+          action: "impeller_replacement"  # Resets pump bearing wear in lubrication system
+          cooldown_hours: 4380.0       # Semi-annual cooldown
+          priority: "HIGH"
+        
+        cavitation_intensity:
+          threshold: 0.25              # Active cavitation intensity (pump.state.cavitation_intensity)
+          comparison: "greater_than"
+          action: "cavitation_analysis"  # Investigate before damage accumulates
+          cooldown_hours: 168.0        # Weekly cooldown
+          priority: "HIGH"
+        
+        npsh_available:
+          threshold: 8.5               # NPSH available (pump.state.npsh_available)
+          comparison: "less_than"
+          action: "npsh_analysis"      # Address cavitation conditions
+          cooldown_hours: 168.0        # Weekly cooldown
+          priority: "HIGH"
+        
+        # === BEARING-BASED MECHANICAL MAINTENANCE ===
+        # Bearing issues trigger bearing maintenance, not impeller maintenance
+        motor_bearing_wear:
+          threshold: 8.0               # Motor bearing wear (lubrication_system.component_wear['motor_bearings'])
+          comparison: "greater_than"
+          action: "bearing_replacement"
+          cooldown_hours: 2190.0       # Quarterly cooldown
+          priority: "HIGH"
+        
+        pump_bearing_wear:
+          threshold: 6.0               # Pump bearing wear (lubrication_system.component_wear['pump_bearings'])
+          comparison: "greater_than"
+          action: "bearing_replacement"
+          cooldown_hours: 2190.0       # Quarterly cooldown
+          priority: "HIGH"
+        
+        thrust_bearing_wear:
+          threshold: 4.0               # Thrust bearing wear (lubrication_system.component_wear['thrust_bearing'])
+          comparison: "greater_than"
+          action: "bearing_replacement"
+          cooldown_hours: 2190.0       # Quarterly cooldown
+          priority: "CRITICAL"
+        
+        seal_wear:
+          threshold: 15.0              # Seal wear (lubrication_system.component_wear['mechanical_seals']) - FIXED: Increased from 4.0% to realistic 25%
+          comparison: "greater_than"
+          action: "seal_replacement"
+          cooldown_hours: 2190.0       # Quarterly cooldown
+          priority: "MEDIUM"
+        
+        # === ADDITIONAL LUBRICATION SYSTEM THRESHOLDS ===
         bearing_temperature:
           threshold: 70.0             # °C - Typical bearing alarm
           comparison: "greater_than"
           action: "bearing_inspection"
           cooldown_hours: 168.0        # Weekly cooldown
           priority: "HIGH"
+        
         vibration_level:
           threshold: 20.0              # mm/s - ISO standard
           comparison: "greater_than"
@@ -720,135 +786,49 @@ maintenance_system:
           cooldown_hours: 720.0        # Monthly cooldown
           priority: "MEDIUM"
         
-        # === MISSING OIL & LUBRICATION THRESHOLDS ===
-        oil_viscosity:
-          threshold: 42.0              # cSt - degraded viscosity
-          comparison: "greater_than"
-          action: "oil_change"
-          cooldown_hours: 720.0        # Monthly cooldown
-          priority: "MEDIUM"
+        # Only include thresholds that map to actual lubrication system state variables
         oil_water_content:
-          threshold: 0.08              # % water content
+          threshold: 0.08              # % water content (lubrication_system.oil_moisture_content)
           comparison: "greater_than"
           action: "oil_analysis"
           cooldown_hours: 168.0        # Weekly cooldown
           priority: "MEDIUM"
-        oil_acid_number:
-          threshold: 1.8               # mg KOH/g acid number
-          comparison: "greater_than"
-          action: "oil_analysis"
-          cooldown_hours: 168.0        # Weekly cooldown
-          priority: "MEDIUM"
-        oil_filter_pressure_drop:
-          threshold: 0.3               # MPa filter pressure drop
-          comparison: "greater_than"
-          action: "filter_change"
-          cooldown_hours: 720.0        # Monthly cooldown
-          priority: "MEDIUM"
-        oil_filter_contamination:
-          threshold: 85.0              # % filter capacity used
-          comparison: "greater_than"
-          action: "filter_change"
-          cooldown_hours: 720.0        # Monthly cooldown
-          priority: "MEDIUM"
-        lubrication_system_pressure:
-          threshold: 0.15              # MPa lubrication system pressure
-          comparison: "less_than"
-          action: "lubrication_inspection"
-          cooldown_hours: 168.0        # Weekly cooldown
-          priority: "HIGH"
-        oil_temperature:
-          threshold: 58.0              # °C oil temperature
-          comparison: "greater_than"
-          action: "lubrication_inspection"
-          cooldown_hours: 168.0        # Weekly cooldown
-          priority: "MEDIUM"
-        oil_system_debris_count:
-          threshold: 450.0             # particles/ml debris count
-          comparison: "greater_than"
-          action: "oil_system_flush"
-          cooldown_hours: 2190.0       # Quarterly cooldown
-          priority: "HIGH"
         
-        # === MISSING MECHANICAL COMPONENT THRESHOLDS ===
-        # NOTE: Wear values are percentages (0-100%), with safety margins before trips
-        bearing_vibration:
-          threshold: 18.0              # mm/s bearing vibration
+        oil_acid_number:
+          threshold: 1.6               # mg KOH/g acid number (lubrication_system.oil_acidity_number)
           comparison: "greater_than"
-          action: "bearing_replacement"
-          cooldown_hours: 2190.0       # Quarterly cooldown
-          priority: "HIGH"
-        bearing_wear:
-          threshold: 10.0              # % bearing wear (vs 25% safety trip)
-          comparison: "greater_than"
-          action: "bearing_replacement"
-          cooldown_hours: 2190.0       # Quarterly cooldown
-          priority: "HIGH"
-        bearing_noise_level:
-          threshold: 78.0              # dB bearing noise level
-          comparison: "greater_than"
-          action: "bearing_inspection"
+          action: "oil_analysis"
           cooldown_hours: 168.0        # Weekly cooldown
           priority: "MEDIUM"
-        seal_face_wear:
-          threshold: 15.0              # % seal face wear (vs 30% safety trip)
+        
+        oil_temperature:
+          threshold: 55.0              # °C oil temperature (lubrication_system.oil_temperature)
           comparison: "greater_than"
-          action: "seal_replacement"
-          cooldown_hours: 2190.0       # Quarterly cooldown
-          priority: "MEDIUM"
-        seal_temperature:
-          threshold: 85.0              # °C seal temperature
-          comparison: "greater_than"
-          action: "seal_replacement"
-          cooldown_hours: 2190.0       # Quarterly cooldown
-          priority: "MEDIUM"
-        seal_pressure_drop:
-          threshold: 0.12              # MPa seal pressure drop
-          comparison: "greater_than"
-          action: "seal_inspection"
+          action: "lubrication_inspection"
           cooldown_hours: 168.0        # Weekly cooldown
           priority: "MEDIUM"
-        seal_leakage_rate:
-          threshold: .05               # L/min seal leakage rate (vs 10.0 L/min trip)
-          comparison: "greater_than"
-          action: "seal_replacement"
-          cooldown_hours: 219.0       # Quarterly cooldown
-          priority: "MEDIUM"
-        impeller_wear:
-          threshold: 8.0               # % impeller wear (vs 15% safety trip)
-          comparison: "greater_than"
-          action: "impeller_replacement"
-          cooldown_hours: 4380.0       # Semi-annual cooldown
-          priority: "HIGH"
-        impeller_inspection_wear:
-          threshold: 5.0               # % impeller wear for inspection
-          comparison: "greater_than"
-          action: "impeller_inspection"
-          cooldown_hours: 2190.0       # Quarterly cooldown
-          priority: "MEDIUM"
-        pump_efficiency:
-          threshold: 0.80              # 80% minimum efficiency
-          comparison: "less_than"
-          action: "impeller_replacement"
-          cooldown_hours: 4380.0       # Semi-annual cooldown
-          priority: "MEDIUM"
-        impeller_cavitation_damage:
-          threshold: 0.75              # 75% cavitation damage fraction
-          comparison: "greater_than"
-          action: "impeller_replacement"
-          cooldown_hours: 4380.0       # Semi-annual cooldown
-          priority: "HIGH"
-        impeller_vibration:
-          threshold: 2.5               # mm/s impeller vibration
-          comparison: "greater_than"
-          action: "impeller_inspection"
-          cooldown_hours: 168.0        # Weekly cooldown
-          priority: "MEDIUM"
+        
+        # system_health_factor:
+        #   threshold: 0.80              # 80% system health - COMMENTED OUT to prevent overriding oil_change
+        #   comparison: "less_than"
+        #   action: "component_overhaul"
+        #   cooldown_hours: 4380.0       # Semi-annual cooldown
+        #   priority: "HIGH"
+        
+        # === PUMP STATE MONITORING THRESHOLDS ===
+        # Only include thresholds that map to actual pump state variables
         motor_temperature:
-          threshold: 88.0              # °C motor temperature
+          threshold: 85.0              # °C motor temperature (pump.state.motor_temperature)
           comparison: "greater_than"
           action: "motor_inspection"
           cooldown_hours: 168.0        # Weekly cooldown
+          priority: "MEDIUM"
+        
+        seal_leakage_rate:
+          threshold: 0.15              # L/min seal leakage rate (lubrication_system.seal_leakage_rate)
+          comparison: "greater_than"
+          action: "seal_replacement"
+          cooldown_hours: 2190.0       # Quarterly cooldown
           priority: "MEDIUM"
         
         # === MISSING PERFORMANCE & SYSTEM THRESHOLDS ===
