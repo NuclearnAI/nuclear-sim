@@ -54,17 +54,34 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
     },
     
     # === MECHANICAL ACTIONS ===
-    
-    "bearing_replacement": {
-        "bearing_temperatures": [108.0, 109.0, 107.0, 108.5],  # Near 110°C threshold
-        "bearing_vibrations": [18.0, 19.0, 17.0, 18.5],  # mm/s, elevated
-        "bearing_wear": [0.88, 0.89, 0.87, 0.885],  # Fraction of life used
-        "description": "Bearing parameters indicating replacement needed",
-        "safety_notes": "Conservative temps to avoid seizure"
+    "bearing_inspection": {
+        # Primary bearing failure indicators - trigger maintenance through vibration and wear
+        "bearing_temperatures": [70.0, 71.0, 79.0, 70.5],   # Elevated but safe (below 110°C trip)
+        #"pump_vibrations": [12.0, 12.5, 12.5, 12.2],           # Above 18.0 maintenance threshold
+        #"bearing_wear": [0.11, 0.12, 0.10, 0.115],             # 10-12% wear (above 10% threshold)
+        
+        # Supporting oil parameters (degraded but below oil_change thresholds)
+        #"pump_oil_contamination": 10.0,                        # Below 15.0 oil_change threshold
+        #"pump_oil_water_content": 0.06,                        # Below 0.08 oil_analysis threshold
+        #"pump_oil_acid_number": 1.4,                           # Below 1.8 oil_analysis threshold
+        #"oil_temperature": 48.0,                               # Slightly elevated
+        #"oil_filter_contamination": 65.0,                      # Below 85% filter_change threshold
+        
+        # Lubrication system (supporting bearing issues)
+        #"oil_pressure": [0.20, 0.19, 0.21, 0.195],            # Above 0.15 threshold
+        #"oil_flow_rate": [0.96, 0.95, 0.97, 0.955],           # Above 0.90 threshold
+        
+        # HIGH efficiency to prevent performance degradation trips
+        #"pump_efficiencies": [0.92, 0.91, 0.93, 0.915],       # High efficiency (only 7-9% loss)
+        #"pump_power": [1.01, 1.02, 1.00, 1.015],              # Minimal power increase
+        #"motor_temperature": [78.0, 79.0, 77.0, 78.5],        # Moderate temperatures
+        
+        "description": "Bearing replacement triggered by vibration and wear, not efficiency degradation",
+        "safety_notes": "High efficiency prevents performance trips, vibration triggers maintenance"
     },
     
     "seal_replacement": {
-        "seal_leakage_rate": [0.08, 0.074, 0.04, 0.04],  # L/min, near 0.1 threshold
+        "seal_leakage_rate": [0.10, 0.074, 0.04, 0.04],  # L/min, near 0.1 threshold
         #"seal_face_wear": [0.12, 0.11, 0.13, 0.11],  # Fraction of life
         #"seal_temperature": [84.0, 83.9, 84.2, 84.5],  # °C
         "description": "Seal parameters indicating replacement needed"

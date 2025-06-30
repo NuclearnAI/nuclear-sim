@@ -447,8 +447,8 @@ secondary_system:
       
       # Performance monitoring
       pump_vibrations: [5.0, 5.0, 5.0, 0.0]  # mm/s pump vibrations
-      bearing_temperatures: [80.0, 80.0, 80.0, 25.0]  # °C bearing temps
-      seal_leakages: [0.1, 0.1, 0.1, 0.0]    # L/min seal leakages
+      bearing_temperatures: [50.0, 50.0, 50.0, 25.0]  # °C bearing temps
+      seal_leakage_rate: [0.1, 0.1, 0.1, 0.0]  # L/min seal leakage rates (authoritative)
       pump_oil_levels: [100.0, 100.0, 100.0, 100.0]  # % pump oil levels
       
       # === EXTENDED OIL & LUBRICATION PARAMETERS ===
@@ -480,7 +480,7 @@ secondary_system:
       seal_face_wear: [0., 0., 0., 0.]   # Fraction of seal life used per pump
       seal_temperature: [70.0, 70.0, 70.0, 70.0]  # °C seal temperature per pump
       seal_pressure_drop: [0.0, 0.0, 0.0, 0.0]  # MPa seal pressure drop per pump
-      seal_leakage_rate: [0.0, 0.0, 0.0, 0.0]  # L/min seal leakage rate per pump
+      seal_leakage: [0.0, 0.0, 0.0, 0.0]  # L/min seal leakage rate per pump
       
       # Enhanced impeller parameters
       impeller_wear: [0.0, 0.0, 0.0, 0.0]    # Fraction of impeller life used per pump
@@ -701,7 +701,7 @@ maintenance_system:
           cooldown_hours: 720.0        # Monthly cooldown
           priority: "MEDIUM"
         bearing_temperature:
-          threshold: 110.0             # °C - Typical bearing alarm
+          threshold: 70.0             # °C - Typical bearing alarm
           comparison: "greater_than"
           action: "bearing_inspection"
           cooldown_hours: 168.0        # Weekly cooldown
