@@ -337,8 +337,78 @@ class TurbineBearingConfig:
 
 @dataclass_json
 @dataclass
+class UnifiedLubricationInitialConditions:
+    """
+    Unified lubrication system initial conditions
+    
+    This replaces the per-bearing arrays with a realistic unified oil system
+    that has one reservoir with component-specific local variations.
+    """
+    
+    # System-wide base conditions (single oil reservoir)
+    oil_reservoir_level: float = 100.0              # % oil level in main reservoir
+    oil_base_temperature: float = 45.0              # °C base oil temperature
+    oil_base_contamination: float = 5.0             # ppm base contamination level
+    oil_base_pressure: float = 0.25                 # MPa system operating pressure
+    oil_base_viscosity: float = 32.0                # cSt base oil viscosity
+    oil_base_acidity: float = 0.1                   # mg KOH/g base acid number
+    oil_base_moisture: float = 0.02                 # % base water content
+    
+    # Component-specific local factors (multipliers/offsets from base)
+    component_contamination_factors: Dict[str, float] = field(default_factory=lambda: {
+        'hp_journal_bearing': 1.2,      # 20% higher contamination (hot HP section)
+        'lp_journal_bearing': 0.8,      # 20% lower contamination (cooler LP section)
+        'thrust_bearing': 1.5,          # 50% higher contamination (high axial loads)
+        'seal_oil_system': 1.1,         # 10% higher contamination (external exposure)
+        'oil_coolers': 0.6              # 40% lower contamination (clean heat exchanger side)
+    })
+    
+    component_temperature_offsets: Dict[str, float] = field(default_factory=lambda: {
+        'hp_journal_bearing': +8.0,     # °C hotter due to HP steam heat
+        'lp_journal_bearing': +3.0,     # °C hotter due to moderate heat
+        'thrust_bearing': +12.0,        # °C hotter due to friction from axial loads
+        'seal_oil_system': -2.0,        # °C cooler due to external cooling
+        'oil_coolers': -5.0             # °C cooler due to heat exchanger function
+    })
+    
+    component_wear_levels: Dict[str, float] = field(default_factory=lambda: {
+        'hp_journal_bearing': 2.0,      # % initial wear level
+        'lp_journal_bearing': 1.5,      # % initial wear level
+        'thrust_bearing': 3.0,          # % initial wear level (highest stress)
+        'seal_oil_system': 2.5,         # % initial wear level
+        'oil_coolers': 1.0              # % initial wear level (lowest stress)
+    })
+    
+    # System performance factors
+    pump_efficiency: float = 0.9                    # Oil pump efficiency factor
+    filter_effectiveness: float = 0.95              # Oil filter effectiveness
+    cooler_effectiveness: float = 0.9               # Oil cooler heat transfer effectiveness
+    system_health_factor: float = 1.0               # Overall system health (0-1)
+    
+    # Advanced parameters for maintenance scenarios
+    oil_additive_depletion: float = 0.0             # % additive package depletion
+    oil_oxidation_level: float = 0.0                # Oxidation level (0-100)
+    system_cleanliness_level: float = 95.0          # % system cleanliness
+    
+    def get_effective_contamination(self, component_id: str) -> float:
+        """Calculate effective contamination for a component"""
+        factor = self.component_contamination_factors.get(component_id, 1.0)
+        return self.oil_base_contamination * factor
+    
+    def get_effective_temperature(self, component_id: str) -> float:
+        """Calculate effective oil temperature for a component"""
+        offset = self.component_temperature_offsets.get(component_id, 0.0)
+        return self.oil_base_temperature + offset
+    
+    def get_component_wear(self, component_id: str) -> float:
+        """Get initial wear level for a component"""
+        return self.component_wear_levels.get(component_id, 0.0)
+
+
+@dataclass_json
+@dataclass
 class TurbineInitialConditions:
-    """Initial conditions for turbine system"""
+    """Initial conditions for turbine system - UNIFIED LUBRICATION VERSION"""
     
     # Rotor conditions
     rotor_speed: float = 3600.0                     # RPM initial rotor speed
@@ -377,15 +447,13 @@ class TurbineInitialConditions:
     governor_valve_position: float = 100.0          # % governor valve position
     control_valve_positions: List[float] = field(default_factory=lambda: [100.0, 100.0, 100.0, 100.0])
     
-    # Bearing conditions
+    # Bearing mechanical conditions (no individual oil tracking)
     bearing_temperatures: List[float] = field(default_factory=lambda: [80.0, 80.0, 80.0, 80.0])
     bearing_vibrations: List[float] = field(default_factory=lambda: [5.0, 5.0, 5.0, 5.0])  # mils
     bearing_oil_pressures: List[float] = field(default_factory=lambda: [0.2, 0.2, 0.2, 0.2])  # MPa
     
-    # Lubrication system conditions
-    oil_contamination: float = 5.0                  # ppm oil contamination level
-    oil_level: float = 100.0                        # % oil level
-    oil_temperature: float = 45.0                   # °C oil temperature
+    # UNIFIED LUBRICATION SYSTEM (replaces all per-bearing oil arrays)
+    lubrication_system: UnifiedLubricationInitialConditions = field(default_factory=UnifiedLubricationInitialConditions)
     
     # System performance conditions
     total_power_output: float = 1000.0              # MW total power output

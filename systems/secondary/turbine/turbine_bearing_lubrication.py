@@ -185,6 +185,74 @@ class TurbineBearingLubricationSystem(BaseLubricationSystem):
         self.turbine_efficiency_degradation = 0.0        # Turbine efficiency loss
         self.vibration_increase = 0.0                    # Vibration increase from wear
         self.oil_cooling_effectiveness = 1.0             # Oil cooling system effectiveness
+    
+    def apply_unified_initial_conditions(self, unified_ics):
+        """Apply unified initial conditions to the lubrication system - NO BACKWARD COMPATIBILITY"""
+        
+        print(f"UNIFIED LUBRICATION: Applying initial conditions")
+        
+        # System base conditions
+        self.oil_base_contamination = unified_ics.oil_base_contamination
+        self.oil_base_temperature = unified_ics.oil_base_temperature
+        self.oil_base_pressure = unified_ics.oil_base_pressure
+        self.oil_base_viscosity = unified_ics.oil_base_viscosity
+        self.oil_base_acidity = unified_ics.oil_base_acidity
+        self.oil_base_moisture = unified_ics.oil_base_moisture
+        self.oil_level = unified_ics.oil_reservoir_level
+        
+        # Component factors
+        self.component_contamination_factors = unified_ics.component_contamination_factors.copy()
+        self.component_temperature_offsets = unified_ics.component_temperature_offsets.copy()
+        
+        # Apply component wear
+        for component_id, wear_level in unified_ics.component_wear_levels.items():
+            if component_id in self.component_wear:
+                self.component_wear[component_id] = wear_level
+                
+                # Update component performance based on initial wear
+                component = self.components[component_id]
+                performance_loss = wear_level * component.wear_performance_factor
+                self.component_performance_factors[component_id] = max(0.1, 1.0 - performance_loss)
+        
+        # System performance
+        self.pump_efficiency = unified_ics.pump_efficiency
+        self.filter_effectiveness = unified_ics.filter_effectiveness
+        self.cooler_effectiveness = unified_ics.cooler_effectiveness
+        self.system_health_factor = unified_ics.system_health_factor
+        
+        # Set legacy compatibility values (for existing code that expects them)
+        self.oil_contamination_level = self.oil_base_contamination
+        self.oil_temperature = self.oil_base_temperature
+        
+        print(f"  Base contamination: {self.oil_base_contamination:.1f} ppm")
+        print(f"  Base temperature: {self.oil_base_temperature:.1f}°C")
+        print(f"  Component factors: {self.component_contamination_factors}")
+        print(f"  Component wear: {unified_ics.component_wear_levels}")
+    
+    def get_effective_contamination(self, component_id: str) -> float:
+        """Get effective contamination for component"""
+        factor = self.component_contamination_factors.get(component_id, 1.0)
+        return self.oil_base_contamination * factor
+    
+    def get_effective_temperature(self, component_id: str) -> float:
+        """Get effective temperature for component"""
+        offset = self.component_temperature_offsets.get(component_id, 0.0)
+        return self.oil_base_temperature + offset
+    
+    def get_component_conditions(self) -> Dict[str, Dict[str, float]]:
+        """Get current conditions for all components"""
+        conditions = {}
+        
+        for component_id in self.components:
+            conditions[component_id] = {
+                'contamination': self.get_effective_contamination(component_id),
+                'temperature': self.get_effective_temperature(component_id),
+                'wear_level': self.component_wear.get(component_id, 0.0),
+                'performance_factor': self.component_performance_factors.get(component_id, 1.0),
+                'lubrication_effectiveness': self.lubrication_effectiveness
+            }
+        
+        return conditions
         
     def get_lubricated_components(self) -> List[str]:
         """Return list of turbine bearing components requiring lubrication"""
@@ -294,8 +362,8 @@ class TurbineBearingLubricationSystem(BaseLubricationSystem):
         steam_temperature = turbine_operating_conditions.get('steam_temperature', 280.0)
         
         # Steam contamination effects
-        # Poor steam quality increases contamination
-        moisture_contamination = (1.0 - steam_quality) * 0.5  # ppm/hour from moisture
+        # Poor steam quality increases contamination - SMALL FIX: reduced rate
+        moisture_contamination = (1.0 - steam_quality) * 0.2  # Reduced from 0.5 to 0.2 ppm/hour
         self.steam_contamination_rate = moisture_contamination
         
         # High temperature effects on oil cooling

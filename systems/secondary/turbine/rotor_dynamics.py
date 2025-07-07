@@ -56,10 +56,7 @@ class BearingModel:
         
         # Bearing state
         self.current_load = 0.0                  # kN current bearing load
-        self.oil_temperature = 85.0              # °C oil temperature
         self.metal_temperature = 90.0            # °C bearing metal temperature
-        self.oil_flow_rate = 10.0                # L/min oil flow rate
-        self.oil_pressure = 0.2                  # MPa oil supply pressure
         
         # Vibration state
         self.vibration_displacement = 0.0        # mils vibration displacement
@@ -74,9 +71,12 @@ class BearingModel:
         
         # Degradation tracking
         self.clearance_increase = 0.0            # mm clearance increase due to wear
-        self.oil_contamination_level = 0.0       # ppm contamination level
         
-        # External lubrication system integration
+        # UNIFIED LUBRICATION INTEGRATION - All oil parameters come from external system
+        self.oil_temperature = 85.0              # °C oil temperature (from lubrication system)
+        self.oil_flow_rate = 10.0                # L/min oil flow rate (from lubrication system)
+        self.oil_pressure = 0.2                  # MPa oil supply pressure (from lubrication system)
+        self.oil_contamination_level = 0.0       # ppm contamination level (from lubrication system)
         self.external_oil_temp = False           # Flag for external oil temperature
         self.external_oil_temperature = 85.0    # External oil temperature (°C)
         

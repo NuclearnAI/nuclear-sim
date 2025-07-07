@@ -225,22 +225,22 @@ class BaseLubricationSystem(ABC):
         temp_diff = self.oil_temperature - reference_temp
         # Limit temperature difference to prevent overflow (max 200°C above reference)
         temp_diff = max(-50.0, min(200.0, temp_diff))
-        # ENHANCED: Cap activation factor at maximum of 4.0 instead of unlimited exponential growth
-        activation_factor = max(0.1, min(4.0, 2.0 ** (temp_diff / 10.0)))
-        # ENHANCED: Further reduce base degradation rate to 0.00002 (80% reduction from original)
-        base_degradation_rate = 0.00002  # Very conservative base rate at reference temperature
+        # TARGETED FIX: Much more conservative activation factor to prevent explosion
+        activation_factor = max(0.1, min(1.5, 1.0 + temp_diff / 50.0))  # Linear instead of exponential
+        # TARGETED FIX: Significantly reduce base degradation rate
+        base_degradation_rate = 0.00001  # Very conservative base rate (90% reduction)
         thermal_degradation_rate = base_degradation_rate * activation_factor
         
         # STEP 4: Improved filtration system effectiveness for realistic industrial behavior
-        # ENHANCED: Base filtration efficiency increased from 75% to 85%
+        # Base filtration efficiency increased from 75% to 85%
         base_filtration_efficiency = 0.85  # 85% - improved industrial oil filtration
         
-        # ENHANCED: Reduced filter loading sensitivity - filters less affected by contamination
+        # Reduced filter loading sensitivity - filters less affected by contamination
         filter_loading_factor = max(0.5, 1.0 - (self.oil_contamination_level / 75.0))
         # At 25 ppm: factor = 0.67 (33% efficiency reduction) - improved from 50%
         # At 50 ppm: factor = 0.33 (67% efficiency reduction) - improved threshold
         
-        # ENHANCED: Less temperature sensitivity for modern filtration systems
+        # Less temperature sensitivity for modern filtration systems
         temp_factor = max(0.75, 1.0 - (self.oil_temperature - 65.0) / 90.0)
         # At 80°C: factor = 0.83 (17% efficiency reduction) - improved from 25%
         # At 100°C: factor = 0.61 (39% efficiency reduction) - improved from 50%
@@ -248,7 +248,7 @@ class BaseLubricationSystem(ABC):
         # Combined filtration efficiency
         effective_filtration_efficiency = base_filtration_efficiency * filter_loading_factor * temp_factor
         
-        # ENHANCED: Increased circulation rate from 0.008 to 0.012 (50% improvement)
+        # Increased circulation rate from 0.008 to 0.012 (50% improvement)
         circulation_rate = 0.012  # 1.2% per time step - more effective circulation
         contamination_removal_rate = self.oil_contamination_level * effective_filtration_efficiency * circulation_rate
         
@@ -263,10 +263,9 @@ class BaseLubricationSystem(ABC):
         else:
             thermal_contamination_input = base_thermal_contamination
         
-        # Temperature-accelerated contamination above 70°C
-        if self.oil_temperature > 70.0:
-            temp_acceleration = (self.oil_temperature - 70.0) * 0.05
-            thermal_contamination_input += temp_acceleration
+        # FINAL FIX: Remove temperature acceleration that was causing explosion
+        # Temperature effects are already handled in the activation factor above
+        # No additional temperature acceleration needed
         
         # Calculate net contamination change
         contamination_change = contamination_input - contamination_removal_rate + thermal_contamination_input
@@ -318,19 +317,22 @@ class BaseLubricationSystem(ABC):
         antioxidant_factor = self.antioxidant_level / 100.0
         aw_factor = self.anti_wear_additive_level / 100.0
         
-        # Overall lubrication effectiveness - FIXED: Use weighted average instead of harsh min()
-        # This prevents the effectiveness from getting stuck at low values
-        self.lubrication_effectiveness = (
-            contamination_factor * 0.25 +    # 25% weight - contamination is critical
-            antioxidant_factor * 0.20 +      # 20% weight - prevents oil breakdown
-            aw_factor * 0.20 +               # 20% weight - critical for bearing protection
-            acidity_factor * 0.15 +          # 15% weight - oil degradation indicator
-            moisture_factor * 0.10 +         # 10% weight - secondary indicator
-            viscosity_factor * 0.10          # 10% weight - secondary indicator
-        )
+        # FIXED: Improved lubrication effectiveness calculation with realistic weighting
+        # Use geometric mean for critical factors and arithmetic mean for secondary factors
+        critical_factors = [contamination_factor, antioxidant_factor, aw_factor]
+        secondary_factors = [acidity_factor, moisture_factor, viscosity_factor]
         
-        # Ensure reasonable bounds (minimum 10% effectiveness, maximum 100%)
-        self.lubrication_effectiveness = max(0.1, min(1.0, self.lubrication_effectiveness))
+        # Geometric mean of critical factors (prevents one bad factor from dominating)
+        critical_effectiveness = (contamination_factor * antioxidant_factor * aw_factor) ** (1/3)
+        
+        # Arithmetic mean of secondary factors
+        secondary_effectiveness = sum(secondary_factors) / len(secondary_factors)
+        
+        # Combined effectiveness with 70% weight on critical factors, 30% on secondary
+        self.lubrication_effectiveness = critical_effectiveness * 0.7 + secondary_effectiveness * 0.3
+        
+        # FIXED: More realistic bounds - even degraded oil provides some lubrication
+        self.lubrication_effectiveness = max(0.3, min(1.0, self.lubrication_effectiveness))
         
         # Update operating hours
         self.oil_operating_hours += dt

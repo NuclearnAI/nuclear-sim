@@ -28,7 +28,7 @@ References:
 
 import numpy as np
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 from enum import Enum
 import warnings
 
@@ -43,6 +43,9 @@ from ..chemistry_flow_tracker import ChemistryFlowProvider, ChemicalSpecies
 
 # Import component descriptions
 from ..component_descriptions import STEAM_GENERATOR_COMPONENT_DESCRIPTIONS
+
+# Import base fouling model
+from .fouling_model_base import FoulingModelBase
 
 warnings.filterwarnings("ignore")
 
@@ -149,7 +152,7 @@ class DepositState:
         return max_thickness
 
 
-class TSPFoulingModel(ChemistryFlowProvider):
+class TSPFoulingModel(FoulingModelBase):
     """
     Comprehensive TSP fouling model for PWR steam generators
     
@@ -162,29 +165,20 @@ class TSPFoulingModel(ChemistryFlowProvider):
     6. Automatic shutdown protection systems
     
     Uses unified water chemistry system for consistent chemistry parameters.
+    Inherits from FoulingModelBase for shared functionality.
     """
     
     def __init__(self, config: Optional[TSPFoulingConfig] = None, water_chemistry: Optional[WaterChemistry] = None):
         """Initialize TSP fouling model"""
-        self.config = config if config is not None else TSPFoulingConfig()
+        # Initialize base class
+        super().__init__(config, water_chemistry)
         
-        # Initialize or use provided unified water chemistry system
-        if water_chemistry is not None:
-            self.water_chemistry = water_chemistry
-        else:
-            # Create own instance if not provided (for standalone use)
-            self.water_chemistry = WaterChemistry(WaterChemistryConfig())
+        self.config = config if config is not None else TSPFoulingConfig()
         
         # Initialize deposit state
         self.deposits = DepositState()
         
-        # Operating parameters
-        self.operating_years = 0.0                  # Total operating years
-        self.total_cleaning_cycles = 0              # Number of cleaning cycles performed
-        self.last_cleaning_time = 0.0               # Years since last cleaning
-        
-        # Current fouling state
-        self.fouling_fraction = 0.0                 # Overall fouling fraction (0-1)
+        # TSP-specific fouling state
         self.fouling_stage = FoulingStage.NORMAL    # Current fouling stage
         self.heat_transfer_degradation = 0.0        # Heat transfer coefficient reduction (0-1)
         self.pressure_drop_ratio = 1.0              # Pressure drop ratio (current/clean)
@@ -192,7 +186,6 @@ class TSPFoulingModel(ChemistryFlowProvider):
         
         # Performance tracking
         self.cumulative_power_loss = 0.0            # MWh lost due to fouling
-        self.replacement_recommended = False        # Replacement recommendation flag
         
         # Shutdown protection state
         self.shutdown_required = False              # Immediate shutdown required
@@ -493,6 +486,171 @@ class TSPFoulingModel(ChemistryFlowProvider):
             'total_cleaning_cycles': self.total_cleaning_cycles
         }
     
+    def perform_maintenance(self, maintenance_type: str, **kwargs) -> Dict[str, Any]:
+        """
+        Perform TSP maintenance using dict-in-function approach
+        
+        Args:
+            maintenance_type: Type of maintenance to perform
+            **kwargs: Additional maintenance parameters
+            
+        Returns:
+            Dictionary with maintenance results
+        """
+        # Define maintenance functions in the function
+        maintenance_functions = {
+            'tsp_chemical_cleaning': self._tsp_chemical_cleaning,
+            'tsp_mechanical_cleaning': self._tsp_mechanical_cleaning,
+            'tsp_inspection': self._tsp_inspection,
+            'tsp_flow_test': self._tsp_flow_test
+        }
+        
+        if maintenance_type not in maintenance_functions:
+            return {
+                'success': False,
+                'error': f'Unknown TSP maintenance: {maintenance_type}',
+                'available_types': list(maintenance_functions.keys())
+            }
+        
+        # Execute maintenance function
+        result = maintenance_functions[maintenance_type](**kwargs)
+        
+        # Update maintenance history (from base class)
+        self._update_maintenance_history(result, maintenance_type)
+        
+        return result
+    
+    def _tsp_chemical_cleaning(self, **kwargs) -> Dict[str, Any]:
+        """Perform TSP chemical cleaning"""
+        cleaning_result = self.perform_cleaning("chemical")
+        
+        return {
+            'success': True,
+            'duration_hours': 12.0,
+            'work_performed': 'TSP chemical cleaning completed',
+            'findings': f"Reduced fouling from {cleaning_result['fouling_fraction_after'] + cleaning_result['effectiveness']:.1%} to {cleaning_result['fouling_fraction_after']:.1%}",
+            'fouling_reduction': cleaning_result['effectiveness'],
+            'effectiveness_score': cleaning_result['effectiveness'],
+            'next_maintenance_due': 8760.0,  # Annual
+            'radiation_exposure': 'Moderate - secondary side work',
+            'access_required': 'Secondary side access during outage',
+            'specialized_equipment': [
+                'Chemical cleaning system',
+                'Circulation pumps',
+                'Chemical monitoring equipment'
+            ],
+            'parts_used': [
+                'Chemical cleaning solution',
+                'Neutralizing chemicals',
+                'Filtration equipment'
+            ]
+        }
+    
+    def _tsp_mechanical_cleaning(self, **kwargs) -> Dict[str, Any]:
+        """Perform TSP mechanical cleaning"""
+        cleaning_result = self.perform_cleaning("mechanical")
+        
+        return {
+            'success': True,
+            'duration_hours': 16.0,
+            'work_performed': 'TSP mechanical cleaning completed',
+            'findings': f"Mechanically removed {cleaning_result['effectiveness']:.1%} of TSP fouling deposits",
+            'fouling_reduction': cleaning_result['effectiveness'],
+            'effectiveness_score': cleaning_result['effectiveness'],
+            'next_maintenance_due': 17520.0,  # Every 2 years
+            'radiation_exposure': 'Moderate - secondary side work',
+            'access_required': 'Secondary side access during outage',
+            'specialized_equipment': [
+                'Mechanical cleaning tools',
+                'High-pressure water system',
+                'Remote manipulation equipment'
+            ],
+            'parts_used': [
+                'Cleaning brushes',
+                'High-pressure nozzles',
+                'Mechanical scrapers'
+            ]
+        }
+    
+    def _tsp_inspection(self, **kwargs) -> Dict[str, Any]:
+        """Perform TSP inspection"""
+        inspection_type = kwargs.get('inspection_type', 'visual_and_measurement')
+        
+        # Assess current TSP condition
+        findings = []
+        recommendations = []
+        
+        avg_thickness = self.deposits.get_average_thickness()
+        max_thickness = self.deposits.get_maximum_thickness()
+        
+        findings.append(f'Average TSP fouling thickness: {avg_thickness:.2f} mm')
+        findings.append(f'Maximum TSP fouling thickness: {max_thickness:.2f} mm')
+        findings.append(f'Current fouling stage: {self.fouling_stage.value}')
+        findings.append(f'Heat transfer degradation: {self.heat_transfer_degradation:.1%}')
+        
+        if self.fouling_fraction > 0.6:
+            recommendations.append('Schedule TSP cleaning within next outage')
+        if self.heat_transfer_degradation > 0.15:
+            recommendations.append('Consider mechanical cleaning for severe fouling')
+        if self.pressure_drop_ratio > 3.0:
+            recommendations.append('Monitor pressure drop trends closely')
+        
+        return {
+            'success': True,
+            'duration_hours': 6.0,
+            'work_performed': f'TSP inspection - {inspection_type}',
+            'findings': '; '.join(findings),
+            'recommendations': recommendations,
+            'fouling_fraction_measured': self.fouling_fraction,
+            'average_thickness_mm': avg_thickness,
+            'maximum_thickness_mm': max_thickness,
+            'effectiveness_score': 1.0,  # Inspection always successful
+            'next_maintenance_due': 4380.0,  # Semi-annual inspection
+            'radiation_exposure': 'Low - visual inspection only',
+            'access_required': 'Secondary side access',
+            'specialized_equipment': [
+                'Inspection cameras',
+                'Thickness measurement tools',
+                'Flow measurement equipment'
+            ]
+        }
+    
+    def _tsp_flow_test(self, **kwargs) -> Dict[str, Any]:
+        """Perform TSP flow test"""
+        test_type = kwargs.get('test_type', 'pressure_drop_measurement')
+        
+        # Simulate flow test results
+        findings = []
+        recommendations = []
+        
+        findings.append(f'Pressure drop ratio: {self.pressure_drop_ratio:.2f}x normal')
+        findings.append(f'Flow maldistribution: {self.flow_maldistribution:.1%}')
+        findings.append(f'Overall fouling fraction: {self.fouling_fraction:.1%}')
+        
+        if self.pressure_drop_ratio > 2.5:
+            recommendations.append('Significant flow restriction detected - schedule cleaning')
+        if self.flow_maldistribution > 0.2:
+            recommendations.append('Flow maldistribution may cause hot spots')
+        
+        return {
+            'success': True,
+            'duration_hours': 4.0,
+            'work_performed': f'TSP flow test - {test_type}',
+            'findings': '; '.join(findings),
+            'recommendations': recommendations,
+            'pressure_drop_ratio': self.pressure_drop_ratio,
+            'flow_maldistribution': self.flow_maldistribution,
+            'effectiveness_score': 1.0,  # Testing always successful
+            'next_maintenance_due': 2190.0,  # Quarterly testing
+            'radiation_exposure': 'Low - measurement only',
+            'access_required': 'Instrumentation access',
+            'specialized_equipment': [
+                'Pressure measurement equipment',
+                'Flow measurement devices',
+                'Data acquisition system'
+            ]
+        }
+    
     def update_fouling_state(self,
                            temperature: float,
                            flow_velocity: float,
@@ -508,11 +666,11 @@ class TSPFoulingModel(ChemistryFlowProvider):
         Returns:
             Dictionary with updated fouling state and performance impacts
         """
-        dt_years = dt_hours / (365.25 * 24.0)  # Convert hours to years
+        # Update operating time using base class method
+        dt_seconds = dt_hours * 3600.0  # Convert hours to seconds
+        self.update_operating_time(dt_seconds)
         
-        # Update operating time
-        self.operating_years += dt_years
-        self.last_cleaning_time += dt_years
+        dt_years = dt_hours / (365.25 * 24.0)  # Convert hours to years for local calculations
         
         # Calculate deposit formation rates using unified water chemistry
         formation_rates = self.calculate_deposit_formation_rates(
@@ -567,7 +725,11 @@ class TSPFoulingModel(ChemistryFlowProvider):
     
     def get_state_dict(self) -> Dict[str, float]:
         """Get current state as dictionary for logging/monitoring"""
-        state_dict = {
+        # Get base class state
+        state_dict = super().get_state_dict()
+        
+        # Add TSP-specific state
+        state_dict.update({
             'tsp_fouling_fraction': self.fouling_fraction,
             'tsp_fouling_stage_numeric': list(FoulingStage).index(self.fouling_stage),
             'tsp_heat_transfer_degradation': self.heat_transfer_degradation,
@@ -581,7 +743,7 @@ class TSPFoulingModel(ChemistryFlowProvider):
             'tsp_years_since_cleaning': self.last_cleaning_time,
             'tsp_average_deposit_thickness': self.deposits.get_average_thickness(),
             'tsp_maximum_deposit_thickness': self.deposits.get_maximum_thickness()
-        }
+        })
         
         # Add individual TSP level data
         for level in range(min(self.config.tsp_count, 7)):  # Limit to 7 levels for state dict
@@ -595,24 +757,20 @@ class TSPFoulingModel(ChemistryFlowProvider):
     
     def reset(self) -> None:
         """Reset TSP fouling model to initial conditions"""
+        # Reset base class state
+        super().reset()
+        
         # Reset deposit state
         self.deposits = DepositState()
         
-        # Reset operating parameters
-        self.operating_years = 0.0
-        self.total_cleaning_cycles = 0
-        self.last_cleaning_time = 0.0
-        
-        # Reset fouling state
-        self.fouling_fraction = 0.0
+        # Reset TSP-specific fouling state
         self.fouling_stage = FoulingStage.NORMAL
         self.heat_transfer_degradation = 0.0
         self.pressure_drop_ratio = 1.0
         self.flow_maldistribution = 0.0
         
-        # Reset performance tracking
+        # Reset TSP-specific performance tracking
         self.cumulative_power_loss = 0.0
-        self.replacement_recommended = False
         
         # Reset shutdown protection state
         self.shutdown_required = False

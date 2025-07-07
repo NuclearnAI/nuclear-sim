@@ -32,6 +32,13 @@ class MaintenanceActionType(Enum):
     # === MECHANICAL ACTIONS ===
     BEARING_REPLACEMENT = "bearing_replacement"  # Replace bearings
     BEARING_INSPECTION = "bearing_inspection"    # Inspect bearing condition
+    
+    # === INDIVIDUAL BEARING REPLACEMENT ACTIONS ===
+    MOTOR_BEARING_REPLACEMENT = "motor_bearing_replacement"      # Replace motor bearings only
+    PUMP_BEARING_REPLACEMENT = "pump_bearing_replacement"        # Replace pump bearings only
+    THRUST_BEARING_REPLACEMENT = "thrust_bearing_replacement"    # Replace thrust bearings only
+    MULTIPLE_BEARING_REPLACEMENT = "multiple_bearing_replacement" # Replace multiple bearing types
+    
     SEAL_REPLACEMENT = "seal_replacement"        # Replace mechanical seals
     SEAL_INSPECTION = "seal_inspection"          # Inspect seal condition
     IMPELLER_REPLACEMENT = "impeller_replacement"  # Replace pump impeller
@@ -88,6 +95,16 @@ class MaintenanceActionType(Enum):
     SCALE_REMOVAL = "scale_removal"                     # Remove mineral scale
     TUBE_SHEET_INSPECTION = "tube_sheet_inspection"     # Inspect tube sheet
     SECONDARY_SIDE_CLEANING = "secondary_side_cleaning" # Clean secondary side
+    
+    # === TSP ENHANCED ACTIONS ===
+    TSP_INSPECTION = "tsp_inspection"                   # Detailed TSP condition assessment
+    TSP_FLOW_TEST = "tsp_flow_test"                     # Flow restriction and pressure drop testing
+    
+    # === TUBE INTERIOR ACTIONS ===
+    TUBE_INTERIOR_INSPECTION = "tube_interior_inspection"  # Inspect tube interior surfaces
+    TUBE_INTERIOR_SCALE_CLEANING = "tube_interior_scale_cleaning"  # Clean scale from tube interior
+    TUBE_INTERIOR_EDDY_CURRENT_TESTING = "tube_interior_eddy_current_testing"  # NDT testing of tube integrity
+    PRIMARY_CHEMISTRY_OPTIMIZATION = "primary_chemistry_optimization"  # Optimize primary chemistry
     
     # === TURBINE BEARING ACTIONS ===
     TURBINE_BEARING_INSPECTION = "turbine_bearing_inspection"       # Inspect turbine bearing condition
@@ -314,6 +331,56 @@ class MaintenanceActionCatalog:
             applicable_component_types=["pump", "motor", "turbine"]
         )
         
+        # === INDIVIDUAL BEARING REPLACEMENT ACTIONS ===
+        
+        # Motor Bearing Replacement
+        self.actions[MaintenanceActionType.MOTOR_BEARING_REPLACEMENT] = MaintenanceActionMetadata(
+            action_type=MaintenanceActionType.MOTOR_BEARING_REPLACEMENT,
+            display_name="Motor Bearing Replacement",
+            description="Replace worn or damaged motor bearings only",
+            category="Individual Bearing Replacement",
+            typical_duration_hours=6.0,
+            equipment_shutdown_required=True,
+            typical_frequency_hours=17520.0,  # Every 2 years
+            applicable_component_types=["pump", "motor"]
+        )
+        
+        # Pump Bearing Replacement
+        self.actions[MaintenanceActionType.PUMP_BEARING_REPLACEMENT] = MaintenanceActionMetadata(
+            action_type=MaintenanceActionType.PUMP_BEARING_REPLACEMENT,
+            display_name="Pump Bearing Replacement",
+            description="Replace worn or damaged pump bearings only",
+            category="Individual Bearing Replacement",
+            typical_duration_hours=6.0,
+            equipment_shutdown_required=True,
+            typical_frequency_hours=17520.0,  # Every 2 years
+            applicable_component_types=["pump"]
+        )
+        
+        # Thrust Bearing Replacement
+        self.actions[MaintenanceActionType.THRUST_BEARING_REPLACEMENT] = MaintenanceActionMetadata(
+            action_type=MaintenanceActionType.THRUST_BEARING_REPLACEMENT,
+            display_name="Thrust Bearing Replacement",
+            description="Replace worn or damaged thrust bearings only",
+            category="Individual Bearing Replacement",
+            typical_duration_hours=8.0,
+            equipment_shutdown_required=True,
+            typical_frequency_hours=17520.0,  # Every 2 years
+            applicable_component_types=["pump"]
+        )
+        
+        # Multiple Bearing Replacement
+        self.actions[MaintenanceActionType.MULTIPLE_BEARING_REPLACEMENT] = MaintenanceActionMetadata(
+            action_type=MaintenanceActionType.MULTIPLE_BEARING_REPLACEMENT,
+            display_name="Multiple Bearing Replacement",
+            description="Replace multiple bearing types simultaneously",
+            category="Individual Bearing Replacement",
+            typical_duration_hours=12.0,
+            equipment_shutdown_required=True,
+            typical_frequency_hours=17520.0,  # Every 2 years
+            applicable_component_types=["pump", "motor"]
+        )
+        
         # Motor Inspection
         self.actions[MaintenanceActionType.MOTOR_INSPECTION] = MaintenanceActionMetadata(
             action_type=MaintenanceActionType.MOTOR_INSPECTION,
@@ -504,6 +571,82 @@ class MaintenanceActionCatalog:
             typical_duration_hours=8.0,
             equipment_shutdown_required=True,
             typical_frequency_hours=4380.0,  # Semi-annual
+            applicable_component_types=["steam_generator"]
+        )
+        
+        # === TSP ENHANCED ACTIONS ===
+        
+        # TSP Inspection
+        self.actions[MaintenanceActionType.TSP_INSPECTION] = MaintenanceActionMetadata(
+            action_type=MaintenanceActionType.TSP_INSPECTION,
+            display_name="TSP Inspection",
+            description="Detailed TSP condition assessment and fouling measurement",
+            category="Steam Generator",
+            typical_duration_hours=6.0,
+            equipment_shutdown_required=True,
+            typical_frequency_hours=4380.0,  # Semi-annual
+            applicable_component_types=["steam_generator"]
+        )
+        
+        # TSP Flow Test
+        self.actions[MaintenanceActionType.TSP_FLOW_TEST] = MaintenanceActionMetadata(
+            action_type=MaintenanceActionType.TSP_FLOW_TEST,
+            display_name="TSP Flow Test",
+            description="Flow restriction and pressure drop testing",
+            category="Steam Generator",
+            typical_duration_hours=4.0,
+            equipment_shutdown_required=False,
+            typical_frequency_hours=2190.0,  # Quarterly
+            applicable_component_types=["steam_generator"]
+        )
+        
+        # === TUBE INTERIOR ACTIONS ===
+        
+        # Tube Interior Inspection
+        self.actions[MaintenanceActionType.TUBE_INTERIOR_INSPECTION] = MaintenanceActionMetadata(
+            action_type=MaintenanceActionType.TUBE_INTERIOR_INSPECTION,
+            display_name="Tube Interior Inspection",
+            description="Inspect tube interior surfaces for scale and corrosion",
+            category="Steam Generator",
+            typical_duration_hours=8.0,
+            equipment_shutdown_required=True,
+            typical_frequency_hours=8760.0,  # Annual
+            applicable_component_types=["steam_generator"]
+        )
+        
+        # Tube Interior Scale Cleaning
+        self.actions[MaintenanceActionType.TUBE_INTERIOR_SCALE_CLEANING] = MaintenanceActionMetadata(
+            action_type=MaintenanceActionType.TUBE_INTERIOR_SCALE_CLEANING,
+            display_name="Tube Interior Scale Cleaning",
+            description="Clean scale deposits from tube interior surfaces",
+            category="Steam Generator",
+            typical_duration_hours=60.0,
+            equipment_shutdown_required=True,
+            typical_frequency_hours=35040.0,  # Every 4 years
+            applicable_component_types=["steam_generator"]
+        )
+        
+        # Tube Interior Eddy Current Testing
+        self.actions[MaintenanceActionType.TUBE_INTERIOR_EDDY_CURRENT_TESTING] = MaintenanceActionMetadata(
+            action_type=MaintenanceActionType.TUBE_INTERIOR_EDDY_CURRENT_TESTING,
+            display_name="Tube Interior Eddy Current Testing",
+            description="Non-destructive testing of tube integrity and wall thickness",
+            category="Steam Generator",
+            typical_duration_hours=24.0,
+            equipment_shutdown_required=True,
+            typical_frequency_hours=8760.0,  # Annual
+            applicable_component_types=["steam_generator"]
+        )
+        
+        # Primary Chemistry Optimization
+        self.actions[MaintenanceActionType.PRIMARY_CHEMISTRY_OPTIMIZATION] = MaintenanceActionMetadata(
+            action_type=MaintenanceActionType.PRIMARY_CHEMISTRY_OPTIMIZATION,
+            display_name="Primary Chemistry Optimization",
+            description="Optimize primary chemistry to reduce tube interior scaling",
+            category="Steam Generator",
+            typical_duration_hours=4.0,
+            equipment_shutdown_required=False,
+            typical_frequency_hours=2190.0,  # Quarterly
             applicable_component_types=["steam_generator"]
         )
         

@@ -259,8 +259,13 @@ class FeedwaterInitialConditions:
     # === EXTENDED MECHANICAL PARAMETERS ===
     # Enhanced bearing parameters
     bearing_vibrations: List[float] = field(default_factory=lambda: [10.0, 10.0, 10.0, 10.0])  # mm/s bearing vibrations per pump
-    bearing_wear: List[float] = field(default_factory=lambda: [0.5, 0.5, 0.5, 0.5])  # Fraction of bearing life used per pump
     bearing_noise_level: List[float] = field(default_factory=lambda: [70.0, 70.0, 70.0, 70.0])  # dB bearing noise per pump
+    
+    # === INDIVIDUAL BEARING WEAR PARAMETERS ===
+    # Individual bearing wear by type
+    motor_bearing_wear: List[float] = field(default_factory=lambda: [0.0, 0.0, 0.0, 0.0])    # Motor bearing wear per pump (fraction 0-1)
+    pump_bearing_wear: List[float] = field(default_factory=lambda: [0.0, 0.0, 0.0, 0.0])     # Pump bearing wear per pump (fraction 0-1)  
+    thrust_bearing_wear: List[float] = field(default_factory=lambda: [0.0, 0.0, 0.0, 0.0])   # Thrust bearing wear per pump (fraction 0-1)
     
     # Enhanced seal parameters
     seal_face_wear: List[float] = field(default_factory=lambda: [0.3, 0.3, 0.3, 0.3])  # Fraction of seal life used per pump

@@ -386,10 +386,21 @@ class MaintenanceOrchestrator:
             # Clean interface: only pass the decided action to the component
             # The orchestrator has already made the decision, component just executes it
             if hasattr(component, 'perform_maintenance'):
-                # Call component's maintenance method with decided action only
+                # Extract component_id from violations for bearing replacement
+                maintenance_kwargs = kwargs.copy()
+                
+                # For bearing replacement, check if we have component_id from threshold config
+                if decision.selected_action == "bearing_replacement":
+                    for violation in violations:
+                        if violation.get('action') == 'bearing_replacement' and 'component_id' in violation:
+                            maintenance_kwargs['component_id'] = violation['component_id']
+                            print(f"ORCHESTRATOR: Passing component_id={violation['component_id']} to bearing_replacement")
+                            break
+                
+                # Call component's maintenance method with decided action
                 result = component.perform_maintenance(
                     maintenance_type=decision.selected_action,
-                    **kwargs
+                    **maintenance_kwargs
                 )
             else:
                 # Fallback - create basic result
@@ -538,24 +549,57 @@ class MaintenanceOrchestrator:
             'steam_generator': {
                 'comprehensive_actions': {
                     'tube_bundle_overhaul': {
-                        'encompasses': ['tube_cleaning', 'tube_inspection', 'tsp_cleaning',
-                                      'eddy_current_testing', 'scale_removal'],
+                        'encompasses': ['tube_cleaning', 'tube_inspection', 'tsp_chemical_cleaning',
+                                      'tsp_mechanical_cleaning', 'eddy_current_testing', 'scale_removal',
+                                      'tube_interior_inspection', 'tube_interior_scale_cleaning',
+                                      'tube_interior_eddy_current_testing', 'tsp_inspection'],
                         'trigger_conditions': {
-                            'multiple_major_actions': 2,
+                            'multiple_major_actions': 3,
                             'fouling_threshold': 20.0,
-                            'tube_plugging_percentage_threshold': 5.0
+                            'tube_plugging_percentage_threshold': 5.0,
+                            'heat_transfer_degradation_threshold': 0.25
+                        }
+                    },
+                    'comprehensive_steam_generator_inspection': {
+                        'encompasses': ['tube_bundle_inspection', 'tsp_inspection', 'tube_interior_inspection',
+                                      'tube_sheet_inspection', 'moisture_separator_maintenance',
+                                      'tsp_flow_test', 'eddy_current_testing'],
+                        'trigger_conditions': {
+                            'multiple_major_actions': 4,
+                            'total_violations': 6
                         }
                     }
                 },
                 'coordinated_actions': {
+                    'tsp_chemical_cleaning': ['tsp_inspection', 'tsp_flow_test', 'water_chemistry_adjustment'],
+                    'tsp_mechanical_cleaning': ['tsp_inspection', 'tube_bundle_inspection'],
+                    'tube_interior_scale_cleaning': ['tube_interior_inspection', 'primary_chemistry_optimization',
+                                                   'tube_interior_eddy_current_testing'],
                     'tube_cleaning': ['tube_inspection', 'water_chemistry_adjustment'],
-                    'tsp_cleaning': ['tube_bundle_inspection', 'eddy_current_testing'],
-                    'scale_removal': ['water_chemistry_adjustment', 'tube_inspection']
+                    'scale_removal': ['water_chemistry_adjustment', 'tube_inspection'],
+                    'eddy_current_testing': ['tube_bundle_inspection', 'tube_interior_inspection'],
+                    'primary_chemistry_optimization': ['tube_interior_inspection', 'water_chemistry_adjustment']
                 },
                 'promotion_rules': {
+                    'tsp_inspection': {
+                        'promote_to': 'tsp_chemical_cleaning',
+                        'when': ['fouling_fraction > 0.15', 'heat_transfer_degradation > 0.10']
+                    },
+                    'tube_interior_inspection': {
+                        'promote_to': 'tube_interior_scale_cleaning',
+                        'when': ['scale_thickness > 1.0', 'thermal_resistance > 0.0005']
+                    },
+                    'tsp_flow_test': {
+                        'promote_to': 'tsp_mechanical_cleaning',
+                        'when': ['pressure_drop_ratio > 3.0', 'flow_maldistribution > 0.25']
+                    },
                     'tube_cleaning': {
                         'promote_to': 'tube_bundle_overhaul',
                         'when': ['fouling_factor > 0.3', 'heat_transfer_degradation > 0.2']
+                    },
+                    'water_chemistry_adjustment': {
+                        'promote_to': 'primary_chemistry_optimization',
+                        'when': ['scale_formation_rate > 0.01', 'chemistry_imbalance > 0.1']
                     }
                 }
             },

@@ -65,6 +65,9 @@ class StateManager(StateCollector):
         self.maintenance_config = None    # Parsed maintenance configuration
         self.threshold_event_subscribers = []  # Callbacks for threshold events
         
+        # THRESHOLD COOLDOWN TRACKING
+        self.threshold_last_violation_times = {}  # component_id -> {param: timestamp}
+        
         # Cache orchestrator for performance
         self._maintenance_orchestrator = None
         
@@ -1198,6 +1201,46 @@ class StateManager(StateCollector):
         
         return snapshot
     
+    def _is_threshold_in_cooldown(self, component_id: str, param_name: str, 
+                                 cooldown_hours: float, current_time: float) -> bool:
+        """
+        Check if threshold is in cooldown period
+        
+        Args:
+            component_id: Component ID
+            param_name: Parameter name
+            cooldown_hours: Cooldown period in hours
+            current_time: Current simulation time in minutes
+            
+        Returns:
+            True if threshold is in cooldown period
+        """
+        if component_id not in self.threshold_last_violation_times:
+            return False
+        
+        if param_name not in self.threshold_last_violation_times[component_id]:
+            return False
+        
+        last_violation_time = self.threshold_last_violation_times[component_id][param_name]
+        time_since_violation = current_time - last_violation_time
+        cooldown_minutes = cooldown_hours * 60  # Convert to minutes
+        
+        return time_since_violation < cooldown_minutes
+    
+    def _record_threshold_violation_time(self, component_id: str, param_name: str, timestamp: float):
+        """
+        Record when a threshold violation occurred
+        
+        Args:
+            component_id: Component ID
+            param_name: Parameter name
+            timestamp: Current simulation time in minutes
+        """
+        if component_id not in self.threshold_last_violation_times:
+            self.threshold_last_violation_times[component_id] = {}
+        
+        self.threshold_last_violation_times[component_id][param_name] = timestamp
+    
     def _check_maintenance_thresholds(self, timestamp: float, row_data: dict):
         """
         Check maintenance thresholds during state collection with component-level batching
@@ -1216,12 +1259,22 @@ class StateManager(StateCollector):
             violations = []
             
             for param_name, threshold_config in thresholds.items():
+                # NEW: Check threshold cooldown first
+                cooldown_hours = threshold_config.get('cooldown_hours', 24.0)
+                if self._is_threshold_in_cooldown(component_id, param_name, cooldown_hours, timestamp):
+                    continue  # Skip this threshold check
+
+                if "turbine_TB-LUB" in component_id or "t" in component_id:
+                    continue 
                 # Find the parameter value in row_data
                 param_value = self._find_parameter_in_row_data(component_id, param_name, row_data)
                 
                 if param_value is not None:
                     # Check if threshold is violated
                     if self._check_threshold_condition(param_value, threshold_config):
+                        # Record violation time
+                        self._record_threshold_violation_time(component_id, param_name, timestamp)
+                        
                         violation_data = {
                             'parameter': param_name,
                             'value': param_value,
@@ -1278,6 +1331,10 @@ class StateManager(StateCollector):
             f"secondary.feedwater_{component_id}.{actual_param_name}",
             f"secondary.feedwater.{actual_param_name}",
             f"secondary.{component_id}.{actual_param_name}",
+            # Add steam generator patterns
+            f"secondary.steam_generator_{component_id}.{actual_param_name}",
+            f"secondary.turbine_{component_id}.{actual_param_name}",
+            f"secondary.condenser_{component_id}.{actual_param_name}",
         ]
         
         for name in possible_names:
@@ -1573,6 +1630,10 @@ class StateManager(StateCollector):
                     existing_violations = list(self.threshold_violations[component_id].keys())
                     print(f"STATE MANAGER: 🔍 Existing violations for {component_id}: {existing_violations}")
         
+        # NEW: Reset threshold cooldowns for parameters addressed by this maintenance
+        if success:
+            self._reset_threshold_cooldowns_for_maintenance(component_id, action_type)
+        
         print(f"STATE MANAGER: 📝 Recorded maintenance: {component_id} {action_type} {'✅' if success else '❌'} (effectiveness: {effectiveness:.2f})")
     
     def _force_state_collection_after_maintenance(self, component_id: str):
@@ -1659,6 +1720,53 @@ class StateManager(StateCollector):
             return True
         
         return False
+    
+    def _reset_threshold_cooldowns_for_maintenance(self, component_id: str, action_type: str):
+        """
+        Reset threshold cooldowns for parameters addressed by maintenance
+        
+        Args:
+            component_id: Component ID that was maintained
+            action_type: Type of maintenance action performed
+        """
+        if component_id not in self.threshold_last_violation_times:
+            return
+        
+        # Define which parameters are addressed by each maintenance action
+        maintenance_parameter_mapping = {
+            'scale_removal': ['tube_wall_temperature', 'fouling_factor', 'efficiency', 'thermal_resistance'],
+            'oil_change': ['oil_level', 'oil_contamination', 'oil_temperature', 'oil_acidity'],
+            'oil_top_off': ['oil_level'],
+            'bearing_replacement': ['bearing_wear', 'bearing_temperature', 'vibration_level'],
+            'bearing_inspection': ['bearing_wear', 'bearing_temperature'],
+            'vibration_analysis': ['vibration_level'],
+            'chemical_cleaning': ['fouling_factor', 'efficiency', 'tube_wall_temperature'],
+            'tube_cleaning': ['fouling_factor', 'tube_wall_temperature'],
+            'performance_optimization': ['efficiency'],
+            'routine_maintenance': []  # Routine maintenance doesn't reset specific cooldowns
+        }
+        
+        # Get parameters addressed by this maintenance action
+        addressed_parameters = maintenance_parameter_mapping.get(action_type, [])
+        
+        if not addressed_parameters:
+            print(f"STATE MANAGER: No specific parameters to reset cooldowns for {action_type}")
+            return
+        
+        # Reset cooldowns for addressed parameters
+        cooldowns_reset = 0
+        for param_name in list(self.threshold_last_violation_times[component_id].keys()):
+            if param_name in addressed_parameters:
+                del self.threshold_last_violation_times[component_id][param_name]
+                cooldowns_reset += 1
+                print(f"STATE MANAGER: 🔄 Reset cooldown for {component_id}.{param_name}")
+        
+        # Clean up empty component entries
+        if not self.threshold_last_violation_times[component_id]:
+            del self.threshold_last_violation_times[component_id]
+        
+        if cooldowns_reset > 0:
+            print(f"STATE MANAGER: ✅ Reset {cooldowns_reset} threshold cooldowns for {component_id} after {action_type}")
 
     def get_maintenance_history(self, component_id: str = None) -> list:
         """

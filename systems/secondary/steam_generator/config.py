@@ -126,8 +126,10 @@ class SteamGeneratorInitialConditions:
     primary_flow_rates: List[float] = field(default_factory=lambda: [5700.0, 5700.0, 5700.0])     # → primary flow parameter
     
     # TSP fouling parameters (map to TSPFoulingModel class state)
-    tsp_fouling_thicknesses: List[float] = field(default_factory=lambda: [0.0, 0.0, 0.0])         # → deposits.get_total_thickness()
-    tsp_heat_transfer_degradations: List[float] = field(default_factory=lambda: [0.0, 0.0, 0.0])  # → heat_transfer_degradation
+    tsp_fouling_thicknesses: List[float] = field(default_factory=lambda: [0.0, 0.0, 0.0])         # → deposits.get_total_thickness() → heat_transfer_degradation (calculated)
+    
+    # Tube interior scale parameters (map to TubeInteriorFouling class state)
+    scale_thicknesses: List[float] = field(default_factory=lambda: [0.0, 0.0, 0.0])               # → scale_thickness → scale_thermal_resistance (calculated)
     
     # Heat transfer parameters (map to SteamGenerator class state)
     tube_wall_temperature: List[float] = field(default_factory=lambda: [300.0, 300.0, 300.0])     # → tube_wall_temp
@@ -364,8 +366,8 @@ class SteamGeneratorConfig(YAMLWizard, JSONWizard, TOMLWizard):
         while len(self.initial_conditions.tsp_fouling_thicknesses) < self.num_steam_generators:
             self.initial_conditions.tsp_fouling_thicknesses.append(self.tsp_fouling.initial_fouling_thickness)
         
-        while len(self.initial_conditions.tsp_heat_transfer_degradations) < self.num_steam_generators:
-            self.initial_conditions.tsp_heat_transfer_degradations.append(self.tsp_fouling.initial_heat_transfer_degradation)
+        while len(self.initial_conditions.scale_thicknesses) < self.num_steam_generators:
+            self.initial_conditions.scale_thicknesses.append(0.0)
         
         while len(self.initial_conditions.tube_wall_temperature) < self.num_steam_generators:
             self.initial_conditions.tube_wall_temperature.append(300.0)
@@ -385,7 +387,7 @@ class SteamGeneratorConfig(YAMLWizard, JSONWizard, TOMLWizard):
         self.initial_conditions.primary_outlet_temps = self.initial_conditions.primary_outlet_temps[:self.num_steam_generators]
         self.initial_conditions.primary_flow_rates = self.initial_conditions.primary_flow_rates[:self.num_steam_generators]
         self.initial_conditions.tsp_fouling_thicknesses = self.initial_conditions.tsp_fouling_thicknesses[:self.num_steam_generators]
-        self.initial_conditions.tsp_heat_transfer_degradations = self.initial_conditions.tsp_heat_transfer_degradations[:self.num_steam_generators]
+        self.initial_conditions.scale_thicknesses = self.initial_conditions.scale_thicknesses[:self.num_steam_generators]
         self.tsp_fouling.fouling_rate_factors = self.tsp_fouling.fouling_rate_factors[:self.num_steam_generators]
     
     def get_sg_config(self, sg_index: int) -> Dict[str, Any]:
@@ -421,7 +423,6 @@ class SteamGeneratorConfig(YAMLWizard, JSONWizard, TOMLWizard):
             'initial_primary_outlet_temp': self.initial_conditions.primary_outlet_temps[sg_index],
             'initial_primary_flow': self.initial_conditions.primary_flow_rates[sg_index],
             'initial_tsp_fouling_thickness': self.initial_conditions.tsp_fouling_thicknesses[sg_index],
-            'initial_tsp_degradation': self.initial_conditions.tsp_heat_transfer_degradations[sg_index],
             'tsp_fouling_rate_factor': self.tsp_fouling.fouling_rate_factors[sg_index]
         }
     
@@ -552,7 +553,6 @@ def create_four_loop_sg_config() -> SteamGeneratorConfig:
     config.initial_conditions.primary_outlet_temps.append(293.0)
     config.initial_conditions.primary_flow_rates.append(5700.0)
     config.initial_conditions.tsp_fouling_thicknesses.append(0.0)
-    config.initial_conditions.tsp_heat_transfer_degradations.append(0.0)
     config.tsp_fouling.fouling_rate_factors.append(1.0)
     
     return config

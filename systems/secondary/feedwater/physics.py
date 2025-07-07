@@ -243,30 +243,40 @@ class EnhancedFeedwaterPhysics(HeatFlowProvider, ChemistryFlowProvider):
                         pump.lubrication_system.oil_temperature = ic.oil_temperature
                         print(f"      Oil temperature: {ic.oil_temperature}°C")
                     
-                    # Component wear with additive approach
-                    base_bearing_wear = ic.bearing_wear[i] * 100.0 if i < len(ic.bearing_wear) else 0.0
-                    impeller_contribution = ic.impeller_wear[i] * 100.0 if (hasattr(ic, 'impeller_wear') and i < len(ic.impeller_wear)) else 0.0
-                    seal_wear_value = ic.seal_face_wear[i] * 100.0 if (hasattr(ic, 'seal_face_wear') and i < len(ic.seal_face_wear)) else 0.0
-                    
-                    # Apply to lubrication system components
-                    pump.lubrication_system.component_wear['motor_bearings'] = base_bearing_wear
-                    pump.lubrication_system.component_wear['pump_bearings'] = base_bearing_wear + impeller_contribution
-                    pump.lubrication_system.component_wear['thrust_bearing'] = base_bearing_wear
-                    pump.lubrication_system.component_wear['mechanical_seals'] = seal_wear_value
-                    
-                    print(f"      Motor bearing wear: {base_bearing_wear:.1f}%")
-                    print(f"      Pump bearing wear: {base_bearing_wear + impeller_contribution:.1f}% (bearing: {base_bearing_wear:.1f}% + impeller: {impeller_contribution:.1f}%)")
-                    print(f"      Thrust bearing wear: {base_bearing_wear:.1f}%")
-                    print(f"      Seal wear: {seal_wear_value:.1f}%")
-                    
-                    # Seal leakage (per-pump)
-                    if hasattr(ic, 'seal_leakage_rate') and i < len(ic.seal_leakage_rate):
-                        pump.lubrication_system.seal_leakage_rate = ic.seal_leakage_rate[i]
-                        print(f"      Seal leakage: {ic.seal_leakage_rate[i]} L/min")
-                    
-                    # Recalculate performance factors after setting initial conditions
-                    pump.lubrication_system._calculate_pump_performance_factors()
-                    print(f"      Performance factors recalculated")
+                # === INDIVIDUAL BEARING WEAR APPLICATION ===
+                # Apply individual bearing wear parameters directly
+                
+                # Motor bearing wear
+                motor_wear = ic.motor_bearing_wear[i] * 100.0 if i < len(ic.motor_bearing_wear) else 0.0
+                print(f"      Motor bearing wear: {motor_wear:.1f}%")
+                
+                # Pump bearing wear
+                pump_wear = ic.pump_bearing_wear[i] * 100.0 if i < len(ic.pump_bearing_wear) else 0.0
+                print(f"      Pump bearing wear: {pump_wear:.1f}%")
+                
+                # Thrust bearing wear
+                thrust_wear = ic.thrust_bearing_wear[i] * 100.0 if i < len(ic.thrust_bearing_wear) else 0.0
+                print(f"      Thrust bearing wear: {thrust_wear:.1f}%")
+                
+                # Seal wear
+                seal_wear_value = ic.seal_face_wear[i] * 100.0 if (hasattr(ic, 'seal_face_wear') and i < len(ic.seal_face_wear)) else 0.0
+                
+                # Apply to lubrication system components
+                pump.lubrication_system.component_wear['motor_bearings'] = motor_wear
+                pump.lubrication_system.component_wear['pump_bearings'] = pump_wear
+                pump.lubrication_system.component_wear['thrust_bearing'] = thrust_wear
+                pump.lubrication_system.component_wear['mechanical_seals'] = seal_wear_value
+                
+                print(f"      Seal wear: {seal_wear_value:.1f}%")
+                
+                # Seal leakage (per-pump)
+                if hasattr(ic, 'seal_leakage_rate') and i < len(ic.seal_leakage_rate):
+                    pump.lubrication_system.seal_leakage_rate = ic.seal_leakage_rate[i]
+                    print(f"      Seal leakage: {ic.seal_leakage_rate[i]} L/min")
+                
+                # Recalculate performance factors after setting initial conditions
+                pump.lubrication_system._calculate_pump_performance_factors()
+                print(f"      Performance factors recalculated")
                 
                 # === APPLY HYDRAULIC CONDITIONS TO PUMP STATE ===
                 # Hydraulic conditions (pump state only)
@@ -452,25 +462,28 @@ class EnhancedFeedwaterPhysics(HeatFlowProvider, ChemistryFlowProvider):
                         else:
                             validation_successes.append(f"Pump {pump_id} oil level: {actual}%")
                     
-                    # Validate component wear with additive approach
-                    if i < len(ic.bearing_wear) and hasattr(ic, 'impeller_wear') and i < len(ic.impeller_wear):
-                        expected_motor_bearing = ic.bearing_wear[i] * 100.0
-                        expected_pump_bearing = (ic.bearing_wear[i] + ic.impeller_wear[i]) * 100.0
-                        expected_thrust_bearing = ic.bearing_wear[i] * 100.0
-                        
+                    # Validate individual bearing wear parameters
+                    if i < len(ic.motor_bearing_wear):
+                        expected_motor_bearing = ic.motor_bearing_wear[i] * 100.0
                         actual_motor_bearing = pump.lubrication_system.component_wear.get('motor_bearings', 0.0)
-                        actual_pump_bearing = pump.lubrication_system.component_wear.get('pump_bearings', 0.0)
-                        actual_thrust_bearing = pump.lubrication_system.component_wear.get('thrust_bearing', 0.0)
                         
                         if abs(actual_motor_bearing - expected_motor_bearing) > 0.1:
                             validation_errors.append(f"Pump {pump_id} motor bearing wear mismatch: expected {expected_motor_bearing:.1f}%, got {actual_motor_bearing:.1f}%")
                         else:
                             validation_successes.append(f"Pump {pump_id} motor bearing wear: {actual_motor_bearing:.1f}%")
+                    
+                    if i < len(ic.pump_bearing_wear):
+                        expected_pump_bearing = ic.pump_bearing_wear[i] * 100.0
+                        actual_pump_bearing = pump.lubrication_system.component_wear.get('pump_bearings', 0.0)
                         
                         if abs(actual_pump_bearing - expected_pump_bearing) > 0.1:
                             validation_errors.append(f"Pump {pump_id} pump bearing wear mismatch: expected {expected_pump_bearing:.1f}%, got {actual_pump_bearing:.1f}%")
                         else:
-                            validation_successes.append(f"Pump {pump_id} pump bearing wear: {actual_pump_bearing:.1f}% (additive: {ic.bearing_wear[i]*100:.1f}% + {ic.impeller_wear[i]*100:.1f}%)")
+                            validation_successes.append(f"Pump {pump_id} pump bearing wear: {actual_pump_bearing:.1f}%")
+                    
+                    if i < len(ic.thrust_bearing_wear):
+                        expected_thrust_bearing = ic.thrust_bearing_wear[i] * 100.0
+                        actual_thrust_bearing = pump.lubrication_system.component_wear.get('thrust_bearing', 0.0)
                         
                         if abs(actual_thrust_bearing - expected_thrust_bearing) > 0.1:
                             validation_errors.append(f"Pump {pump_id} thrust bearing wear mismatch: expected {expected_thrust_bearing:.1f}%, got {actual_thrust_bearing:.1f}%")

@@ -720,6 +720,45 @@ turbine:
     blade_temperatures: [500.0, 480.0, 460.0, 440.0, 420.0, 400.0, 380.0, 360.0, 340.0, 320.0, 300.0, 280.0, 260.0, 240.0]
     protection_system_armed: true
     trip_active: false
+    
+    # UNIFIED LUBRICATION SYSTEM (replaces all per-bearing oil arrays)
+    lubrication_system:
+      # System-wide base conditions
+      oil_reservoir_level: 100.0
+      oil_base_temperature: 45.0
+      oil_base_contamination: 5.0
+      oil_base_pressure: 0.25
+      oil_base_viscosity: 32.0
+      oil_base_acidity: 0.1
+      oil_base_moisture: 0.02
+      
+      # Component-specific factors
+      component_contamination_factors:
+        hp_journal_bearing: 1.2
+        lp_journal_bearing: 0.8
+        thrust_bearing: 1.5
+        seal_oil_system: 1.1
+        oil_coolers: 0.6
+      
+      component_temperature_offsets:
+        hp_journal_bearing: 8.0
+        lp_journal_bearing: 3.0
+        thrust_bearing: 12.0
+        seal_oil_system: -2.0
+        oil_coolers: -5.0
+      
+      component_wear_levels:
+        hp_journal_bearing: 2.0
+        lp_journal_bearing: 1.5
+        thrust_bearing: 3.0
+        seal_oil_system: 2.5
+        oil_coolers: 1.0
+      
+      # System performance
+      pump_efficiency: 0.9
+      filter_effectiveness: 0.95
+      cooler_effectiveness: 0.9
+      system_health_factor: 1.0
   
   # Maintenance configuration
   maintenance:

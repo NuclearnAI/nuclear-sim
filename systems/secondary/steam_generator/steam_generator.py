@@ -23,6 +23,7 @@ from typing import Dict, Optional, Tuple, List, Any
 from simulator.state import auto_register
 from ..component_descriptions import STEAM_GENERATOR_COMPONENT_DESCRIPTIONS
 from .tsp_fouling_model import TSPFoulingModel, TSPFoulingConfig
+from .tube_interior_fouling import TubeInteriorFouling
 from ..water_chemistry import WaterChemistry, WaterChemistryConfig
 
 # Import chemistry flow interfaces
@@ -79,6 +80,9 @@ class SteamGenerator(ChemistryFlowProvider):
         
         # Initialize TSP fouling model with unified water chemistry
         self.tsp_fouling = TSPFoulingModel(tsp_fouling_config, self.water_chemistry)
+        
+        # Initialize tube interior fouling model with unified water chemistry
+        self.tube_interior_fouling = TubeInteriorFouling(self.config, self.water_chemistry)
         
         # Initialize state variables to typical PWR operating conditions
         # Primary side (hot leg inlet, cold leg outlet)
@@ -206,13 +210,25 @@ class SteamGenerator(ChemistryFlowProvider):
         
         # Apply TSP fouling degradation to heat transfer coefficient
         tsp_degradation_factor = 1.0 - self.tsp_fouling.heat_transfer_degradation
-        overall_htc_with_fouling = overall_htc * tsp_degradation_factor
+        overall_htc_with_tsp_fouling = overall_htc * tsp_degradation_factor
+        
+        # Apply tube interior scale thermal resistance
+        # Thermal resistance from scale adds to the overall thermal resistance
+        scale_thermal_resistance = self.tube_interior_fouling.scale_thermal_resistance
+        if scale_thermal_resistance > 0:
+            # Add scale resistance to overall thermal resistance
+            # 1/U_total = 1/U_clean + R_scale
+            clean_resistance = 1.0 / overall_htc_with_tsp_fouling
+            total_resistance = clean_resistance + scale_thermal_resistance
+            overall_htc_with_all_fouling = 1.0 / total_resistance
+        else:
+            overall_htc_with_all_fouling = overall_htc_with_tsp_fouling
         
         # Calculate effective heat transfer area based on current water level
         effective_area = self.calculate_effective_heat_transfer_area(self.water_level)
         
-        # Heat transfer rate using effective area (level-dependent) and TSP fouling effects
-        heat_transfer_rate = overall_htc_with_fouling * effective_area * lmtd
+        # Heat transfer rate using effective area (level-dependent) and all fouling effects
+        heat_transfer_rate = overall_htc_with_all_fouling * effective_area * lmtd
         
         # ENHANCED PHYSICAL CONSTRAINTS: cannot exceed energy available from primary coolant
         # Q_max = m_dot * cp * (T_in - T_out)
@@ -239,34 +255,60 @@ class SteamGenerator(ChemistryFlowProvider):
         if heat_transfer_rate < 0:
             heat_transfer_rate = 0.0
         
-        # Calculate tube wall temperature (thermal circuit analysis)
-        heat_flux = heat_transfer_rate / self.config.heat_transfer_area_per_sg
-        primary_avg_temp = (primary_temp_in + primary_temp_out) / 2.0
+        # SIMPLE APPROACH: Calculate tube wall temperature as secondary temp + thermal resistance effects
+        # This ensures scale always increases tube wall temperature (insulation effect)
         
-        # Temperature drop from primary fluid to tube wall
-        delta_t_primary = heat_flux / h_primary
-        tube_wall_temp_inner = primary_avg_temp - delta_t_primary
+        # Use actual calculated heat flux (no hardcoded values)
+        operating_heat_flux = heat_transfer_rate / self.config.heat_transfer_area_per_sg
+        operating_heat_flux = max(operating_heat_flux, 5000.0)  # Minimum for low-power operation
         
-        # Temperature drop across tube wall
-        delta_t_wall = heat_flux * r_wall
-        tube_wall_temp_outer = tube_wall_temp_inner - delta_t_wall
+        # Get fouling thermal resistances from both sides
+        r_scale_primary = self.tube_interior_fouling.scale_thermal_resistance  # Primary side scale
+        r_scale_secondary = self._calculate_tsp_scale_thermal_resistance()      # Secondary side deposits
         
-        self.tube_wall_temp = (tube_wall_temp_inner + tube_wall_temp_outer) / 2.0
+        # Calculate cumulative thermal resistance from secondary bulk to tube wall center
+        r_secondary_to_tube_wall = (
+            1.0 / h_secondary +                    # Secondary boundary layer
+            r_scale_secondary +                    # TSP deposits (if any)
+            (r_wall / 2.0) +                      # Half tube wall thickness
+            r_scale_primary                       # Primary scale (the big effect)
+        )
+        
+        # Tube wall temperature = secondary temperature + temperature rise due to thermal resistance
+        # This guarantees that more scale resistance = higher tube wall temperature
+        self.tube_wall_temp = sat_temp + (operating_heat_flux * r_secondary_to_tube_wall)
+        
+        # For debugging: calculate the scale contribution specifically
+        scale_temperature_contribution = operating_heat_flux * r_scale_primary
+        actual_heat_flux = operating_heat_flux  # For compatibility with existing code
+        
+        # Physical validation - warn if tube wall temperature is extremely high
+        if self.tube_wall_temp > 400.0:
+            print(f"WARNING: Very high tube wall temperature: {self.tube_wall_temp:.1f}°C - "
+                  f"Scale thickness: {self.tube_interior_fouling.scale_thickness:.1f}mm")
         self.overall_htc = overall_htc
-        self.heat_flux = heat_flux
+        self.heat_flux = actual_heat_flux
         
         details = {
             'overall_htc': overall_htc,
             'lmtd': lmtd,
             'sat_temp_secondary': sat_temp,
             'tube_wall_temp': self.tube_wall_temp,
-            'heat_flux': heat_flux,
+            'heat_flux': actual_heat_flux,
             'h_primary': h_primary,
             'h_secondary': h_secondary,
             'delta_t1': delta_t1,
             'delta_t2': delta_t2,
             'flow_factor': flow_factor,
-            'pressure_factor': pressure_factor
+            'pressure_factor': pressure_factor,
+            # NEW: Both-side fouling thermal details for debugging and monitoring
+            'primary_scale_thermal_resistance': r_scale_primary,
+            'tsp_scale_thermal_resistance': r_scale_secondary,
+            'scale_temperature_contribution': scale_temperature_contribution,
+            'total_thermal_resistance_to_tube_wall': r_secondary_to_tube_wall,
+            'operating_heat_flux': operating_heat_flux,
+            'overall_htc_with_tsp_fouling': overall_htc_with_tsp_fouling,
+            'overall_htc_with_all_fouling': overall_htc_with_all_fouling
         }
         
         return heat_transfer_rate, details
@@ -471,6 +513,154 @@ class SteamGenerator(ChemistryFlowProvider):
             'target_quality': target_quality
         }
     
+    def _apply_tsp_flow_restrictions(self, requested_steam_flow: float, requested_feedwater_flow: float) -> Tuple[float, float, float]:
+        """
+        Apply TSP fouling flow restrictions to requested flow rates
+        
+        Physical Basis:
+        - TSP fouling reduces effective flow area
+        - Flow capacity ∝ 1/√(pressure_drop_ratio) 
+        - Cannot exceed physical flow limits imposed by fouled TSPs
+        
+        Args:
+            requested_steam_flow: Requested steam flow rate (kg/s)
+            requested_feedwater_flow: Requested feedwater flow rate (kg/s)
+            
+        Returns:
+            Tuple of (actual_steam_flow, actual_feedwater_flow, flow_restriction_factor)
+        """
+        # Core physics: TSP fouling creates flow restriction
+        # Flow capacity ∝ 1/√(pressure_drop_ratio)
+        flow_capacity_factor = 1.0 / np.sqrt(self.tsp_fouling.pressure_drop_ratio)
+        
+        # Calculate max achievable flows for this individual SG
+        max_steam_flow = self.config.design_steam_flow_per_sg * flow_capacity_factor
+        max_feedwater_flow = self.config.design_feedwater_flow_per_sg * flow_capacity_factor
+        
+        # Physical reality: can't exceed what TSPs allow
+        actual_steam_flow = min(requested_steam_flow, max_steam_flow)
+        actual_feedwater_flow = min(requested_feedwater_flow, max_feedwater_flow)
+        
+        # Track the restriction for reporting
+        flow_restriction_factor = actual_steam_flow / requested_steam_flow if requested_steam_flow > 0 else 1.0
+        
+        return actual_steam_flow, actual_feedwater_flow, flow_restriction_factor
+
+    def _calculate_primary_flow_restriction(self, requested_primary_flow: float) -> Tuple[float, float]:
+        """
+        Calculate primary flow restriction due to tube interior scale buildup
+        
+        Physical Basis:
+        - Scale buildup reduces effective tube inner diameter
+        - Flow area ∝ diameter²
+        - Pressure drop ∝ 1/diameter⁴ (Poiseuille flow)
+        - Flow capacity limited by increased pressure drop
+        
+        Args:
+            requested_primary_flow: Requested primary flow rate (kg/s)
+            
+        Returns:
+            Tuple of (actual_primary_flow, primary_flow_restriction_factor)
+        """
+        # Calculate effective tube diameter reduction due to scale
+        scale_thickness_m = self.tube_interior_fouling.scale_thickness / 1000.0  # Convert mm to m
+        clean_diameter = self.config.tube_inner_diameter  # m
+        
+        # Effective diameter after scale buildup (scale on tube walls)
+        effective_diameter = clean_diameter - 2.0 * scale_thickness_m
+        effective_diameter = max(effective_diameter, clean_diameter * 0.5)  # Minimum 50% of original diameter
+        
+        # Flow area reduction
+        clean_area = np.pi * (clean_diameter / 2.0) ** 2
+        effective_area = np.pi * (effective_diameter / 2.0) ** 2
+        area_ratio = effective_area / clean_area
+        
+        # Pressure drop ratio using Poiseuille flow relationship
+        # ΔP ∝ 1/D⁴ for laminar flow, ∝ 1/D⁵ for turbulent flow
+        # Use D⁴ relationship as conservative estimate
+        diameter_ratio = effective_diameter / clean_diameter
+        pressure_drop_ratio = 1.0 / (diameter_ratio ** 4)
+        
+        # Flow capacity factor (flow limited by pressure drop capability)
+        # Assume pumps can handle up to 3x normal pressure drop
+        max_pressure_ratio = 3.0
+        if pressure_drop_ratio <= max_pressure_ratio:
+            # Flow capacity limited by area reduction only
+            flow_capacity_factor = area_ratio
+        else:
+            # Flow capacity limited by pump pressure capability
+            flow_capacity_factor = area_ratio * (max_pressure_ratio / pressure_drop_ratio) ** 0.5
+        
+        # Calculate actual achievable primary flow
+        max_primary_flow = self.config.primary_design_flow * flow_capacity_factor
+        actual_primary_flow = min(requested_primary_flow, max_primary_flow)
+        
+        # Calculate restriction factor for reporting
+        primary_flow_restriction_factor = actual_primary_flow / requested_primary_flow if requested_primary_flow > 0 else 1.0
+        
+        return actual_primary_flow, primary_flow_restriction_factor
+
+    def _calculate_tsp_scale_thermal_resistance(self) -> float:
+        """
+        Calculate thermal resistance from TSP fouling deposits on tube exterior
+        
+        Physical Basis:
+        - TSP fouling creates deposits in the crevices and on tube surfaces that
+          add thermal resistance on the secondary side
+        - Deposits have low thermal conductivity compared to metal tubes
+        - Partial coverage based on fouling fraction
+        
+        Returns:
+            Thermal resistance from TSP deposits (m²K/W)
+        """
+        # Get TSP fouling state
+        tsp_fouling_fraction = self.tsp_fouling.fouling_fraction
+        avg_deposit_thickness = self.tsp_fouling.deposits.get_average_thickness()  # mm
+        
+        # Convert to thermal resistance
+        if avg_deposit_thickness > 0:
+            # TSP deposits have realistic thermal conductivity for mixed deposits
+            # Magnetite: ~5 W/m/K, Copper oxide: ~20 W/m/K, Silica: ~1.4 W/m/K
+            # Mixed TSP deposits typically have conductivity around 2-5 W/m/K
+            tsp_deposit_conductivity = 3.0  # W/m/K (realistic for mixed TSP deposits)
+            thickness_m = avg_deposit_thickness / 1000.0  # Convert mm to m
+            
+            # Thermal resistance from TSP deposits
+            # Note: This is partial coverage, so scale by fouling fraction
+            r_tsp = (thickness_m / tsp_deposit_conductivity) * tsp_fouling_fraction
+            
+            return r_tsp
+        else:
+            return 0.0
+
+    def _calculate_pump_energy_consumption(self) -> Dict[str, float]:
+        """
+        Calculate pump energy consumption based on TSP fouling pressure drop
+        
+        Physical Basis:
+        - Pump power ∝ pressure_drop_ratio (more pressure = more energy)
+        - Additional energy needed to overcome TSP fouling resistance
+        - Real plants increase pump speed/pressure to maintain flow
+        
+        Returns:
+            Dictionary with pump energy breakdown
+        """
+        # Base pump energy for clean conditions (typical feedwater pump)
+        base_pump_power_mw = 5.0  # MW per SG
+        
+        # Additional energy needed to overcome TSP fouling pressure drop
+        # Pump power ∝ pressure_drop_ratio (more pressure = more energy)
+        pressure_penalty_factor = (self.tsp_fouling.pressure_drop_ratio - 1.0)
+        fouling_energy_penalty_mw = base_pump_power_mw * pressure_penalty_factor * 0.5  # 50% efficiency
+        
+        total_pump_power_mw = base_pump_power_mw + fouling_energy_penalty_mw
+        
+        return {
+            'base_pump_power_mw': base_pump_power_mw,
+            'fouling_energy_penalty_mw': fouling_energy_penalty_mw,
+            'total_pump_power_mw': total_pump_power_mw
+        }
+
     def update_state(self,
                     primary_temp_in: float,
                     primary_temp_out: float,
@@ -503,23 +693,6 @@ class SteamGenerator(ChemistryFlowProvider):
             primary_temp_in, primary_temp_out, primary_flow, self.secondary_pressure
         )
         
-        # Calculate secondary side dynamics
-        secondary_dynamics = self.calculate_secondary_side_dynamics(
-            heat_transfer, steam_flow_out, feedwater_flow_in, feedwater_temp, dt
-        )
-        
-        # Update state variables
-        self.primary_inlet_temp = primary_temp_in
-        self.primary_outlet_temp = primary_temp_out
-        self.secondary_pressure = secondary_dynamics['new_pressure']
-        self.water_level = secondary_dynamics['new_water_level']
-        self.steam_quality = secondary_dynamics['new_steam_quality']
-        self.steam_void_fraction = secondary_dynamics['new_void_fraction']
-        self.steam_flow_rate = steam_flow_out
-        self.feedwater_flow_rate = feedwater_flow_in
-        self.feedwater_temperature = feedwater_temp
-        self.heat_transfer_rate = heat_transfer
-        
         # Update secondary temperature (saturation temperature at current pressure)
         self.secondary_temperature = self._saturation_temperature(self.secondary_pressure)
         
@@ -543,6 +716,51 @@ class SteamGenerator(ChemistryFlowProvider):
             flow_velocity=avg_velocity,
             dt_hours=dt / 3600.0  # Convert seconds to hours
         )
+        
+        # Update tube interior fouling state using primary side conditions
+        primary_conditions = {
+            'temperature': (primary_temp_in + primary_temp_out) / 2.0,  # Average primary temperature
+            'flow_velocity': avg_velocity,  # Same velocity calculation
+            'chemistry': {
+                'boric_acid_concentration': 1000.0,  # Typical PWR primary chemistry
+                'lithium_concentration': 2.0,
+                'primary_ph': 7.2,
+                'dissolved_oxygen': 0.005
+            }
+        }
+        
+        tube_interior_result = self.tube_interior_fouling.update_fouling_state(
+            primary_conditions, dt  # dt is already in seconds
+        )
+        
+        # PHASE 1: Apply TSP flow restrictions AFTER TSP fouling update
+        # This ensures we use the current fouling state for flow restrictions
+        actual_steam_flow, actual_feedwater_flow, flow_restriction_factor = self._apply_tsp_flow_restrictions(
+            steam_flow_out, feedwater_flow_in
+        )
+        
+        # NEW: Apply primary flow restriction due to tube interior scale buildup
+        actual_primary_flow, primary_flow_restriction_factor = self._calculate_primary_flow_restriction(primary_flow)
+        
+        # PHASE 2: Calculate pump energy consumption based on current TSP fouling
+        pump_energy = self._calculate_pump_energy_consumption()
+        
+        # Calculate secondary side dynamics using ACTUAL flows (after fouling restrictions)
+        secondary_dynamics = self.calculate_secondary_side_dynamics(
+            heat_transfer, actual_steam_flow, actual_feedwater_flow, feedwater_temp, dt
+        )
+        
+        # Update state variables
+        self.primary_inlet_temp = primary_temp_in
+        self.primary_outlet_temp = primary_temp_out
+        self.secondary_pressure = secondary_dynamics['new_pressure']
+        self.water_level = secondary_dynamics['new_water_level']
+        self.steam_quality = secondary_dynamics['new_steam_quality']
+        self.steam_void_fraction = secondary_dynamics['new_void_fraction']
+        self.steam_flow_rate = actual_steam_flow  # Use actual flow (after fouling restrictions)
+        self.feedwater_flow_rate = actual_feedwater_flow  # Use actual flow (after fouling restrictions)
+        self.feedwater_temperature = feedwater_temp
+        self.heat_transfer_rate = heat_transfer
         
         # Calculate performance metrics
         thermal_efficiency = heat_transfer / self.config.design_thermal_power_per_sg
@@ -574,6 +792,24 @@ class SteamGenerator(ChemistryFlowProvider):
             'steam_flow_rate': self.steam_flow_rate,
             'feedwater_flow_rate': self.feedwater_flow_rate,
             
+            # PHASE 1: Flow restriction results
+            'requested_steam_flow': steam_flow_out,
+            'actual_steam_flow': actual_steam_flow,
+            'requested_feedwater_flow': feedwater_flow_in,
+            'actual_feedwater_flow': actual_feedwater_flow,
+            'flow_restriction_factor': flow_restriction_factor,
+            
+            # NEW: Primary flow restriction results
+            'requested_primary_flow': primary_flow,
+            'actual_primary_flow': actual_primary_flow,
+            'primary_flow_restriction_factor': primary_flow_restriction_factor,
+            
+            # PHASE 2: Pump energy results
+            'base_pump_power_mw': pump_energy['base_pump_power_mw'],
+            'fouling_energy_penalty_mw': pump_energy['fouling_energy_penalty_mw'],
+            'total_pump_power_mw': pump_energy['total_pump_power_mw'],
+            'net_thermal_efficiency': (heat_transfer - pump_energy['total_pump_power_mw'] * 1e6) / self.config.design_thermal_power_per_sg if self.config.design_thermal_power_per_sg > 0 else 0.0,
+            
             # Dynamics
             'pressure_change_rate': secondary_dynamics['pressure_change_rate'],
             'level_change_rate': secondary_dynamics['level_change_rate'],
@@ -599,7 +835,16 @@ class SteamGenerator(ChemistryFlowProvider):
             'tsp_operating_years': tsp_result['operating_years'],
             'tsp_shutdown_required': tsp_result['shutdown_required'],
             'tsp_replacement_recommended': tsp_result['replacement_recommended'],
-            'tsp_cleaning_cycles': tsp_result['cleaning_cycles']
+            'tsp_cleaning_cycles': tsp_result['cleaning_cycles'],
+            
+            # Tube interior fouling results (NEW)
+            'tube_scale_thickness_mm': tube_interior_result['scale_thickness_mm'],
+            'tube_scale_thermal_resistance': tube_interior_result['scale_thermal_resistance'],
+            'tube_scale_formation_rate_mm_per_year': tube_interior_result['scale_formation_rate_mm_per_year'],
+            'tube_thermal_efficiency_loss': tube_interior_result['thermal_efficiency_loss'],
+            'tube_fouling_fraction': tube_interior_result['fouling_fraction'],
+            'tube_operating_years': tube_interior_result['operating_years'],
+            'tube_replacement_recommended': tube_interior_result['replacement_recommended']
         }
     
     # Thermodynamic property correlations
@@ -697,6 +942,20 @@ class SteamGenerator(ChemistryFlowProvider):
     
     def get_state_dict(self) -> Dict[str, float]:
         """Get current state as dictionary for logging/monitoring"""
+        # Calculate pump energy for state reporting
+        pump_energy = self._calculate_pump_energy_consumption()
+        
+        # Calculate current flow restrictions for state reporting
+        design_primary_flow = self.config.primary_design_flow
+        design_steam_flow = self.config.design_steam_flow_per_sg
+        design_feedwater_flow = self.config.design_feedwater_flow_per_sg
+        
+        # Primary flow restriction from scale buildup
+        actual_primary_flow, primary_flow_restriction_factor = self._calculate_primary_flow_restriction(design_primary_flow)
+        
+        # Secondary flow restriction from TSP fouling
+        actual_steam_flow, actual_feedwater_flow, secondary_flow_restriction_factor = self._apply_tsp_flow_restrictions(design_steam_flow, design_feedwater_flow)
+        
         state_dict = {
             'primary_inlet_temp': self.primary_inlet_temp,
             'primary_outlet_temp': self.primary_outlet_temp,
@@ -709,9 +968,21 @@ class SteamGenerator(ChemistryFlowProvider):
             'feedwater_flow_rate': self.feedwater_flow_rate,
             'feedwater_temperature': self.feedwater_temperature,
             'heat_transfer_rate': self.heat_transfer_rate,
-            'tube_wall_temp': self.tube_wall_temp,
+            'tube_wall_temperature': self.tube_wall_temp,
             'overall_htc': self.overall_htc,
-            'heat_flux': self.heat_flux
+            'heat_flux': self.heat_flux,
+            
+            # Flow restriction state (NEW)
+            'primary_flow_restriction_factor': primary_flow_restriction_factor,
+            'secondary_flow_restriction_factor': secondary_flow_restriction_factor,
+            'max_primary_flow_capacity': actual_primary_flow,
+            'max_steam_flow_capacity': actual_steam_flow,
+            'max_feedwater_flow_capacity': actual_feedwater_flow,
+            
+            # PHASE 2: Pump energy state
+            'base_pump_power_mw': pump_energy['base_pump_power_mw'],
+            'fouling_energy_penalty_mw': pump_energy['fouling_energy_penalty_mw'],
+            'total_pump_power_mw': pump_energy['total_pump_power_mw']
         }
         
         # Add TSP fouling state if available
@@ -730,6 +1001,14 @@ class SteamGenerator(ChemistryFlowProvider):
                 'tsp_average_deposit_thickness': tsp_state['tsp_average_deposit_thickness'],
                 'tsp_maximum_deposit_thickness': tsp_state['tsp_maximum_deposit_thickness']
             })
+        
+        # Add tube interior fouling state if available
+        if hasattr(self, 'tube_interior_fouling'):
+            tube_state = self.tube_interior_fouling.get_state_dict()
+            # Add tube interior specific state variables
+            for key, value in tube_state.items():
+                if key.startswith('tube_'):
+                    state_dict[key] = value
         
         return state_dict
     
@@ -906,23 +1185,20 @@ class SteamGenerator(ChemistryFlowProvider):
             }
         
         elif maintenance_type == "scale_removal":
-            # Perform scale removal
-            # Reset tube wall temperature to more normal value
-            original_temp = self.tube_wall_temp
-            self.tube_wall_temp = min(self.tube_wall_temp, 320.0)  # Reduce to reasonable level
+            # Delegate to tube interior fouling model for proper physics-based scale removal
+            result = self.tube_interior_fouling.perform_maintenance('primary_scale_cleaning', **kwargs)
             
-            temp_reduction = original_temp - self.tube_wall_temp
+            # Update tube wall temperature based on actual scale removal
+            if result.get('success', False):
+                scale_removed = result.get('scale_removed_mm', 0.0)
+                if scale_removed > 0:
+                    # The tube wall temperature will be automatically recalculated in the next
+                    # heat transfer calculation based on the reduced scale thermal resistance
+                    print(f"STEAM GENERATOR MAINTENANCE: Scale removal completed - {scale_removed:.3f}mm removed")
+                    print(f"  New scale thickness: {self.tube_interior_fouling.scale_thickness:.3f}mm")
+                    print(f"  New thermal resistance: {self.tube_interior_fouling.scale_thermal_resistance:.6f} m²K/W")
             
-            return {
-                'success': True,
-                'duration_hours': 10.0,
-                'work_performed': 'Scale removal completed',
-                'findings': f"Reduced tube wall temperature by {temp_reduction:.1f}°C",
-                'performance_improvement': temp_reduction / original_temp * 100.0,
-                'effectiveness_score': 0.85,
-                'next_maintenance_due': 8760.0,  # Annual
-                'parts_used': ['Descaling chemicals', 'Cleaning equipment']
-            }
+            return result
         
         elif maintenance_type == "water_chemistry_adjustment":
             # Perform water chemistry adjustment
@@ -983,6 +1259,46 @@ class SteamGenerator(ChemistryFlowProvider):
                 'next_maintenance_due': 4380.0,  # Semi-annual
                 'parts_used': ['Cleaning chemicals', 'Brushes', 'Rinse water']
             }
+        
+        elif maintenance_type == "tsp_inspection":
+            # Perform TSP inspection via TSP fouling model
+            result = self.tsp_fouling.perform_maintenance('tsp_inspection', **kwargs)
+            return result
+        
+        elif maintenance_type == "tsp_flow_test":
+            # Perform TSP flow test via TSP fouling model
+            result = self.tsp_fouling.perform_maintenance('tsp_flow_test', **kwargs)
+            return result
+        
+        elif maintenance_type == "tube_interior_inspection":
+            # Perform tube interior inspection via tube interior fouling model
+            result = self.tube_interior_fouling.perform_maintenance('tube_interior_inspection', **kwargs)
+            return result
+        
+        elif maintenance_type == "tube_interior_scale_cleaning":
+            # Perform tube interior scale cleaning via tube interior fouling model
+            result = self.tube_interior_fouling.perform_maintenance('primary_scale_cleaning', **kwargs)
+            return result
+        
+        elif maintenance_type == "tube_interior_eddy_current_testing":
+            # Perform tube interior eddy current testing via tube interior fouling model
+            result = self.tube_interior_fouling.perform_maintenance('tube_eddy_current_testing', **kwargs)
+            return result
+        
+        elif maintenance_type == "primary_chemistry_optimization":
+            # Perform primary chemistry optimization via tube interior fouling model
+            result = self.tube_interior_fouling.perform_maintenance('primary_chemistry_optimization', **kwargs)
+            return result
+        
+        elif maintenance_type == "primary_scale_cleaning":
+            # Perform primary side scale cleaning via tube interior fouling model
+            result = self.tube_interior_fouling.perform_maintenance('primary_scale_cleaning', **kwargs)
+            return result
+        
+        elif maintenance_type == "tube_eddy_current_testing":
+            # Perform tube eddy current testing via tube interior fouling model
+            result = self.tube_interior_fouling.perform_maintenance('tube_eddy_current_testing', **kwargs)
+            return result
         
         elif maintenance_type == "routine_maintenance":
             # Perform routine maintenance

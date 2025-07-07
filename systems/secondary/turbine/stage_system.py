@@ -213,11 +213,16 @@ class TurbineStage:
         )
         outlet_enthalpy_isentropic = self._steam_enthalpy(outlet_temp_isentropic, self.outlet_pressure)
         
-        # Actual expansion with efficiency losses and degradation effects
+        # STEP 2: Apply steam quality effects to stage efficiency
+        steam_quality = 0.99  # Default quality - will be updated from SG conditions
+        quality_efficiency_factor = self._calculate_quality_efficiency_factor(steam_quality)
+        
+        # Actual expansion with efficiency losses, degradation effects, and steam quality
         total_efficiency = (self.actual_efficiency * 
                           self.blade_condition_factor * 
                           self.fouling_factor * 
-                          self.blade_wear_factor)
+                          self.blade_wear_factor *
+                          quality_efficiency_factor)  # NEW: Steam quality effect
         
         # Enthalpy drop calculation with validation
         isentropic_enthalpy_drop = self.inlet_enthalpy - outlet_enthalpy_isentropic
@@ -484,6 +489,37 @@ class TurbineStage:
         else:
             superheat = (enthalpy - h_g) / 2.1
             return sat_temp + superheat
+    
+    def _calculate_quality_efficiency_factor(self, steam_quality: float) -> float:
+        """
+        Calculate efficiency factor based on steam quality
+        
+        STEP 2: Steam quality effects on turbine stage efficiency
+        
+        Args:
+            steam_quality: Steam quality (0.0-1.0)
+            
+        Returns:
+            Efficiency factor (0.0-1.0) where 1.0 = no quality impact
+        """
+        # Validate steam quality input
+        steam_quality = np.clip(steam_quality, 0.0, 1.0)
+        
+        # High quality steam (>0.99) = full efficiency
+        if steam_quality >= 0.99:
+            return 1.0
+        elif steam_quality >= 0.95:
+            # Linear reduction from 99% to 95% quality
+            # 4% quality range maps to 5% efficiency range
+            return 0.95 + (steam_quality - 0.95) / 0.04 * 0.05
+        elif steam_quality >= 0.90:
+            # Moderate efficiency loss for 90-95% quality
+            # 5% quality range maps to 10% efficiency range  
+            return 0.85 + (steam_quality - 0.90) / 0.05 * 0.10
+        else:
+            # Significant efficiency loss below 90% quality
+            # Moisture causes blade erosion and reduces expansion efficiency
+            return max(0.70, 0.85 - (0.90 - steam_quality) * 2.0)
 
 
 class TurbineStageControlLogic:
@@ -895,7 +931,9 @@ class TurbineStageSystem:
                     inlet_flow: float,
                     load_demand: float,
                     extraction_demands: Dict[str, float],
-                    dt: float) -> Dict[str, float]:
+                    steam_quality: float = 0.99,
+                    pressure_stability_factor: float = 1.0,
+                    dt: float = 1.0) -> Dict[str, float]:
         """
         Update turbine stage system state
         
@@ -920,14 +958,27 @@ class TurbineStageSystem:
             inlet_pressure, inlet_temperature, inlet_flow, extraction_demands
         )
         
-        # Update individual stages with degradation
+        # STEP 2 & 3: Apply steam quality and pressure stability effects to system performance
+        # Update individual stages with degradation and SG effects
         for stage_id, stage in self.stages.items():
             stage.update_degradation(dt)
+            
+            # STEP 2: Update stage with actual steam quality from SG
+            if hasattr(stage, '_calculate_quality_efficiency_factor'):
+                # This will be used in the next expansion calculation
+                stage._current_steam_quality = steam_quality
         
-        # Update system state
-        self.total_power_output = expansion_results['total_power']
+        # STEP 3: Apply pressure stability effects to total power output
+        base_power_output = expansion_results['total_power']
+        stability_adjusted_power = base_power_output * pressure_stability_factor
+        
+        # Update system state with SG condition effects
+        self.total_power_output = stability_adjusted_power
         self.total_steam_flow = inlet_flow
         self.total_extraction_flow = expansion_results['total_extraction']
+        
+        # STEP 3: Apply pressure stability to system efficiency
+        self.system_efficiency = min(1.0, self.system_efficiency * pressure_stability_factor)
         
         # Calculate overall efficiency
         if inlet_flow > 0:

@@ -153,6 +153,81 @@ class EnhancedSteamGeneratorPhysics(HeatFlowProvider, ChemistryFlowProvider):
         
         print(f"STEAM GENERATOR: Applied initial conditions from config")
     
+    def _apply_tsp_fouling_initial_conditions(self, sg, sg_index, total_thickness):
+        """
+        Apply TSP fouling initial conditions with proper distribution
+        
+        Args:
+            sg: Steam generator instance
+            sg_index: Steam generator index  
+            total_thickness: Total initial fouling thickness (mm)
+        """
+        if total_thickness <= 0:
+            return
+        
+        print(f"    Applying {total_thickness:.3f} mm TSP fouling to SG-{sg_index}")
+        
+        # Calculate level distribution factors (matches formation rate physics)
+        level_factors = []
+        for level in range(sg.tsp_fouling.config.tsp_count):
+            # Higher fouling at bottom (hot end) - same formula as formation rates
+            level_factor = 1.0 + 0.3 * (sg.tsp_fouling.config.tsp_count - level - 1) / (sg.tsp_fouling.config.tsp_count - 1)
+            level_factors.append(level_factor)
+        
+        # Normalize factors so total distributed thickness equals input
+        factor_sum = sum(level_factors)
+        normalized_factors = [f / factor_sum for f in level_factors]
+        
+        # Distribute total thickness across levels and deposit types
+        for level in range(sg.tsp_fouling.config.tsp_count):
+            level_thickness = total_thickness * normalized_factors[level]
+            
+            # Distribute across deposit types (based on PWR operating experience)
+            sg.tsp_fouling.deposits.magnetite_thickness[level] = level_thickness * 0.50   # 50% magnetite
+            sg.tsp_fouling.deposits.copper_thickness[level] = level_thickness * 0.20      # 20% copper
+            sg.tsp_fouling.deposits.silica_thickness[level] = level_thickness * 0.25      # 25% silica
+            sg.tsp_fouling.deposits.biological_thickness[level] = level_thickness * 0.05  # 5% biological
+        
+        # CRITICAL: Recalculate fouling fraction from applied deposits
+        sg.tsp_fouling.fouling_fraction, sg.tsp_fouling.pressure_drop_ratio, _ = sg.tsp_fouling.calculate_flow_restriction()
+        sg.tsp_fouling.heat_transfer_degradation = sg.tsp_fouling.calculate_heat_transfer_degradation(sg.tsp_fouling.fouling_fraction)
+        sg.tsp_fouling.fouling_stage = sg.tsp_fouling.determine_fouling_stage(sg.tsp_fouling.fouling_fraction)
+        
+        print(f"      -> Fouling fraction: {sg.tsp_fouling.fouling_fraction:.3f}")
+        print(f"      -> Heat transfer degradation: {sg.tsp_fouling.heat_transfer_degradation:.3f}")
+
+    def _apply_scale_initial_conditions(self, sg, sg_index, scale_thickness):
+        """
+        Apply tube interior scale initial conditions
+        
+        Args:
+            sg: Steam generator instance
+            sg_index: Steam generator index
+            scale_thickness: Initial scale thickness (mm)
+        """
+        if scale_thickness <= 0:
+            return
+        
+        print(f"    Applying {scale_thickness:.3f} mm scale thickness to SG-{sg_index}")
+        
+        # Set scale thickness directly
+        sg.tube_interior_fouling.scale_thickness = scale_thickness
+        
+        # Distribute across scale composition (based on PWR primary side experience)
+        sg.tube_interior_fouling.scale_composition['iron_oxide'] = scale_thickness * 0.6      # 60% iron oxide
+        sg.tube_interior_fouling.scale_composition['crud_deposits'] = scale_thickness * 0.3   # 30% CRUD
+        sg.tube_interior_fouling.scale_composition['corrosion_products'] = scale_thickness * 0.1  # 10% other
+        
+        # CRITICAL: Recalculate thermal resistance from applied scale
+        sg.tube_interior_fouling.scale_thermal_resistance = sg.tube_interior_fouling.calculate_thermal_resistance()
+        
+        # Update fouling fraction for base class compatibility
+        max_resistance = 0.001  # m²K/W - significant thermal resistance
+        sg.tube_interior_fouling.fouling_fraction = min(sg.tube_interior_fouling.scale_thermal_resistance / max_resistance, 1.0)
+        
+        print(f"      -> Scale thermal resistance: {sg.tube_interior_fouling.scale_thermal_resistance:.6f} m²K/W")
+        print(f"      -> Fouling fraction: {sg.tube_interior_fouling.fouling_fraction:.3f}")
+
     def _apply_initial_conditions(self):
         """
         Apply initial conditions from config to steam generator components
@@ -169,7 +244,6 @@ class EnhancedSteamGeneratorPhysics(HeatFlowProvider, ChemistryFlowProvider):
         print(f"  SG temperatures: {ic.sg_temperatures}")
         print(f"  SG steam qualities: {ic.sg_steam_qualities}")
         print(f"  TSP fouling thicknesses: {ic.tsp_fouling_thicknesses}")
-        print(f"  TSP heat transfer degradations: {ic.tsp_heat_transfer_degradations}")
         
         # Apply initial conditions to individual steam generators
         for i, sg in enumerate(self.steam_generators):
@@ -221,16 +295,30 @@ class EnhancedSteamGeneratorPhysics(HeatFlowProvider, ChemistryFlowProvider):
                 sg.tube_wall_temp = ic.tube_wall_temperature[i]
                 print(f"    Tube wall temperature: {ic.tube_wall_temperature[i]}°C")
             
-            # Apply TSP fouling conditions
-            if i < len(ic.tsp_fouling_thicknesses):
+            # Apply TSP fouling conditions (physics-first approach)
+            if i < len(ic.tsp_fouling_thicknesses) and ic.tsp_fouling_thicknesses[i] > 0:
                 if hasattr(sg, 'tsp_fouling'):
-                    sg.tsp_fouling.fouling_thickness = ic.tsp_fouling_thicknesses[i]
-                    print(f"    TSP fouling thickness: {ic.tsp_fouling_thicknesses[i]} mm")
+                    self._apply_tsp_fouling_initial_conditions(sg, i, ic.tsp_fouling_thicknesses[i])
+            else:
+                # No fouling thickness provided - ensure degradation matches current fouling state
+                if hasattr(sg, 'tsp_fouling'):
+                    # Always calculate degradation from current fouling fraction (physics-based)
+                    sg.tsp_fouling.heat_transfer_degradation = sg.tsp_fouling.calculate_heat_transfer_degradation(sg.tsp_fouling.fouling_fraction)
+                    print(f"    TSP heat transfer degradation (calculated): {sg.tsp_fouling.heat_transfer_degradation:.3f}")
             
-            if i < len(ic.tsp_heat_transfer_degradations):
-                if hasattr(sg, 'tsp_fouling'):
-                    sg.tsp_fouling.heat_transfer_degradation = ic.tsp_heat_transfer_degradations[i]
-                    print(f"    TSP heat transfer degradation: {ic.tsp_heat_transfer_degradations[i]}")
+            # Apply scale thickness conditions (NEW)
+            if i < len(ic.scale_thicknesses) and ic.scale_thicknesses[i] > 0:
+                if hasattr(sg, 'tube_interior_fouling'):
+                    self._apply_scale_initial_conditions(sg, i, ic.scale_thicknesses[i])
+            else:
+                # No scale thickness provided - ensure thermal resistance is calculated from current state
+                if hasattr(sg, 'tube_interior_fouling'):
+                    # Always calculate thermal resistance from current scale thickness (physics-based)
+                    sg.tube_interior_fouling.scale_thermal_resistance = sg.tube_interior_fouling.calculate_thermal_resistance()
+                    print(f"    Scale thermal resistance (calculated): {sg.tube_interior_fouling.scale_thermal_resistance:.6f} m²K/W")
+            
+            # NOTE: Explicit tsp_heat_transfer_degradations values are ignored in favor of physics-based calculation
+            # This ensures heat transfer degradation always matches the actual fouling state
         
         # Apply system-level initial conditions
         self.total_thermal_power = sum(ic.primary_inlet_temps[i] - ic.primary_outlet_temps[i] 
@@ -301,40 +389,63 @@ class EnhancedSteamGeneratorPhysics(HeatFlowProvider, ChemistryFlowProvider):
             
             # Validate TSP fouling application
             if i < len(ic.tsp_fouling_thicknesses) and hasattr(sg, 'tsp_fouling'):
-                expected = ic.tsp_fouling_thicknesses[i]
-                actual = sg.tsp_fouling.fouling_thickness
-                if abs(actual - expected) < 0.001:
-                    print(f"    ✓ TSP fouling thickness: {actual} mm (expected {expected} mm)")
+                expected_total_thickness = ic.tsp_fouling_thicknesses[i]
+                actual_avg_thickness = sg.tsp_fouling.deposits.get_average_thickness()
+                actual_fouling_fraction = sg.tsp_fouling.fouling_fraction
+                
+                # Calculate total distributed thickness across all levels
+                actual_total_thickness = 0.0
+                for level in range(sg.tsp_fouling.config.tsp_count):
+                    actual_total_thickness += sg.tsp_fouling.deposits.get_total_thickness(level)
+                
+                if abs(actual_total_thickness - expected_total_thickness) < 0.001:
+                    print(f"    ✓ TSP fouling thickness: {actual_total_thickness:.3f} mm total (avg {actual_avg_thickness:.3f} mm)")
+                    print(f"      Fouling fraction: {actual_fouling_fraction:.3f}")
                 else:
-                    print(f"    ✗ TSP fouling thickness mismatch: {actual} mm (expected {expected} mm)")
+                    print(f"    ✗ TSP fouling thickness mismatch: {actual_total_thickness:.3f} mm total (expected {expected_total_thickness:.3f} mm)")
             
-            # Validate TSP heat transfer degradation application
-            if i < len(ic.tsp_heat_transfer_degradations) and hasattr(sg, 'tsp_fouling'):
-                expected = ic.tsp_heat_transfer_degradations[i]
-                actual = sg.tsp_fouling.heat_transfer_degradation
-                if abs(actual - expected) < 0.001:
-                    print(f"    ✓ TSP heat transfer degradation: {actual} (expected {expected})")
+            # Validate scale thickness application (NEW)
+            if i < len(ic.scale_thicknesses) and hasattr(sg, 'tube_interior_fouling'):
+                expected_scale_thickness = ic.scale_thicknesses[i]
+                actual_scale_thickness = sg.tube_interior_fouling.scale_thickness
+                actual_thermal_resistance = sg.tube_interior_fouling.scale_thermal_resistance
+                actual_fouling_fraction = sg.tube_interior_fouling.fouling_fraction
+                
+                if abs(actual_scale_thickness - expected_scale_thickness) < 0.001:
+                    print(f"    ✓ Scale thickness: {actual_scale_thickness:.3f} mm (expected {expected_scale_thickness:.3f} mm)")
+                    print(f"      Thermal resistance: {actual_thermal_resistance:.6f} m²K/W")
+                    print(f"      Fouling fraction: {actual_fouling_fraction:.3f}")
                 else:
-                    print(f"    ✗ TSP heat transfer degradation mismatch: {actual} (expected {expected})")
+                    print(f"    ✗ Scale thickness mismatch: {actual_scale_thickness:.3f} mm (expected {expected_scale_thickness:.3f} mm)")
+                
+                # Validate scale composition distribution
+                total_composition = sum(sg.tube_interior_fouling.scale_composition.values())
+                if abs(total_composition - expected_scale_thickness) < 0.001:
+                    print(f"      ✓ Scale composition total: {total_composition:.3f} mm")
+                else:
+                    print(f"      ✗ Scale composition mismatch: {total_composition:.3f} mm")
+            
+            # NOTE: TSP heat transfer degradation is now always calculated from fouling physics
+            # No validation needed since explicit degradation values are no longer used
         
         print(f"STEAM GENERATOR: Initial conditions validation complete")
         
     def update_system(self,
-                     primary_conditions: Dict[str, List[float]],
-                     steam_demands: Dict[str, float],
-                     system_conditions: Dict[str, float],
-                     control_inputs: Dict[str, float] = None,
-                     dt: float = 1.0) -> Dict[str, float]:
+                     primary_conditions: dict,
+                     steam_demands: dict,
+                     system_conditions: dict,
+                     control_inputs: dict = None,
+                     dt: float = 1.0) -> dict:
         """
-        Streamlined enhanced steam generator system update
+        Enhanced steam generator system update with actual feedwater flow integration
         
-        Phase 2 Optimization: Removed redundant processing, simplified data flow.
-        Focus on coordination and load balancing - let individual SGs handle physics.
+        FIXED: Now uses actual feedwater flows from feedwater system instead of assuming
+        perfect mass balance. This creates proper feedback loop for level control.
         
         Args:
             primary_conditions: Primary side conditions for each SG
             steam_demands: Steam demand conditions  
-            system_conditions: Overall system conditions
+            system_conditions: Overall system conditions (now includes actual_feedwater_flows)
             control_inputs: Control system inputs
             dt: Time step (s)
             
@@ -343,6 +454,9 @@ class EnhancedSteamGeneratorPhysics(HeatFlowProvider, ChemistryFlowProvider):
         """
         if control_inputs is None:
             control_inputs = {}
+        
+        # Extract actual feedwater flows from feedwater system (NEW)
+        actual_feedwater_flows = system_conditions.get('actual_feedwater_flows', None)
         
         # Phase 3: Steam Generator is Single Source of Truth for Steam Flow
         # Calculate actual steam flow based on load demand and physics, not external demand
@@ -363,7 +477,7 @@ class EnhancedSteamGeneratorPhysics(HeatFlowProvider, ChemistryFlowProvider):
                 dt / 60.0  # Convert seconds to hours
             )
         
-        # Direct update of individual steam generators (minimal wrapper processing)
+        # Direct update of individual steam generators with ACTUAL feedwater flows
         sg_results = []
 
         for i, sg in enumerate(self.steam_generators):
@@ -374,13 +488,21 @@ class EnhancedSteamGeneratorPhysics(HeatFlowProvider, ChemistryFlowProvider):
                     'water_chemistry_update': system_conditions['water_chemistry_update']
                 }
             
+            # CRITICAL FIX: Use actual feedwater flows from feedwater system
+            if actual_feedwater_flows is not None and i < len(actual_feedwater_flows):
+                # Use actual feedwater flow from feedwater system
+                actual_feedwater_flow = actual_feedwater_flows[i]
+            else:
+                # Fallback: assume perfect mass balance (old behavior)
+                actual_feedwater_flow = individual_demands[i]
+            
             # Direct parameter extraction - no redundant processing
             sg_result = sg.update_state(
                 primary_temp_in=primary_conditions.get('inlet_temps', [327.0] * self.config.num_steam_generators)[i],
                 primary_temp_out=primary_conditions.get('outlet_temps', [293.0] * self.config.num_steam_generators)[i],
                 primary_flow=primary_conditions.get('flow_rates', [5700.0] * self.config.num_steam_generators)[i],
                 steam_flow_out=individual_demands[i],
-                feedwater_flow_in=individual_demands[i],  # Mass balance
+                feedwater_flow_in=actual_feedwater_flow,  # FIXED: Use actual flow from FW system
                 feedwater_temp=feedwater_temperature,
                 dt=dt,
                 system_conditions=sg_system_conditions
@@ -562,6 +684,43 @@ class EnhancedSteamGeneratorPhysics(HeatFlowProvider, ChemistryFlowProvider):
             'system_load_demand': self.load_demand,
             'system_num_steam_generators': self.config.num_steam_generators
         }
+        
+        # Add aggregated fouling state from individual SGs
+        if self.steam_generators:
+            # Calculate system-wide TSP fouling averages
+            total_tsp_fouling = sum(sg.tsp_fouling.fouling_fraction for sg in self.steam_generators)
+            avg_tsp_fouling = total_tsp_fouling / len(self.steam_generators)
+            
+            total_tsp_degradation = sum(sg.tsp_fouling.heat_transfer_degradation for sg in self.steam_generators)
+            avg_tsp_degradation = total_tsp_degradation / len(self.steam_generators)
+            
+            # Calculate system-wide tube interior fouling averages
+            total_scale_thickness = sum(sg.tube_interior_fouling.scale_thickness for sg in self.steam_generators)
+            avg_scale_thickness = total_scale_thickness / len(self.steam_generators)
+            
+            total_scale_resistance = sum(sg.tube_interior_fouling.scale_thermal_resistance for sg in self.steam_generators)
+            avg_scale_resistance = total_scale_resistance / len(self.steam_generators)
+            
+            total_tube_fouling = sum(sg.tube_interior_fouling.fouling_fraction for sg in self.steam_generators)
+            avg_tube_fouling = total_tube_fouling / len(self.steam_generators)
+            
+            # Add system-wide fouling metrics
+            state_dict.update({
+                # TSP fouling system averages
+                'system_avg_tsp_fouling_fraction': avg_tsp_fouling,
+                'system_avg_tsp_heat_transfer_degradation': avg_tsp_degradation,
+                'system_max_tsp_fouling_fraction': max(sg.tsp_fouling.fouling_fraction for sg in self.steam_generators),
+                
+                # Tube interior fouling system averages
+                'system_avg_scale_thickness_mm': avg_scale_thickness,
+                'system_avg_scale_thermal_resistance': avg_scale_resistance,
+                'system_avg_tube_fouling_fraction': avg_tube_fouling,
+                'system_max_scale_thickness_mm': max(sg.tube_interior_fouling.scale_thickness for sg in self.steam_generators),
+                
+                # Combined fouling impact
+                'system_total_fouling_impact': avg_tsp_degradation + avg_scale_resistance * 1000.0,  # Combined impact metric
+                'system_fouling_maintenance_needed': float(avg_tsp_fouling > 0.15 or avg_scale_thickness > 0.5)
+            })
         
         return state_dict
     

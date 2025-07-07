@@ -552,80 +552,29 @@ class EnhancedTurbinePhysics(HeatFlowProvider):
         print(f"TURBINE: Applied initial conditions from config")
     
     def _apply_initial_conditions(self):
-        """
-        Apply initial conditions from config to turbine components
-        
-        This method reads the initial_conditions from the TurbineConfig dataclass
-        and applies them to the actual component states. This is critical for
-        maintenance scenarios that start with pre-degraded conditions.
-        """
+        """Apply unified initial conditions - CLEAN VERSION"""
         ic = self.config.initial_conditions
         
-        print(f"TURBINE: Applying initial conditions:")
-        print(f"  Rotor speed: {ic.rotor_speed} RPM")
-        print(f"  Rotor acceleration: {ic.rotor_acceleration} RPM/s")
-        print(f"  Rotor temperature: {ic.rotor_temperature}°C")
-        print(f"  Bearing temperatures: {ic.bearing_temperatures}")
-        print(f"  Bearing vibrations: {ic.bearing_vibrations}")
-        print(f"  Bearing oil pressures: {ic.bearing_oil_pressures}")
-        print(f"  Oil contamination: {ic.oil_contamination} ppm")
-        print(f"  Oil level: {ic.oil_level}%")
+        print(f"TURBINE: Applying unified initial conditions")
         
         # Apply rotor conditions
         if hasattr(self.rotor_dynamics, 'rotor_speed'):
             self.rotor_dynamics.rotor_speed = ic.rotor_speed
-            print(f"    Applied rotor speed: {ic.rotor_speed} RPM")
-        
-        if hasattr(self.rotor_dynamics, 'rotor_acceleration'):
-            self.rotor_dynamics.rotor_acceleration = ic.rotor_acceleration
-            print(f"    Applied rotor acceleration: {ic.rotor_acceleration} RPM/s")
-        
-        if hasattr(self.rotor_dynamics, 'rotor_temperature'):
             self.rotor_dynamics.rotor_temperature = ic.rotor_temperature
-            print(f"    Applied rotor temperature: {ic.rotor_temperature}°C")
         
-        # Apply bearing conditions
+        # Apply bearing mechanical conditions (no oil)
         if hasattr(self.rotor_dynamics, 'bearings'):
             bearing_ids = list(self.rotor_dynamics.bearings.keys())
-            
             for i, bearing_id in enumerate(bearing_ids):
                 bearing = self.rotor_dynamics.bearings[bearing_id]
-                
-                print(f"    Applying initial conditions to bearing {bearing_id}:")
-                
-                # Apply bearing temperatures
                 if i < len(ic.bearing_temperatures):
                     bearing.metal_temperature = ic.bearing_temperatures[i]
-                    print(f"      Bearing temperature: {ic.bearing_temperatures[i]}°C")
-                
-                # Apply bearing vibrations
                 if i < len(ic.bearing_vibrations):
                     bearing.vibration_displacement = ic.bearing_vibrations[i]
-                    print(f"      Bearing vibration: {ic.bearing_vibrations[i]} mm/s")
-                
-                # Apply bearing oil pressures
-                if i < len(ic.bearing_oil_pressures):
-                    bearing.oil_pressure = ic.bearing_oil_pressures[i]
-                    print(f"      Oil pressure: {ic.bearing_oil_pressures[i]} MPa")
         
-        # Apply lubrication system conditions
+        # Apply unified lubrication system
         if hasattr(self, 'bearing_lubrication_system'):
-            lubrication_system = self.bearing_lubrication_system
-            
-            # Apply oil contamination
-            if hasattr(lubrication_system, 'oil_contamination'):
-                lubrication_system.oil_contamination = ic.oil_contamination
-                print(f"    Applied oil contamination: {ic.oil_contamination} ppm")
-            
-            # Apply oil level
-            if hasattr(lubrication_system, 'oil_level'):
-                lubrication_system.oil_level = ic.oil_level
-                print(f"    Applied oil level: {ic.oil_level}%")
-            
-            # Apply oil temperature
-            if hasattr(ic, 'oil_temperature') and hasattr(lubrication_system, 'oil_temperature'):
-                lubrication_system.oil_temperature = ic.oil_temperature
-                print(f"    Applied oil temperature: {ic.oil_temperature}°C")
+            self.bearing_lubrication_system.apply_unified_initial_conditions(ic.lubrication_system)
         
         # Apply thermal conditions
         if hasattr(self, 'thermal_tracker'):
@@ -720,44 +669,40 @@ class EnhancedTurbinePhysics(HeatFlowProvider):
                     else:
                         print(f"    ✗ Oil pressure mismatch: {actual} MPa (expected {expected} MPa)")
         
-        # Validate lubrication system
+        # Validate unified lubrication system
         if hasattr(self, 'bearing_lubrication_system'):
             lubrication_system = self.bearing_lubrication_system
             
-            if hasattr(lubrication_system, 'oil_contamination'):
-                expected = ic.oil_contamination
-                actual = lubrication_system.oil_contamination
-                if abs(actual - expected) < 0.1:
-                    print(f"  ✓ Oil contamination: {actual} ppm (expected {expected} ppm)")
-                else:
-                    print(f"  ✗ Oil contamination mismatch: {actual} ppm (expected {expected} ppm)")
+            # Validate base contamination
+            expected_contamination = ic.lubrication_system.oil_base_contamination
+            actual_contamination = lubrication_system.oil_base_contamination
+            if abs(actual_contamination - expected_contamination) < 0.1:
+                print(f"  ✓ Oil base contamination: {actual_contamination:.1f} ppm (expected {expected_contamination:.1f} ppm)")
+            else:
+                print(f"  ✗ Oil contamination mismatch: {actual_contamination:.1f} ppm (expected {expected_contamination:.1f} ppm)")
             
-            if hasattr(lubrication_system, 'oil_level'):
-                expected = ic.oil_level
-                actual = lubrication_system.oil_level
-                if abs(actual - expected) < 1.0:
-                    print(f"  ✓ Oil level: {actual}% (expected {expected}%)")
-                else:
-                    print(f"  ✗ Oil level mismatch: {actual}% (expected {expected}%)")
+            # Validate oil level
+            expected_level = ic.lubrication_system.oil_reservoir_level
+            actual_level = lubrication_system.oil_level
+            if abs(actual_level - expected_level) < 1.0:
+                print(f"  ✓ Oil reservoir level: {actual_level:.1f}% (expected {expected_level:.1f}%)")
+            else:
+                print(f"  ✗ Oil level mismatch: {actual_level:.1f}% (expected {expected_level:.1f}%)")
         
         print(f"TURBINE: Initial conditions validation complete")
         
     def update_state(self,
-                    steam_pressure: float,
-                    steam_temperature: float,
-                    steam_flow: float,
-                    steam_quality: float,
+                    sg_conditions: Dict,
                     load_demand: float,
                     condenser_pressure: float = 0.007,
                     dt: float = 1.0) -> Dict[str, float]:
         """
         Update enhanced turbine state for one time step
         
+        ENHANCED: Now uses rich steam generator conditions for improved integration
+        
         Args:
-            steam_pressure: Inlet steam pressure (MPa)
-            steam_temperature: Inlet steam temperature (°C)
-            steam_flow: Steam mass flow rate (kg/s)
-            steam_quality: Steam quality at inlet (0-1)
+            sg_conditions: Rich steam generator conditions dictionary from SG system
             load_demand: Load demand (0-1)
             condenser_pressure: Condenser pressure (MPa)
             dt: Time step (hours)
@@ -765,6 +710,18 @@ class EnhancedTurbinePhysics(HeatFlowProvider):
         Returns:
             Dictionary with enhanced turbine performance results
         """
+        # STEP 1: Extract steam conditions from SG system
+        steam_pressure = sg_conditions['average_steam_pressure']
+        steam_temperature = sg_conditions['average_steam_temperature']
+        steam_flow = sg_conditions['total_steam_flow']
+        steam_quality = sg_conditions['average_steam_quality']
+        
+        # STEP 1: Extract additional SG data for enhanced calculations
+        sg_pressures = sg_conditions.get('sg_pressures', [steam_pressure])
+        sg_qualities = sg_conditions.get('sg_steam_qualities', [steam_quality])
+        sg_flows = sg_conditions.get('sg_steam_flows', [steam_flow])
+        system_availability = sg_conditions.get('system_availability', True)
+        
         # Update load demand
         self.load_demand = load_demand
         
@@ -777,13 +734,19 @@ class EnhancedTurbinePhysics(HeatFlowProvider):
             'LP-2': 10.0 * load_demand,  # kg/s extraction from LP-2
         }
         
-        # Update stage system
+        # STEP 2 & 3: Apply SG conditions to stage system with quality and pressure effects
+        # Calculate pressure variation effects from individual SG pressures
+        pressure_stability_factor = self._calculate_pressure_variation_effects(sg_pressures)
+        
+        # Update stage system with enhanced SG conditions
         stage_results = self.stage_system.update_state(
             inlet_pressure=steam_pressure,
             inlet_temperature=steam_temperature,
             inlet_flow=steam_flow,
             load_demand=load_demand,
             extraction_demands=extraction_demands,
+            steam_quality=steam_quality,  # NEW: Pass actual SG steam quality
+            pressure_stability_factor=pressure_stability_factor,  # NEW: Pressure variation effects
             dt=dt
         )
         
@@ -838,7 +801,14 @@ class EnhancedTurbinePhysics(HeatFlowProvider):
             emergency_actions = self.protection_system.emergency_actions
             power_reduction = 1.0
         
-        self.total_power_output = stage_power_mw * power_reduction
+        # STEP 4: Apply SG system availability effects to turbine performance
+        sg_availability_factor = 1.0 if system_availability else 0.5  # 50% power if SG system degraded
+        
+        # Combine all power reduction factors
+        total_power_reduction = power_reduction * sg_availability_factor
+        
+        self.total_power_output = stage_power_mw * total_power_reduction
+        
         self.overall_efficiency = stage_results['overall_efficiency']
         
         # Calculate steam rate and heat rate
@@ -1338,6 +1308,46 @@ class EnhancedTurbinePhysics(HeatFlowProvider):
         h_f = 4.18 * temp
         h_fg = 2257.0 * (1.0 - temp / 374.0) ** 0.38
         return h_f + h_fg
+    
+    def _calculate_pressure_variation_effects(self, sg_pressures: List[float]) -> float:
+        """
+        Calculate impact of pressure variations between steam generators
+        
+        STEP 3: Pressure variation effects on turbine performance
+        
+        Args:
+            sg_pressures: List of individual SG pressures (MPa)
+            
+        Returns:
+            Pressure stability factor (0.0-1.0) where 1.0 = no variation impact
+        """
+        if len(sg_pressures) <= 1:
+            return 1.0  # No variation with single SG
+        
+        # Calculate pressure statistics
+        avg_pressure = sum(sg_pressures) / len(sg_pressures)
+        max_deviation = max(abs(p - avg_pressure) for p in sg_pressures)
+        
+        # Normalize deviation (0.1 MPa = significant variation for turbine)
+        # PWR steam generators typically operate within ±0.05 MPa of each other
+        variation_factor = max_deviation / 0.1  # 0.1 MPa = 100% impact
+        
+        # Calculate stability factor
+        # Small variations (< 0.02 MPa) have minimal impact
+        # Large variations (> 0.1 MPa) significantly affect turbine performance
+        if max_deviation < 0.02:
+            stability_factor = 1.0  # No impact for small variations
+        elif max_deviation < 0.05:
+            # Linear reduction for moderate variations
+            stability_factor = 1.0 - (max_deviation - 0.02) / 0.03 * 0.05  # Up to 5% impact
+        else:
+            # Significant impact for large variations
+            stability_factor = 0.95 - min(variation_factor - 0.5, 0.25)  # 5-30% impact
+        
+        # Ensure reasonable bounds
+        stability_factor = np.clip(stability_factor, 0.7, 1.0)
+        
+        return stability_factor
     
 
 

@@ -90,7 +90,7 @@ class AutoMaintenanceSystem:
         
         # DUPLICATE PREVENTION: Track recent work order creation to prevent duplicates
         self.recent_work_order_triggers = {}  # component_id + action -> timestamp
-        self.work_order_cooldown_hours = 0.1  # Minimum time between same work orders (6 minutes for ultra-aggressive)
+        self.work_order_cooldown_hours = 24.0  # Minimum time between same work orders (24 hours)
         
         # No more event subscriptions - state manager handles everything!
         print("AUTO MAINTENANCE: 🚀 PHASE 3: Event bus removed - using state manager only")
@@ -191,11 +191,11 @@ class AutoMaintenanceSystem:
             self.low_priority_delay_hours = 0.0
             print("AUTO MAINTENANCE: Configured for aggressive mode (immediate execution)")
         else:
-            self.emergency_delay_hours = 0.0
-            self.high_priority_delay_hours = 0.0  # FIXED: Set to 0 for immediate execution
-            self.medium_priority_delay_hours = 0.0  # FIXED: Set to 0 for immediate execution
-            self.low_priority_delay_hours = 0.0  # FIXED: Set to 0 for immediate execution
-            print("AUTO MAINTENANCE: Configured for immediate execution mode")
+            self.emergency_delay_hours = 0.0      # Keep emergency immediate
+            self.high_priority_delay_hours = 1.0  # 1 hour delay
+            self.medium_priority_delay_hours = 4.0 # 4 hour delay  
+            self.low_priority_delay_hours = 24.0   # 24 hour delay
+            print("AUTO MAINTENANCE: Configured for realistic priority-based delays")
 
     def update(self, current_time_minutes: float, dt: float) -> List[WorkOrder]:
         """
