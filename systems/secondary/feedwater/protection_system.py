@@ -638,11 +638,43 @@ class FeedwaterProtectionSystem:
         elif cavitation_risk > 0.5:  # Moderate cavitation risk
             current_alarms.append('system_cavitation_risk')
         
-        # Wear protection
+        # FIXED: Wear protection - Get wear from actual lubrication system, not performance monitoring
+        # Performance monitoring has separate wear tracking that starts at 0%
+        # Protection system should check actual component wear from lubrication system
         wear_level = diagnostics_results.get('overall_wear_level', 0.0)
-        if wear_level > 40.0:  # Critical wear level
+        
+        # CRITICAL FIX: Check if we have access to actual lubrication system wear data
+        # Look for lubrication system wear details in diagnostics results
+        wear_details = diagnostics_results.get('wear_details', {})
+        if wear_details:
+            # Calculate actual system wear from lubrication systems
+            total_actual_wear = 0.0
+            pump_count = 0
+            
+            for pump_id, pump_wear_data in wear_details.items():
+                if isinstance(pump_wear_data, dict):
+                    # Get individual component wear from lubrication system
+                    motor_bearing_wear = pump_wear_data.get('motor_bearing_wear', 0.0)
+                    pump_bearing_wear = pump_wear_data.get('pump_bearing_wear', 0.0) 
+                    thrust_bearing_wear = pump_wear_data.get('thrust_bearing_wear', 0.0)
+                    seal_wear = pump_wear_data.get('seal_wear', 0.0)
+                    
+                    # Calculate total wear for this pump (use max bearing wear to avoid double counting)
+                    max_bearing_wear = max(motor_bearing_wear, pump_bearing_wear, thrust_bearing_wear)
+                    pump_total_wear = max_bearing_wear + seal_wear
+                    
+                    total_actual_wear += pump_total_wear
+                    pump_count += 1
+            
+            if pump_count > 0:
+                # Use actual lubrication system wear instead of performance monitoring wear
+                wear_level = total_actual_wear / pump_count
+        
+        WEAR_TRIP_THRESHOLD = 85.0       # Higher than maintenance threshold (75%)
+        
+        if wear_level > WEAR_TRIP_THRESHOLD:  # Critical wear level
             current_trips.append('system_wear_critical')
-        elif wear_level > 25.0:  # High wear level
+        elif wear_level > 50.0:  # High wear level (alarm only)
             current_alarms.append('system_wear_high')
     
     def _execute_emergency_actions(self, trip_types):
@@ -665,7 +697,7 @@ class FeedwaterProtectionSystem:
             self.emergency_actions['pump_trips_initiated'] = True
         
         # Reactor trip request (for severe conditions)
-        if self.config.enable_reactor_trip:
+        if getattr(self.config, 'enable_reactor_trip', True):
             severe_trips = ['npsh_critical', 'system_health_critical', 'system_cavitation_severe']
             if any(trip_type in trip for trip in trip_types for trip_type in severe_trips):
                 self.emergency_actions['reactor_trip_requested'] = True

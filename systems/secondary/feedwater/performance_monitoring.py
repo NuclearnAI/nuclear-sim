@@ -424,7 +424,9 @@ class PerformanceDiagnostics:
                          pump_results: Dict[str, Dict],
                          water_quality_results: Dict[str, float],
                          system_conditions: Dict[str, float],
-                         dt: float) -> Dict[str, float]:
+                         dt: float,
+                         pump_lubrication_systems: Dict = None,
+                         pump_objects: Dict = None) -> Dict[str, float]:
         """
         Update comprehensive diagnostics
         
@@ -433,6 +435,7 @@ class PerformanceDiagnostics:
             water_quality_results: Water quality analysis results
             system_conditions: System operating conditions
             dt: Time step (hours)
+            pump_lubrication_systems: Dictionary of pump lubrication systems (optional)
             
         Returns:
             Dictionary with diagnostic results
@@ -448,10 +451,17 @@ class PerformanceDiagnostics:
         
         if num_pumps > 0:
             for pump_id, pump_data in pump_results.items():
+                # Get dynamic NPSH requirement if pump object available
+                npsh_required_dynamic = 15.0  # Default fallback
+                if pump_objects and pump_id in pump_objects:
+                    pump_obj = pump_objects[pump_id]
+                    if hasattr(pump_obj, '_calculate_dynamic_npsh_required'):
+                        npsh_required_dynamic = pump_obj._calculate_dynamic_npsh_required()
+
                 # Update cavitation monitoring
                 cavitation_result = self.cavitation_model.update_cavitation_monitoring(
                     npsh_available=pump_data.get('npsh_available', 20.0),
-                    npsh_required=15.0,  # Typical requirement
+                    npsh_required=npsh_required_dynamic,  # DYNAMIC VALUE!
                     flow_rate=pump_data.get('flow_rate', 555.0),
                     pump_speed=pump_data.get('speed_percent', 100.0),
                     dt=dt
@@ -459,17 +469,39 @@ class PerformanceDiagnostics:
                 cavitation_results[pump_id] = cavitation_result
                 total_cavitation_risk += cavitation_result['cavitation_risk_score']
                 
-                # Update wear tracking
-                operating_conditions = {
-                    'flow_rate': pump_data.get('flow_rate', 555.0),
-                    'pump_speed': pump_data.get('speed_percent', 100.0),
-                    'bearing_temperature': pump_data.get('bearing_temperature', 45.0),
-                    'oil_level': pump_data.get('oil_level', 100.0),
-                    'water_aggressiveness': water_quality_results.get('water_aggressiveness', 1.0),
-                    'power_consumption': pump_data.get('power_consumption', 10.0)
-                }
+                # FIXED: Get actual wear data directly from lubrication system
+                if pump_lubrication_systems and pump_id in pump_lubrication_systems:
+                    # Use actual lubrication system data directly
+                    lubrication_system = pump_lubrication_systems[pump_id]
+                    lubrication_state = lubrication_system.get_state_dict()
+                    
+                    wear_result = {
+                        'motor_bearing_wear': lubrication_state.get('motor_bearing_wear', 0.0),
+                        'pump_bearing_wear': lubrication_state.get('pump_bearing_wear', 0.0),
+                        'thrust_bearing_wear': lubrication_state.get('thrust_bearing_wear', 0.0),
+                        'seal_wear': lubrication_state.get('seal_wear', 0.0),
+                        'impeller_wear': lubrication_state.get('pump_bearing_wear', 0.0),  # Use pump bearing as proxy
+                        'bearing_wear': max(lubrication_state.get('motor_bearing_wear', 0.0), 
+                                          lubrication_state.get('pump_bearing_wear', 0.0),
+                                          lubrication_state.get('thrust_bearing_wear', 0.0)),
+                        'total_wear': (max(lubrication_state.get('motor_bearing_wear', 0.0), 
+                                         lubrication_state.get('pump_bearing_wear', 0.0),
+                                         lubrication_state.get('thrust_bearing_wear', 0.0)) + 
+                                     lubrication_state.get('seal_wear', 0.0))
+                    }
+                else:
+                    # Fallback to performance monitoring's own wear tracking (legacy behavior)
+                    operating_conditions = {
+                        'flow_rate': pump_data.get('flow_rate', 555.0),
+                        'pump_speed': pump_data.get('speed_percent', 100.0),
+                        'bearing_temperature': pump_data.get('bearing_temperature', 45.0),
+                        'oil_level': pump_data.get('oil_level', 100.0),
+                        'water_aggressiveness': water_quality_results.get('water_aggressiveness', 1.0),
+                        'power_consumption': pump_data.get('power_consumption', 10.0)
+                    }
+                    
+                    wear_result = self.wear_tracking.update_wear_tracking(operating_conditions, dt)
                 
-                wear_result = self.wear_tracking.update_wear_tracking(operating_conditions, dt)
                 wear_results[pump_id] = wear_result
                 total_wear_level += wear_result['total_wear']
                 total_vibration += pump_data.get('vibration_level', 1.5)
@@ -482,6 +514,7 @@ class PerformanceDiagnostics:
             avg_cavitation_risk = 0.0
             avg_wear_level = 0.0
             avg_vibration = 0.0
+        
         
         # Calculate overall health score
         self._calculate_health_score(avg_cavitation_risk, avg_wear_level, avg_vibration)

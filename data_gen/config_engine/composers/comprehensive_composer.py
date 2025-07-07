@@ -18,12 +18,6 @@ import copy
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-# Import maintenance system
-from systems.maintenance.maintenance_actions import (
-    MaintenanceActionType,
-    get_maintenance_catalog
-)
-
 # Import initial conditions catalog
 from ..initial_conditions import get_initial_conditions_catalog
 
@@ -38,7 +32,6 @@ class ComprehensiveComposer:
     
     def __init__(self):
         """Initialize the comprehensive composer"""
-        self.catalog = get_maintenance_catalog()
         self.initial_conditions_catalog = get_initial_conditions_catalog()
         
         # Load the comprehensive config template (now contains realistic thresholds)
@@ -52,109 +45,26 @@ class ComprehensiveComposer:
         except yaml.YAMLError as e:
             raise ValueError(f"Error parsing comprehensive config template: {e}")
         
-        # Action to subsystem mapping
-        self.action_subsystem_map = {
-            # Steam Generator Actions
-            "tsp_chemical_cleaning": "steam_generator",
-            "tsp_mechanical_cleaning": "steam_generator",
-            "scale_removal": "steam_generator",
-            "moisture_separator_maintenance": "steam_generator",
-            "secondary_side_cleaning": "steam_generator",
-            "steam_dryer_cleaning": "steam_generator",
-            "water_chemistry_adjustment": "steam_generator",
-            "tube_bundle_inspection": "steam_generator",
-            "eddy_current_testing": "steam_generator",
-            "tube_sheet_inspection": "steam_generator",
-            
-            # TSP Enhanced Actions (NEW)
-            "tsp_inspection": "steam_generator",
-            "tsp_flow_test": "steam_generator",
-            
-            # Tube Interior Actions (NEW)
-            "tube_interior_inspection": "steam_generator",
-            "tube_interior_scale_cleaning": "steam_generator",
-            "tube_interior_eddy_current_testing": "steam_generator",
-            "primary_chemistry_optimization": "steam_generator",
-            
-            # Turbine Actions
-            "turbine_bearing_inspection": "turbine",
-            "turbine_bearing_replacement": "turbine",
-            "bearing_clearance_check": "turbine",
-            "bearing_alignment": "turbine",
-            "thrust_bearing_adjustment": "turbine",
-            "turbine_oil_change": "turbine",
-            "turbine_oil_top_off": "turbine",
-            "oil_filter_replacement": "turbine",
-            "oil_cooler_cleaning": "turbine",
-            "lubrication_system_test": "turbine",
-            "rotor_inspection": "turbine",
-            "thermal_bow_correction": "turbine",
-            "critical_speed_test": "turbine",
-            "overspeed_test": "turbine",
-            "vibration_monitoring_calibration": "turbine",
-            "dynamic_balancing": "turbine",
-            "turbine_performance_test": "turbine",
-            "turbine_protection_test": "turbine",
-            "thermal_stress_analysis": "turbine",
-            "turbine_system_optimization": "turbine",
-            "vibration_analysis": "turbine",
-            "efficiency_analysis": "turbine",
-            
-            # Feedwater Actions
-            "oil_top_off": "feedwater",
-            "oil_change": "feedwater",
-            "motor_inspection": "feedwater",
-            "pump_inspection": "feedwater",
-            "impeller_inspection": "feedwater",
-            "impeller_replacement": "feedwater",
-            "bearing_replacement": "feedwater",
-            "seal_replacement": "feedwater",
-            "bearing_inspection": "feedwater",
-            "seal_inspection": "feedwater",
-            "coupling_alignment": "feedwater",
-            "pump_alignment_check": "feedwater",
-            "npsh_analysis": "feedwater",
-            "cavitation_analysis": "feedwater",
-            "suction_system_check": "feedwater",
-            "discharge_system_inspection": "feedwater",
-            "flow_system_inspection": "feedwater",
-            "flow_control_inspection": "feedwater",
-            "lubrication_system_check": "feedwater",
-            "cooling_system_check": "feedwater",
-            "component_overhaul": "feedwater",
-            
-            # Individual Bearing Replacement Actions
-            "motor_bearing_replacement": "feedwater",
-            "pump_bearing_replacement": "feedwater",
-            "thrust_bearing_replacement": "feedwater",
-            "multiple_bearing_replacement": "feedwater",
-            
-            # Condenser Actions
-            "condenser_tube_cleaning": "condenser",
-            "condenser_tube_plugging": "condenser",
-            "condenser_tube_inspection": "condenser",
-            "condenser_biofouling_removal": "condenser",
-            "condenser_scale_removal": "condenser",
-            "condenser_chemical_cleaning": "condenser",
-            "condenser_mechanical_cleaning": "condenser",
-            "condenser_hydroblast_cleaning": "condenser",
-            "condenser_water_treatment": "condenser",
-            "condenser_performance_test": "condenser",
-            "vacuum_ejector_cleaning": "condenser",
-            "vacuum_ejector_nozzle_replacement": "condenser",
-            "vacuum_ejector_inspection": "condenser",
-            "vacuum_system_test": "condenser",
-            "vacuum_leak_detection": "condenser",
-            "intercondenser_cleaning": "condenser",
-            "aftercondenser_cleaning": "condenser",
-            "motive_steam_system_check": "condenser",
-            "vacuum_system_check": "condenser",
-        }
+        # Auto-generate action-subsystem mapping from conditions files
+        self.action_subsystem_map = self._build_action_map_from_conditions()
         
         print(f"✅ Comprehensive Composer Initialized")
         print(f"   🎯 Action-subsystem mappings: {len(self.action_subsystem_map)}")
-        print(f"   📋 Maintenance catalog: {len(self.catalog.actions)} actions")
         print(f"   📄 Base config loaded with realistic thresholds")
+    
+    def _build_action_map_from_conditions(self) -> Dict[str, str]:
+        """
+        Build action-subsystem mapping from conditions files only
+        
+        Returns:
+            Dictionary mapping action names to subsystem names
+        """
+        action_map = {}
+        for subsystem, action in self.initial_conditions_catalog.get_all_action_keys():
+            action_map[action] = subsystem
+        
+        print(f"   📋 Auto-discovered {len(action_map)} actions from conditions files")
+        return action_map
     
     def compose_action_test_scenario(
         self,
@@ -182,15 +92,7 @@ class ComprehensiveComposer:
         
         print(f"🔧 Composing realistic test scenario for: {target_action}")
         
-        # 1. Validate action exists in catalog
-        try:
-            action_type = MaintenanceActionType(target_action)
-            action_metadata = self.catalog.get_action_metadata(action_type)
-            if not action_metadata:
-                raise ValueError(f"No metadata found for action: {target_action}")
-        except ValueError as e:
-            raise ValueError(f"Unknown maintenance action: {target_action}") from e
-        
+        # 1. Simple validation: check if action exists in conditions files
         # 2. Determine target subsystem
         target_subsystem = self.action_subsystem_map.get(target_action)
         if not target_subsystem:

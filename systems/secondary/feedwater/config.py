@@ -234,7 +234,6 @@ class FeedwaterInitialConditions:
     # Performance monitoring (existing)
     pump_vibrations: List[float] = field(default_factory=lambda: [5.0, 5.0, 5.0, 0.0])  # mm/s pump vibrations
     bearing_temperatures: List[float] = field(default_factory=lambda: [80.0, 80.0, 80.0, 25.0])  # °C bearing temps
-    seal_leakage_rate: List[float] = field(default_factory=lambda: [0.1, 0.1, 0.1, 0.0])  # L/min seal leakage rates (authoritative)
     pump_oil_levels: List[float] = field(default_factory=lambda: [100.0, 100.0, 100.0, 100.0])  # % pump oil levels
     
     # === EXTENDED OIL & LUBRICATION PARAMETERS ===
@@ -271,7 +270,7 @@ class FeedwaterInitialConditions:
     seal_face_wear: List[float] = field(default_factory=lambda: [0.3, 0.3, 0.3, 0.3])  # Fraction of seal life used per pump
     seal_temperature: List[float] = field(default_factory=lambda: [70.0, 70.0, 70.0, 70.0])  # °C seal temperature per pump
     seal_pressure_drop: List[float] = field(default_factory=lambda: [0.08, 0.08, 0.08, 0.08])  # MPa seal pressure drop per pump
-    seal_leakage_rate: List[float] = field(default_factory=lambda: [0.02, 0.02, 0.02, 0.02])  # L/min seal leakage rate per pump
+    seal_leakage_rate: List[float] = field(default_factory=lambda: [0.001, 0.001, 0.001, 0.0])  # L/min seal leakage rate per pump - realistic minimal leakage
     
     # Enhanced impeller parameters
     impeller_wear: List[float] = field(default_factory=lambda: [0.3, 0.3, 0.3, 0.3])  # Fraction of impeller life used per pump

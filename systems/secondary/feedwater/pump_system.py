@@ -221,14 +221,17 @@ class FeedwaterPump(BasePump):
         feedwater_temp = system_conditions.get('feedwater_temperature', 227.0)  # °C
         temp_factor = 1.0 - (feedwater_temp - 227.0) * 0.0002  # Small effect
         
-        # Suction pressure effects
-        suction_pressure = system_conditions.get('suction_pressure', 0.5)  # MPa
-        self.state.suction_pressure = suction_pressure
+        # Suction pressure effects (but respect initial conditions)
+        if not hasattr(self, '_initial_conditions_applied'):
+            suction_pressure = system_conditions.get('suction_pressure', 0.5)  # MPa
+            self.state.suction_pressure = suction_pressure
         
         # Calculate NPSH available (simplified)
-        vapor_pressure = self._vapor_pressure(feedwater_temp)  # MPa
-        npsh_available = (suction_pressure - vapor_pressure) * 100.0  # Convert to meters
-        self.state.npsh_available = max(0, npsh_available)
+        # CRITICAL FIX: Only calculate NPSH if not set by initial conditions
+        if not hasattr(self, '_initial_conditions_applied'):
+            vapor_pressure = self._vapor_pressure(feedwater_temp)  # MPa
+            npsh_available = (self.state.suction_pressure - vapor_pressure) * 100.0  # Convert to meters
+            self.state.npsh_available = max(0, npsh_available)
         
         # Apply temperature factor
         self.state.flow_rate *= temp_factor
@@ -284,10 +287,11 @@ class FeedwaterPump(BasePump):
         if self.state.status == PumpStatus.STARTING:
             return
         
-        # NPSH protection (feedwater-specific)
+        # NPSH protection with dynamic requirement
+        npsh_required_dynamic = self._calculate_dynamic_npsh_required()
         if (self.state.status == PumpStatus.RUNNING and 
-            self.state.npsh_available < self.min_npsh_required):
-            self._trip_pump("NPSH Violation")
+            self.state.npsh_available < npsh_required_dynamic):
+            self._trip_pump(f"NPSH Violation (Required: {npsh_required_dynamic:.1f}m, Available: {self.state.npsh_available:.1f}m)")
             return
         
         # Suction pressure protection
@@ -354,6 +358,66 @@ class FeedwaterPump(BasePump):
         return False
     
     
+    def _calculate_dynamic_npsh_required(self) -> float:
+        """
+        Enhanced dynamic NPSH requirement calculation with explicit impeller wear tracking
+        
+        Uses explicit impeller wear from lubrication system plus cavitation damage
+        for comprehensive NPSH requirement calculation with bidirectional coupling
+        
+        Returns:
+            Dynamic NPSH requirement in meters
+        """
+        base_npsh = 15.0  # Fixed baseline NPSH requirement
+        
+        # 1. Explicit impeller wear penalty (from lubrication system)
+        impeller_wear_penalty = 0.0
+        if hasattr(self, 'lubrication_system'):
+            impeller_wear = self.lubrication_system.component_wear.get('impeller', 0.0)
+            impeller_wear_penalty = impeller_wear * 0.1  # 0.1m NPSH per 1% impeller wear
+        
+        # 2. Cavitation damage penalty (surface roughness from cavitation)
+        # Cavitation damage creates surface roughness that increases NPSH requirements
+        cavitation_roughness_penalty = self.state.cavitation_damage * 0.2  # 0.2m per damage unit
+        
+        # 3. Speed penalty (from existing speed_percent)
+        # Higher speeds require more NPSH due to increased suction velocity
+        speed_penalty = max(0.0, (self.state.speed_percent - 100.0) * 0.02)  # 0.02m per 1% overspeed
+        
+        # 4. Flow penalty (from existing flow_rate)
+        # Higher flows require more NPSH due to increased suction losses
+        flow_ratio = self.state.flow_rate / self.config.rated_flow
+        flow_penalty = max(0.0, (flow_ratio - 1.0) * 1.5)  # 1.5m per 100% overflow
+        
+        # 5. Bearing wear contribution (shaft misalignment effects)
+        bearing_penalty = 0.0
+        if hasattr(self, 'lubrication_system'):
+            # Bearing wear can cause shaft misalignment affecting impeller clearances
+            max_bearing_wear = max(
+                self.lubrication_system.component_wear.get('motor_bearings', 0.0),
+                self.lubrication_system.component_wear.get('pump_bearings', 0.0),
+                self.lubrication_system.component_wear.get('thrust_bearing', 0.0)
+            )
+            bearing_penalty = max_bearing_wear * 0.05  # 0.05m per 1% bearing wear
+        
+        # 6. Enhanced coupling penalty (multiplicative effects when both impeller and bearings are worn)
+        coupling_penalty = 0.0
+        if hasattr(self, 'lubrication_system'):
+            impeller_wear = self.lubrication_system.component_wear.get('impeller', 0.0)
+            max_bearing_wear = max(
+                self.lubrication_system.component_wear.get('motor_bearings', 0.0),
+                self.lubrication_system.component_wear.get('pump_bearings', 0.0),
+                self.lubrication_system.component_wear.get('thrust_bearing', 0.0)
+            )
+            # Coupling penalty when both are worn (multiplicative effect)
+            coupling_penalty = (impeller_wear * max_bearing_wear / 10000.0) * 0.3  # Up to 0.3m when both at 100%
+        
+        # Total dynamic NPSH requirement
+        total_npsh_required = (base_npsh + impeller_wear_penalty + cavitation_roughness_penalty + 
+                              speed_penalty + flow_penalty + bearing_penalty + coupling_penalty)
+        
+        return max(base_npsh, total_npsh_required)  # Never go below baseline
+
     def set_flow_demand(self, flow_demand: float):
         """Set flow demand from level control system"""
         self.flow_demand = np.clip(flow_demand, 0.0, self.config.rated_flow * 1.2)
@@ -376,19 +440,21 @@ class FeedwaterPump(BasePump):
         # Call base class update first
         result = BasePump.update_pump(self, dt, system_conditions, control_inputs)
         
-        # Run enhanced simulations
+        # CRITICAL FIX: Update sensors FIRST to get current NPSH available
+        self._simulate_sensors(dt, system_conditions)
+        
+        # Run enhanced simulations with updated sensor data
         self._simulate_cavitation(dt, system_conditions)
         self._simulate_mechanical_wear(dt, system_conditions)
         self._apply_performance_degradation()
-        self._simulate_sensors(dt, system_conditions)
         
         # Add enhanced diagnostics to result - get from lubrication system where applicable
-        impeller_wear = self.lubrication_system.component_wear.get('pump_bearings', 0.0) if hasattr(self, 'lubrication_system') else 0.0
-        bearing_wear = max(
-            self.lubrication_system.component_wear.get('motor_bearings', 0.0),
-            self.lubrication_system.component_wear.get('pump_bearings', 0.0),
-            self.lubrication_system.component_wear.get('thrust_bearing', 0.0)
-        ) if hasattr(self, 'lubrication_system') else 0.0
+        # NEW: Explicit impeller wear tracking
+        impeller_wear = self.lubrication_system.component_wear.get('impeller', 0.0) if hasattr(self, 'lubrication_system') else 0.0
+        motor_bearing_wear = self.lubrication_system.component_wear.get('motor_bearings', 0.0) if hasattr(self, 'lubrication_system') else 0.0
+        pump_bearing_wear = self.lubrication_system.component_wear.get('pump_bearings', 0.0) if hasattr(self, 'lubrication_system') else 0.0
+        thrust_bearing_wear = self.lubrication_system.component_wear.get('thrust_bearing', 0.0) if hasattr(self, 'lubrication_system') else 0.0
+        bearing_wear = max(motor_bearing_wear, pump_bearing_wear, thrust_bearing_wear)
         seal_wear = self.lubrication_system.component_wear.get('mechanical_seals', 0.0) if hasattr(self, 'lubrication_system') else 0.0
         
         oil_level = self.lubrication_system.oil_level if hasattr(self, 'lubrication_system') else 100.0
@@ -399,6 +465,22 @@ class FeedwaterPump(BasePump):
         efficiency_factor = self.lubrication_system.pump_efficiency_factor if hasattr(self, 'lubrication_system') else 1.0
         head_factor = self.lubrication_system.pump_head_factor if hasattr(self, 'lubrication_system') else 1.0
         
+        # Calculate enhanced NPSH diagnostics with explicit impeller wear
+        npsh_required_dynamic = self._calculate_dynamic_npsh_required()
+        npsh_baseline = 15.0
+        
+        # Enhanced NPSH penalty breakdown
+        impeller_wear_penalty = impeller_wear * 0.1 if hasattr(self, 'lubrication_system') else 0.0
+        cavitation_roughness_penalty = self.state.cavitation_damage * 0.2
+        speed_penalty = max(0.0, (self.state.speed_percent - 100.0) * 0.02)
+        flow_penalty = max(0.0, (self.state.flow_rate / self.config.rated_flow - 1.0) * 1.5)
+        bearing_penalty = bearing_wear * 0.05 if hasattr(self, 'lubrication_system') else 0.0
+        coupling_penalty = (impeller_wear * bearing_wear / 10000.0) * 0.3 if hasattr(self, 'lubrication_system') else 0.0
+        
+        # Calculate coupling effects for diagnostics
+        bearing_to_impeller_coupling = bearing_wear * 0.3 if hasattr(self, 'lubrication_system') else 0.0
+        impeller_to_bearing_coupling = impeller_wear * 0.4 if hasattr(self, 'lubrication_system') else 0.0
+        
         result.update({
             # Cavitation diagnostics
             'cavitation_intensity': self.state.cavitation_intensity,
@@ -406,9 +488,12 @@ class FeedwaterPump(BasePump):
             'cavitation_time': self.state.cavitation_time,
             'cavitation_noise_level': self.state.cavitation_noise_level,
             
-            # Mechanical wear diagnostics - from lubrication system
-            'impeller_wear': impeller_wear,
-            'bearing_wear': bearing_wear,
+            # Enhanced mechanical wear diagnostics - explicit tracking
+            'impeller_wear': impeller_wear,  # NEW: Explicit impeller wear
+            'motor_bearing_wear': motor_bearing_wear,  # NEW: Individual bearing wear
+            'pump_bearing_wear': pump_bearing_wear,    # NEW: Individual bearing wear
+            'thrust_bearing_wear': thrust_bearing_wear, # NEW: Individual bearing wear
+            'bearing_wear': bearing_wear,  # Maximum bearing wear (legacy compatibility)
             'seal_wear': seal_wear,
             'seal_leakage': self.seal_leakage,
             
@@ -428,7 +513,27 @@ class FeedwaterPump(BasePump):
             'motor_temperature': self.state.motor_temperature,
             'motor_current': self.state.motor_current,
             'motor_voltage': self.state.motor_voltage,
-            'vibration_level': self.state.vibration_level
+            'vibration_level': self.state.vibration_level,
+            
+            # Enhanced Dynamic NPSH diagnostics with explicit impeller wear
+            'npsh_required_dynamic': npsh_required_dynamic,
+            'npsh_required_baseline': npsh_baseline,
+            'npsh_impeller_wear_penalty': impeller_wear_penalty,  # NEW: Explicit impeller penalty
+            'npsh_cavitation_penalty': cavitation_roughness_penalty,  # RENAMED: Cavitation roughness penalty
+            'npsh_speed_penalty': speed_penalty,
+            'npsh_flow_penalty': flow_penalty,
+            'npsh_bearing_penalty': bearing_penalty,  # NEW: Bearing misalignment penalty
+            'npsh_coupling_penalty': coupling_penalty,  # NEW: Multiplicative coupling penalty
+            'npsh_margin': self.state.npsh_available - npsh_required_dynamic,
+            
+            # Enhanced coupling diagnostics
+            'bearing_to_impeller_coupling': bearing_to_impeller_coupling,  # NEW: Coupling effect
+            'impeller_to_bearing_coupling': impeller_to_bearing_coupling,  # NEW: Coupling effect
+            
+            # Legacy compatibility
+            'npsh_wear_penalty': impeller_wear_penalty,  # Legacy: maps to new impeller penalty
+            'npsh_damage_penalty': cavitation_roughness_penalty,  # Legacy: maps to cavitation penalty
+            'impeller_wear_equivalent': self.state.cavitation_damage * 2.0,  # Legacy: cavitation equivalent
         })
         
         return result
@@ -442,8 +547,9 @@ class FeedwaterPump(BasePump):
             self.state.cavitation_noise_level = 0.0
             return
         
-        # Calculate cavitation threshold with safety margin
-        cavitation_threshold = self.min_npsh_required + self.cavitation_threshold_margin
+        # Calculate dynamic NPSH requirement including wear effects
+        npsh_required_dynamic = self._calculate_dynamic_npsh_required()
+        cavitation_threshold = npsh_required_dynamic + self.cavitation_threshold_margin
         
         # Determine cavitation severity based on NPSH deficit
         if self.state.npsh_available < cavitation_threshold:
@@ -548,20 +654,24 @@ class FeedwaterPump(BasePump):
         - NPSH calculations
         - Cavitation effects on hydraulic performance
         """
-        # Suction pressure from system conditions
-        self.state.suction_pressure = system_conditions.get('suction_pressure', 0.5)
+        # Suction pressure from system conditions (but respect initial conditions)
+        if not hasattr(self, '_initial_conditions_applied'):
+            self.state.suction_pressure = system_conditions.get('suction_pressure', 0.5)
         
-        # Discharge pressure from system conditions
-        self.state.discharge_pressure = system_conditions.get('discharge_pressure', 8.0)
+        # Discharge pressure from system conditions (but respect initial conditions)
+        if not hasattr(self, '_initial_conditions_applied'):
+            self.state.discharge_pressure = system_conditions.get('discharge_pressure', 8.0)
         
         # Calculate differential pressure
         self.state.differential_pressure = self.state.discharge_pressure - self.state.suction_pressure
         
         # NPSH calculation (pump hydraulic responsibility)
-        feedwater_temp = system_conditions.get('feedwater_temperature', 227.0)
-        vapor_pressure = self._vapor_pressure(feedwater_temp)
-        npsh_available = (self.state.suction_pressure - vapor_pressure) * 100.0  # Convert to meters
-        self.state.npsh_available = max(0, npsh_available)
+        # CRITICAL FIX: Only calculate NPSH if not set by initial conditions
+        if not hasattr(self, '_initial_conditions_applied'):
+            feedwater_temp = system_conditions.get('feedwater_temperature', 227.0)
+            vapor_pressure = self._vapor_pressure(feedwater_temp)
+            npsh_available = (self.state.suction_pressure - vapor_pressure) * 100.0  # Convert to meters
+            self.state.npsh_available = max(0, npsh_available)
     
     def _simulate_electrical_sensors(self, system_conditions: Dict):
         """
@@ -953,9 +1063,10 @@ class FeedwaterPump(BasePump):
         }
         
         # Merge lubrication system state at the same level (flat merge)
+        # This includes all maintenance action flags from the lubrication system
         if hasattr(self, 'lubrication_system'):
             lubrication_state = self.lubrication_system.get_state_dict()
-            state_dict.update(lubrication_state)  # ← Flat merge, not nesting
+            state_dict.update(lubrication_state)  # ← Flat merge includes maintenance flags
 
         return state_dict
 

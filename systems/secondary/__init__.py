@@ -1305,7 +1305,7 @@ class SecondaryReactorPhysics:
                 pump.state.impeller_wear = 0.0  # % - new condition
                 pump.state.bearing_wear = 0.0  # % - new condition
                 pump.state.seal_wear = 0.0  # % - new condition
-                pump.state.seal_leakage = 0.1  # L/min - minimal leakage
+                pump.state.seal_leakage = 0.001  # L/min - realistic minimal leakage for modern seals
                 pump.state.cavitation_intensity = 0.0  # No cavitation
                 pump.state.cavitation_damage = 0.0  # No damage
                 pump.state.cavitation_time = 0.0  # No cavitation time

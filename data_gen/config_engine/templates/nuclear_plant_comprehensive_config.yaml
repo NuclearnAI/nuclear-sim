@@ -479,18 +479,18 @@ secondary_system:
       bearing_noise_level: [70.0, 70.0, 70.0, 70.0]  # dB bearing noise per pump
       
       # Individual bearing wear parameters (for selective bearing replacement)
-      motor_bearing_wear: [0.0, 0.0, 0.0, 0.0]      # Motor bearing wear per pump (0-1 fraction)
-      pump_bearing_wear: [0.0, 0.0, 0.0, 0.0]       # Pump bearing wear per pump (0-1 fraction)
-      thrust_bearing_wear: [0.0, 0.0, 0.0, 0.0]     # Thrust bearing wear per pump (0-1 fraction)
+      motor_bearing_wear: [0.0, 0.0, 0.0, 0.0]      # Motor bearing wear per pump (0-100 percentage)
+      pump_bearing_wear: [0.0, 0.0, 0.0, 0.0]       # Pump bearing wear per pump (0-100 percentage)
+      thrust_bearing_wear: [0.0, 0.0, 0.0, 0.0]     # Thrust bearing wear per pump (0-100 percentage)
       
       # Enhanced seal parameters
-      seal_face_wear: [0., 0., 0., 0.]   # Fraction of seal life used per pump
+      seal_face_wear: [0.0, 0.0, 0.0, 0.0]   # Seal wear per pump (0-100 percentage)
       seal_temperature: [70.0, 70.0, 70.0, 70.0]  # °C seal temperature per pump
       seal_pressure_drop: [0.0, 0.0, 0.0, 0.0]  # MPa seal pressure drop per pump
       
       # Enhanced impeller parameters
-      impeller_wear: [0.0, 0.0, 0.0, 0.0]    # Fraction of impeller life used per pump
-      impeller_cavitation_damage: [0.0, 0.0, 0.0, 0.0]  # Cavitation damage fraction per pump
+      impeller_wear: [0.0, 0.0, 0.0, 0.0]    # Impeller wear per pump (0-100 percentage)
+      impeller_cavitation_damage: [0.0, 0.0, 0.0, 0.0]  # Cavitation damage per pump (0-100 percentage)
       impeller_vibration: [8.0, 8.0, 8.0, 8.0]  # mm/s impeller vibration per pump
       impeller_damage: [0.0, 0.0, 0.0, 0.0]  # Impeller damage fraction per pump
       
@@ -504,7 +504,7 @@ secondary_system:
       pump_power: [1.0, 1.0, 1.0, 1.0]       # Fraction of design power per pump
       
       # NPSH and cavitation parameters
-      npsh_available: [12.0, 12.0, 12.0, 12.0]  # m NPSH available per pump
+      npsh_available: [22.0, 42.0, 42.0, 42.0]  # m NPSH available per pump
       cavitation_inception: [1.0, 1.0, 1.0, 1.0]  # Fraction of design flow for cavitation per pump
       cavitation_intensity: [0.05, 0.05, 0.05, 0.05]  # Cavitation intensity index per pump
       noise_level: [75.0, 75.0, 75.0, 75.0]  # dB noise level per pump
@@ -718,12 +718,27 @@ maintenance_system:
           cooldown_hours: 720.0        # Monthly cooldown
           priority: "MEDIUM"
         
-        # === CAVITATION-BASED IMPELLER MAINTENANCE ===
-        # Impeller replacement triggered by cavitation damage, not non-existent wear tracking
+        # === ENHANCED IMPELLER MAINTENANCE WITH EXPLICIT WEAR TRACKING ===
+        # NEW: Explicit impeller wear monitoring from lubrication system
+        impeller_wear:
+          threshold: 8.0               # Explicit impeller wear (lubrication_system.component_wear['impeller'])
+          comparison: "greater_than"
+          action: "impeller_inspection"  # Inspect before replacement
+          cooldown_hours: 2190.0       # Quarterly cooldown
+          priority: "MEDIUM"
+        
+        impeller_wear_severe:
+          threshold: 15.0              # Severe impeller wear threshold
+          comparison: "greater_than"
+          action: "impeller_replacement"  # Replace worn impeller with coupling benefits
+          cooldown_hours: 4380.0       # Semi-annual cooldown
+          priority: "HIGH"
+        
+        # ENHANCED: Cavitation-based impeller maintenance (complementary to explicit wear)
         cavitation_damage:
           threshold: 8.0               # Accumulated cavitation damage (pump.state.cavitation_damage)
           comparison: "greater_than"
-          action: "impeller_replacement"  # Resets pump bearing wear in lubrication system
+          action: "impeller_replacement"  # Resets impeller wear in lubrication system
           cooldown_hours: 4380.0       # Semi-annual cooldown
           priority: "HIGH"
         
@@ -735,7 +750,7 @@ maintenance_system:
           priority: "HIGH"
         
         npsh_available:
-          threshold: 8.5               # NPSH available (pump.state.npsh_available)
+          threshold: 18.0              # NPSH available (pump.state.npsh_available) - UPDATED: above dynamic baseline
           comparison: "less_than"
           action: "npsh_analysis"      # Address cavitation conditions
           cooldown_hours: 168.0        # Weekly cooldown
@@ -863,13 +878,13 @@ maintenance_system:
         
         # === MISSING NPSH & CAVITATION THRESHOLDS ===
         npsh_available:
-          threshold: 8.0               # m NPSH available (vs 12.0 m safety trip)
+          threshold: 18.0              # m NPSH available (FIXED: above 15.0m protection trip)
           comparison: "less_than"
           action: "npsh_analysis"
           cooldown_hours: 168.0        # Weekly cooldown
           priority: "HIGH"
         suction_pressure:
-          threshold: 0.12              # MPa suction pressure (vs 0.2 MPa trip)
+          threshold: 0.25              # MPa suction pressure (FIXED: above 0.2 MPa protection trip)
           comparison: "less_than"
           action: "npsh_analysis"
           cooldown_hours: 168.0        # Weekly cooldown
@@ -944,12 +959,20 @@ maintenance_system:
           action: "lubrication_system_check"
           cooldown_hours: 168.0        # Weekly cooldown
           priority: "HIGH"
-        oil_cooler_effectiveness:
-          threshold: 0.83              # 83% heat transfer effectiveness
-          comparison: "less_than"
-          action: "lubrication_system_check"
-          cooldown_hours: 720.0        # Monthly cooldown
-          priority: "MEDIUM"
+        #oil_cooler_effectiveness:
+        #  threshold: 0.83              # 83% heat transfer effectiveness
+        #  comparison: "less_than"
+        #  action: "lubrication_system_check"
+        #  cooldown_hours: 720.0        # Monthly cooldown
+        #  priority: "MEDIUM"
+        
+        # === NEW: SUM WEAR MAINTENANCE THRESHOLD ===
+        sum_wear_level:
+          threshold: 75.0              # % summed wear - component overhaul
+          comparison: "greater_than"
+          action: "component_overhaul"
+          cooldown_hours: 4380.0       # Semi-annual cooldown
+          priority: "HIGH"
         
         # === MISSING COOLING SYSTEM THRESHOLDS ===
         cooling_water_temperature:
@@ -970,6 +993,65 @@ maintenance_system:
           action: "cooling_system_check"
           cooldown_hours: 720.0        # Monthly cooldown
           priority: "MEDIUM"
+        
+        # === NEW: DYNAMIC NPSH MONITORING THRESHOLDS ===
+        npsh_required_dynamic:
+          threshold: 16.0                         # m - Dynamic NPSH requirement alarm
+          comparison: "greater_than"
+          action: "impeller_inspection"
+          cooldown_hours: 720.0                   # Monthly cooldown
+          priority: "HIGH"
+        
+        npsh_margin_dynamic:
+          threshold: 1.0                          # m - Dynamic NPSH margin warning
+          comparison: "less_than"
+          action: "vibration_analysis"
+          cooldown_hours: 168.0                   # Weekly cooldown
+          priority: "HIGH"
+        
+        impeller_wear_equivalent:
+          threshold: 10.0                         # % - Equivalent impeller wear from cavitation
+          comparison: "greater_than"
+          action: "impeller_inspection"
+          cooldown_hours: 2190.0                  # Quarterly cooldown
+          priority: "MEDIUM"
+        
+        # UPDATED: Enhanced cavitation damage thresholds
+        cavitation_damage_severe:
+          threshold: 8.0                          # Severe damage threshold
+          comparison: "greater_than"
+          action: "impeller_replacement"
+          cooldown_hours: 4380.0                  # Semi-annual cooldown
+          priority: "CRITICAL"
+        
+        # NEW: NPSH penalty component thresholds
+        npsh_wear_penalty:
+          threshold: 0.5                          # m - NPSH penalty from wear
+          comparison: "greater_than"
+          action: "impeller_inspection"
+          cooldown_hours: 2190.0                  # Quarterly cooldown
+          priority: "MEDIUM"
+        
+        npsh_damage_penalty:
+          threshold: 1.0                          # m - NPSH penalty from damage
+          comparison: "greater_than"
+          action: "impeller_inspection"
+          cooldown_hours: 720.0                   # Monthly cooldown
+          priority: "HIGH"
+        
+        npsh_speed_penalty:
+          threshold: 0.2                          # m - NPSH penalty from overspeed
+          comparison: "greater_than"
+          action: "routine_maintenance"
+          cooldown_hours: 168.0                   # Weekly cooldown
+          priority: "MEDIUM"
+        
+        npsh_flow_penalty:
+          threshold: 0.3                          # m - NPSH penalty from overflow
+          comparison: "greater_than"
+          action: "routine_maintenance"
+          cooldown_hours: 168.0                   # Weekly cooldown
+          priority: "MEDIUM"
     
     # Turbine system maintenance - based on industry standards
     turbine:
@@ -977,13 +1059,13 @@ maintenance_system:
       cooldown_hours: 24.0
       thresholds:
         vibration_level:
-          threshold: 25.0              # mils - Typical alarm setpoint
+          threshold: 20.0              # mils - FIXED: below 25.0 mils protection trip
           comparison: "greater_than"
           action: "vibration_analysis"
           cooldown_hours: 168.0        # Weekly cooldown
           priority: "HIGH"
         bearing_temperature:
-          threshold: 110.0             # °C - Industry standard
+          threshold: 100.0             # °C - FIXED: below 110.0°C protection trip
           comparison: "greater_than"
           action: "turbine_bearing_inspection"
           cooldown_hours: 168.0        # Weekly cooldown

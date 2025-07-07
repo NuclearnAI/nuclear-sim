@@ -254,6 +254,17 @@ class AutoMaintenanceSystem:
         priority = violation_data.get('priority', 'MEDIUM')
         timestamp = violation_data.get('timestamp')
         
+        # CRITICAL FIX: Extract component_id from violations if this is a batched violation
+        extracted_component_id = None
+        if parameter == 'multiple_violations' and 'violations' in violation_data:
+            # This is a batched violation - check individual violations for component_id
+            violations = violation_data['violations']
+            for violation in violations:
+                if violation.get('action') == action and violation.get('component_id'):
+                    extracted_component_id = violation['component_id']
+                    print(f"AUTO MAINTENANCE: 🔍 Found component_id={extracted_component_id} for action={action} in batched violation")
+                    break
+        
         # PHASE 2 FIX: Check if we've already processed this exact violation recently
         violation_key = f"{component_id}:{parameter}:{action}:{timestamp}"
         if hasattr(self, '_processed_violations'):
@@ -288,7 +299,8 @@ class AutoMaintenanceSystem:
             'value': value,
             'threshold': threshold,
             'comparison': comparison,
-            'action': action
+            'action': action,
+            'component_id': extracted_component_id  # CRITICAL FIX: Include extracted component_id
         }
         
         # Create a simple event object
@@ -300,7 +312,8 @@ class AutoMaintenanceSystem:
             action_type=action,
             priority=priority_enum,
             trigger_reason=f"State manager threshold: {parameter} = {value:.2f} {comparison} {threshold}",
-            event=event
+            event=event,
+            extracted_component_id=extracted_component_id  # CRITICAL FIX: Pass extracted component_id
         )
         
         if work_order:
@@ -318,7 +331,7 @@ class AutoMaintenanceSystem:
     
     def _create_automatic_work_order(self, component_id: str, action_type: str,
                                    priority: Priority, trigger_reason: str,
-                                   event: StateManagerEvent) -> Optional[WorkOrder]:
+                                   event: StateManagerEvent, extracted_component_id: str = None) -> Optional[WorkOrder]:
         """Create an automatic work order with duplicate prevention"""
         
         # Convert action string to MaintenanceActionType if needed
@@ -394,13 +407,28 @@ class AutoMaintenanceSystem:
             trigger_id=f"event_{event.timestamp}"
         )
         
-        # Add maintenance action
+        # Add maintenance action with component_id if available
         estimated_duration = self.maintenance_catalog.estimate_duration(action_enum)
+        action_description = f"Perform {action_enum.value.replace('_', ' ')} on {component_id}"
+        
+        # CRITICAL FIX: Include component_id in action if extracted from violation
+        if extracted_component_id and action_type == "bearing_replacement":
+            action_description += f" (component: {extracted_component_id})"
+            print(f"AUTO MAINTENANCE: 🔧 Adding bearing replacement with component_id={extracted_component_id}")
+        
         work_order.add_action(
             action_type=action_enum.value,
-            description=f"Perform {action_enum.value.replace('_', ' ')} on {component_id}",
+            description=action_description,
             estimated_duration=estimated_duration
         )
+        
+        # CRITICAL FIX: Store extracted component_id in work order for later use
+        if extracted_component_id:
+            # Add component_id to work order metadata
+            if not hasattr(work_order, 'metadata'):
+                work_order.metadata = {}
+            work_order.metadata['extracted_component_id'] = extracted_component_id
+            print(f"AUTO MAINTENANCE: 📝 Stored extracted_component_id={extracted_component_id} in work order metadata")
         
         # Set component metadata
         work_order.component_type = component_status['class_name']
@@ -498,7 +526,7 @@ class AutoMaintenanceSystem:
         # Execute each maintenance action
         for action in work_order.maintenance_actions:
             try:
-                result = self._perform_maintenance_action(component, action.action_type)
+                result = self._perform_maintenance_action(component, action.action_type, work_order)
                 
                 # Update action with results
                 action.actual_duration = result.duration_hours
@@ -553,8 +581,15 @@ class AutoMaintenanceSystem:
         self.work_orders_executed += 1
         return success
     
-    def _perform_maintenance_action(self, component: Any, action_type: str) -> MaintenanceResult:
+    def _perform_maintenance_action(self, component: Any, action_type: str, work_order: WorkOrder = None) -> MaintenanceResult:
         """Perform maintenance action on component"""
+        
+        # CRITICAL FIX: Extract component_id from work order metadata if available
+        extracted_component_id = None
+        if work_order and hasattr(work_order, 'metadata') and work_order.metadata:
+            extracted_component_id = work_order.metadata.get('extracted_component_id')
+            if extracted_component_id:
+                print(f"AUTO MAINTENANCE: 🔧 Using extracted component_id={extracted_component_id} for {action_type}")
         
         # Check if component has perform_maintenance method
         if hasattr(component, 'perform_maintenance'):
@@ -563,24 +598,32 @@ class AutoMaintenanceSystem:
                 component_class_name = component.__class__.__name__
                 print(f"AUTO MAINTENANCE: Attempting {action_type} on {component_class_name}")
                 
+                # Prepare maintenance kwargs
+                maintenance_kwargs = {'maintenance_type': action_type}
+                
+                # CRITICAL FIX: Add component_id for bearing replacement
+                if extracted_component_id and action_type == "bearing_replacement":
+                    maintenance_kwargs['component_id'] = extracted_component_id
+                    print(f"AUTO MAINTENANCE: 🔧 Passing component_id={extracted_component_id} to bearing_replacement")
+                
                 if component_class_name == "FeedwaterPumpSystem":
                     # For pump systems, we need to determine which pump to maintain
                     # For now, let the system decide (pump_id=None means system-wide maintenance)
-                    result = component.perform_maintenance(pump_id=None, maintenance_type=action_type)
+                    result = component.perform_maintenance(pump_id=None, **maintenance_kwargs)
                     
                 elif hasattr(component, 'config') and hasattr(component.config, 'pump_id'):
                     # For individual pumps with pump_id in config
                     pump_id = component.config.pump_id
-                    result = component.perform_maintenance(pump_id=pump_id, maintenance_type=action_type)
+                    result = component.perform_maintenance(pump_id=pump_id, **maintenance_kwargs)
                     
                 elif hasattr(component, 'config') and hasattr(component.config, 'system_id'):
                     # For lubrication systems or other systems with system_id
                     print(f"AUTO MAINTENANCE: Calling perform_maintenance on {component.config.system_id}")
-                    result = component.perform_maintenance(maintenance_type=action_type)
+                    result = component.perform_maintenance(**maintenance_kwargs)
                     
                 else:
                     # Standard maintenance method call
-                    result = component.perform_maintenance(maintenance_type=action_type)
+                    result = component.perform_maintenance(**maintenance_kwargs)
                 
                 print(f"AUTO MAINTENANCE: Maintenance result type: {type(result)}, content: {result}")
                 

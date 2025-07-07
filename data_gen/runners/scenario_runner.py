@@ -43,8 +43,7 @@ from scenarios.scenario_generator import (
 from runners.maintenance_scenario_runner import MaintenanceScenarioRunner
 from simulator.core.sim import NuclearPlantSimulator
 
-# Import maintenance actions for validation
-from systems.maintenance.maintenance_actions import MaintenanceActionType
+# No longer import maintenance actions - use conditions files only
 
 
 class ScenarioRunner:
@@ -880,19 +879,15 @@ class ScenarioRunner:
             print(f"   📁 Results directory: {results_dir}")
     
     def validate_action(self, action: str) -> bool:
-        """Validate action against MaintenanceActionType enum"""
-        try:
-            MaintenanceActionType(action)
-            return True
-        except ValueError:
-            return False
+        """Validate action against conditions files"""
+        return action in self.maintenance_composer.list_available_actions()
     
     def suggest_similar_actions(self, invalid_action: str) -> List[str]:
         """Suggest similar valid actions for typos using fuzzy matching"""
         import difflib
         
-        # Get all valid actions from enum
-        valid_actions = [action.value for action in MaintenanceActionType]
+        # Get all valid actions from conditions files
+        valid_actions = self.maintenance_composer.list_available_actions()
         
         # Use difflib to find close matches
         suggestions = difflib.get_close_matches(
@@ -905,20 +900,16 @@ class ScenarioRunner:
         return suggestions
     
     def list_available_actions(self) -> List[str]:
-        """List all available maintenance actions from enum"""
-        # Use enum as source of truth instead of composer
-        return [action.value for action in MaintenanceActionType]
+        """List all available maintenance actions from conditions files"""
+        return self.maintenance_composer.list_available_actions()
     
     def list_available_scenarios(self) -> List[str]:
         """List all available operational scenario types"""
         return [scenario_type.value for scenario_type in ScenarioType]
     
     def get_actions_by_subsystem(self, subsystem: str) -> List[str]:
-        """Get maintenance actions for a specific subsystem"""
-        # Use composer for subsystem mapping but validate against enum
-        composer_actions = self.maintenance_composer.get_actions_by_subsystem(subsystem)
-        # Filter to only include valid enum actions
-        return [action for action in composer_actions if self.validate_action(action)]
+        """Get maintenance actions for a specific subsystem from conditions files"""
+        return self.maintenance_composer.get_actions_by_subsystem(subsystem)
     
     def _generate_operational_config(
         self, 

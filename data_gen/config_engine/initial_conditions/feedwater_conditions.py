@@ -44,9 +44,9 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
         
         # === REALISTIC SUPPORTING VALUES ===
         "pump_oil_levels": [90.0, 90.0, 90.0, 100.0],  # Higher levels (increased from 85.0)
-        "bearing_wear": [0.01, 0.01, 0.01, 0.01],      # Very low wear (reduced from 0.02)
-        "seal_face_wear": [0.005, 0.005, 0.005, 0.005],  # Very low wear (reduced from 0.01)
-        "impeller_wear": [0.005, 0.005, 0.005, 0.005],  # Very low wear (reduced from 0.01)
+        "bearing_wear": [1.0, 1.0, 1.0, 1.0],      # Very low wear (reduced from 2.0)
+        "seal_face_wear": [0.5, 0.5, 0.5, 0.5],  # Very low wear (reduced from 1.0)
+        "impeller_wear": [0.5, 0.5, 0.5, 0.5],  # Very low wear (reduced from 1.0)
         "pump_vibrations": [3.0, 3.0, 3.0, 0.0],       # Lower vibration (reduced from 5.0)
         "cavitation_intensity": [0.02, 0.02, 0.02, 0.02],  # Very low cavitation (reduced from 0.05)
         "npsh_available": [18.0, 18.0, 18.0, 18.0],    # Excellent NPSH (increased from 15.0)
@@ -124,9 +124,9 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
     
     "motor_bearing_replacement": {
         # Only motor bearings need replacement
-        "motor_bearing_wear": [0.085, 0.082, 0.088, 0.083],  # >8.0% triggers motor bearing replacement
-        "pump_bearing_wear": [0.055, 0.052, 0.058, 0.053],   # <6.0% (safe)
-        "thrust_bearing_wear": [0.035, 0.032, 0.038, 0.033], # <4.0% (safe)
+        "motor_bearing_wear": [8.5, 8.2, 8.8, 8.3],  # >8.0% triggers motor bearing replacement
+        "pump_bearing_wear": [5.5, 5.2, 5.8, 5.3],   # <6.0% (safe)
+        "thrust_bearing_wear": [3.5, 3.2, 3.8, 3.3], # <4.0% (safe)
         
         "description": "Motor bearing wear scenario - triggers motor bearing replacement only",
         "expected_action": "bearing_replacement",
@@ -136,9 +136,9 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
 
     "pump_bearing_replacement": {
         # Only pump bearings need replacement
-        "motor_bearing_wear": [0.055, 0.052, 0.058, 0.053],  # <8.0% (safe)
-        "pump_bearing_wear": [0.059, 0.049, 0.058, 0.043],   # >6.0% triggers pump bearing replacement
-        "thrust_bearing_wear": [0.015, 0.012, 0.018, 0.013], # <4.0% (safe)
+        "motor_bearing_wear": [5.5, 5.2, 5.8, 5.3],  # <8.0% (safe)
+        "pump_bearing_wear": [6.5, 6.2, 6.8, 6.3],   # >6.0% triggers pump bearing replacement
+        "thrust_bearing_wear": [1.5, 1.2, 1.8, 1.3], # <4.0% (safe)
         
         "description": "Pump bearing wear scenario - triggers pump bearing replacement only",
         "expected_action": "bearing_replacement", 
@@ -148,9 +148,9 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
 
     "thrust_bearing_replacement": {
         # Only thrust bearings need replacement
-        "motor_bearing_wear": [0.075, 0.072, 0.078, 0.073],  # <8.0% (safe)
-        "pump_bearing_wear": [0.055, 0.052, 0.058, 0.053],   # <6.0% (safe)
-        "thrust_bearing_wear": [0.045, 0.042, 0.048, 0.043], # >4.0% triggers thrust bearing replacement
+        "motor_bearing_wear": [7.5, 7.2, 7.8, 7.3],  # <8.0% (safe)
+        "pump_bearing_wear": [5.5, 5.2, 5.8, 5.3],   # <6.0% (safe)
+        "thrust_bearing_wear": [4.5, 4.2, 4.8, 4.3], # >4.0% triggers thrust bearing replacement
         
         "description": "Thrust bearing wear scenario - triggers thrust bearing replacement only",
         "expected_action": "bearing_replacement",
@@ -160,9 +160,9 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
 
     "multiple_bearing_replacement": {
         # Multiple bearing types need replacement
-        "motor_bearing_wear": [0.085, 0.082, 0.088, 0.083],  # >8.0% triggers motor bearing replacement
-        "pump_bearing_wear": [0.065, 0.062, 0.068, 0.063],   # >6.0% triggers pump bearing replacement
-        "thrust_bearing_wear": [0.045, 0.042, 0.048, 0.043], # >4.0% triggers thrust bearing replacement
+        "motor_bearing_wear": [8.5, 8.2, 8.8, 8.3],  # >8.0% triggers motor bearing replacement
+        "pump_bearing_wear": [6.5, 6.2, 6.8, 6.3],   # >6.0% triggers pump bearing replacement
+        "thrust_bearing_wear": [4.5, 4.2, 4.8, 4.3], # >4.0% triggers thrust bearing replacement
         
         "description": "Multiple bearing wear scenario - triggers multiple bearing replacements",
         "expected_action": "bearing_replacement",
@@ -299,7 +299,77 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
         "description": "System in good condition - routine maintenance recommended",
         "threshold_info": {"parameter": "system_health_factor", "threshold": 0.90, "direction": "less_than"},
         "maintenance_scope": "Preventive maintenance to maintain optimal performance"
-    }
+    },
+    "gradual_degradation": {
+        # === IMMEDIATE ACTIONS (Week 1-2) ===
+        "pump_oil_contamination": 15.2,           # Just above 15.0 → oil_change (Month 1)
+        "pump_oil_levels": [62.0, 58.0, 90.0, 100.0],  # Pump 2 below 60% → oil_top_off (Week 1)
+        "seal_face_wear": [12, 8, 11, 9.5],
+    
+        # === MEDIUM-TERM ACTIONS (Month 2-3) ===
+        "motor_bearing_wear": [7.8, 6.1, 7.2, 0.0],    # Pump 3 approaching 8.0% → bearing_replacement (Month 2)
+        "pump_bearing_wear": [5., 4.5, 4.0, 0.3],     # Pump 1 approaching 6.0% → bearing_replacement (Month 3)
+        "thrust_bearing_wear": [2., 3.5, 3.0, 0.3],     # Pump 1 approaching 6.0% → bearing_replacement (Month 3)
+    
+        # === LONG-TERM ACTIONS (Month 4-6) ===
+        "motor_temperature": [82.0, 70.0, 78.0, 25.0], # Elevated but below 85°C threshold
+    
+        # === KEEP EVERYTHING ELSE SAFE ===
+        "oil_temperature": 52.0,                        # Below 55°C
+        "bearing_temperatures": [65.0, 60.0, 68.0, 25.0], # Below 70°C# - Different components hitting thresholds at different times
+    },
+    
+"dynamic_cavitation_coupling_test": {
+    # === NPSH CONDITIONS (Arrays for 4 pumps) ===
+    "npsh_available": [17.0, 18.5, 19.5, 20.0],           # 4 pumps - BELOW threshold for cavitation
+    
+    # === SYSTEM CONDITIONS (Single values) ===
+    "suction_pressure": 0.35,                             # Single value - MUCH lower suction
+    "feedwater_temperature": 240.0,                       # Single value - HIGHER temp (more vapor pressure)
+    "oil_temperature": 54.0,                              # Single value - elevated
+    
+    # === INITIAL WEAR (Arrays for 4 pumps) ===
+    "impeller_wear": [2.0, 2.5, 1.5, 0.0],               # 4 pumps - small initial wear
+    "motor_bearing_wear": [1.5, 2.0, 1.0, 0.0],          # 4 pumps - small initial wear
+    "pump_bearing_wear": [1.0, 1.5, 0.8, 0.0],           # 4 pumps - small initial wear  
+    "thrust_bearing_wear": [0.5, 0.8, 0.3, 0.0],         # 4 pumps - small initial wear
+    
+    # === LUBRICATION CONDITIONS (Single values) ===
+    "pump_oil_contamination": 12.0,                       # Single value - moderate contamination
+    "pump_oil_water_content": 0.07,                       # Single value - elevated moisture
+    "pump_oil_acid_number": 1.4,                          # Single value - elevated acidity
+    
+    # === LUBRICATION EFFECTIVENESS (Arrays for 4 pumps) ===
+    "lubrication_effectiveness": [0.88, 0.85, 0.90, 0.95], # 4 pumps - declining effectiveness
+    
+    # === PUMP CONDITIONS (Arrays for 4 pumps) ===
+    "motor_temperature": [82.0, 84.0, 80.0, 25.0],       # 4 pumps - elevated temps
+    "pump_oil_levels": [88.0, 85.0, 90.0, 100.0],        # 4 pumps - lower levels
+    "pump_vibrations": [8.0, 9.0, 7.0, 0.0],             # 4 pumps - elevated vibration
+    
+    # === OPERATIONAL CONDITIONS ===
+    # Note: pump_load_factor might not be a direct config parameter
+    # Instead use flow/speed conditions that create high load
+    "pump_flows": [520.0, 530.0, 510.0, 0.0],            # 4 pumps - above rated (500.0)
+    "pump_speeds": [3700.0, 3750.0, 3650.0, 0.0],        # 4 pumps - above rated (3600.0)
+    
+    "description": "Dynamic cavitation coupling test with correct data types - conditions drive cavitation calculation",
+    "data_type_notes": [
+        "Arrays [a,b,c,d] for 4-pump parameters",
+        "Single values for system-wide parameters", 
+        "Pump 4 (index 3) is spare pump (0.0 values)",
+        "Physics will calculate cavitation_intensity dynamically"
+    ],
+    "expected_physics": [
+        "1. Reduced NPSH margin triggers cavitation calculation",
+        "2. Above-rated flow increases cavitation intensity", 
+        "3. Initial wear increases NPSH requirements",
+        "4. Cavitation accelerates wear through coupling",
+        "5. Positive feedback loop develops"
+    ]
+}
+
+
 }
 
 # === ARCHITECTURE VALIDATION ===

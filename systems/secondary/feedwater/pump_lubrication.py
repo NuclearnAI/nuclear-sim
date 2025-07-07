@@ -86,8 +86,41 @@ class FeedwaterPumpLubricationSystem(BaseLubricationSystem):
     def __init__(self, config: FeedwaterPumpLubricationConfig):
         """Initialize feedwater pump lubrication system"""
         
+        # Initialize maintenance action tracking flags
+        self.maintenance_action_flags = {
+            'oil_change': False,
+            'oil_top_off': False,
+            'bearing_replacement': False,
+            'seal_replacement': False,
+            'component_overhaul': False,
+            'system_cleaning': False,
+            'bearing_inspection': False,
+            'impeller_inspection': False,
+            'impeller_replacement': False,
+            'lubrication_system_check': False,
+            'motor_inspection': False,
+            'oil_analysis': False,
+            'vibration_analysis': False
+        }
+        self.last_maintenance_action = None
+        
         # Define feedwater pump-specific lubricated components
         pump_components = [
+            LubricationComponent(
+                component_id="impeller",
+                component_type="impeller",
+                oil_flow_requirement=0.0,          # L/min (no direct lubrication)
+                oil_pressure_requirement=0.0,      # MPa (no direct lubrication)
+                oil_temperature_max=100.0,         # °C (indirect through pump bearings)
+                base_wear_rate=0.0006,             # %/hour (cavitation, erosion, corrosion)
+                load_wear_exponent=1.8,            # High hydraulic load sensitivity
+                speed_wear_exponent=2.0,           # Very high speed sensitivity (tip speed)
+                contamination_wear_factor=1.5,     # Moderate contamination sensitivity
+                wear_performance_factor=0.025,     # 2.5% performance loss per % wear
+                lubrication_performance_factor=0.0, # No direct lubrication effect
+                wear_alarm_threshold=10.0,         # % wear alarm (earlier than bearings)
+                wear_trip_threshold=25.0           # % wear trip (earlier than bearings)
+            ),
             LubricationComponent(
                 component_id="motor_bearings",
                 component_type="bearing",
@@ -241,7 +274,7 @@ class FeedwaterPumpLubricationSystem(BaseLubricationSystem):
     
     def calculate_component_wear(self, component_id: str, operating_conditions: Dict) -> float:
         """
-        Calculate wear rate for feedwater pump components
+        Calculate wear rate for feedwater pump components with bidirectional wear coupling
         
         Args:
             component_id: Component identifier
@@ -258,16 +291,41 @@ class FeedwaterPumpLubricationSystem(BaseLubricationSystem):
         temperature = operating_conditions.get('temperature', 55.0)       # °C
         cavitation_intensity = operating_conditions.get('cavitation_intensity', 0.0)  # 0-1 scale
         
-        # Component-specific wear calculations
-        if component_id == "motor_bearings":
+        # === BIDIRECTIONAL WEAR COUPLING FACTORS ===
+        # Get current wear levels for coupling calculations
+        impeller_wear = self.component_wear.get('impeller', 0.0)
+        motor_bearing_wear = self.component_wear.get('motor_bearings', 0.0)
+        pump_bearing_wear = self.component_wear.get('pump_bearings', 0.0)
+        thrust_bearing_wear = self.component_wear.get('thrust_bearing', 0.0)
+        max_bearing_wear = max(motor_bearing_wear, pump_bearing_wear, thrust_bearing_wear)
+        
+        # Component-specific wear calculations with coupling
+        if component_id == "impeller":
+            # Impeller wear from cavitation, erosion, and bearing-induced effects
+            hydraulic_load_factor = load_factor
+            cavitation_factor = 1.0 + cavitation_intensity * 3.0  # Cavitation is primary impeller wear mechanism
+            temp_factor = max(1.0, (temperature - 80.0) / 40.0)   # High temperature threshold for impeller
+            
+            # BEARING → IMPELLER COUPLING: Bearing wear causes shaft misalignment affecting impeller
+            bearing_coupling_factor = 1.0 + (max_bearing_wear / 100.0) * 0.3  # Up to 30% acceleration
+            
+            wear_rate = (component.base_wear_rate * 
+                        (hydraulic_load_factor ** component.load_wear_exponent) *
+                        (speed_factor ** component.speed_wear_exponent) *
+                        cavitation_factor * temp_factor * bearing_coupling_factor)
+            
+        elif component_id == "motor_bearings":
             # Motor bearing wear depends on electrical load and speed
             electrical_load_factor = operating_conditions.get('electrical_load_factor', 1.0)
             temp_factor = max(1.0, (temperature - 60.0) / 25.0)
             
+            # IMPELLER → BEARING COUPLING: Impeller wear creates unbalanced forces
+            impeller_coupling_factor = 1.0 + (impeller_wear / 100.0) * 0.2  # Up to 20% acceleration
+            
             wear_rate = (component.base_wear_rate * 
                         (electrical_load_factor ** component.load_wear_exponent) *
                         (speed_factor ** component.speed_wear_exponent) *
-                        temp_factor)
+                        temp_factor * impeller_coupling_factor)
             
         elif component_id == "pump_bearings":
             # Pump bearing wear depends on hydraulic load and cavitation
@@ -275,19 +333,26 @@ class FeedwaterPumpLubricationSystem(BaseLubricationSystem):
             cavitation_factor = 1.0 + cavitation_intensity * 2.0  # Cavitation increases wear
             temp_factor = max(1.0, (temperature - 50.0) / 30.0)
             
+            # IMPELLER → BEARING COUPLING: Impeller wear creates hydraulic imbalance
+            impeller_coupling_factor = 1.0 + (impeller_wear / 100.0) * 0.4  # Up to 40% acceleration (highest coupling)
+            
             wear_rate = (component.base_wear_rate * 
                         (hydraulic_load_factor ** component.load_wear_exponent) *
                         (speed_factor ** component.speed_wear_exponent) *
-                        cavitation_factor * temp_factor)
+                        cavitation_factor * temp_factor * impeller_coupling_factor)
             
         elif component_id == "thrust_bearing":
             # Thrust bearing wear depends on axial loads and pump head
             head_factor = operating_conditions.get('head_factor', 1.0)
             axial_load_factor = head_factor * load_factor  # Axial load proportional to head and flow
             
+            # IMPELLER → BEARING COUPLING: Impeller wear affects axial thrust balance
+            impeller_coupling_factor = 1.0 + (impeller_wear / 100.0) * 0.25  # Up to 25% acceleration
+            
             wear_rate = (component.base_wear_rate * 
                         (axial_load_factor ** component.load_wear_exponent) *
-                        (speed_factor ** component.speed_wear_exponent))
+                        (speed_factor ** component.speed_wear_exponent) *
+                        impeller_coupling_factor)
             
         elif component_id == "mechanical_seals":
             # Seal wear depends on pressure differential and seal water quality
@@ -297,21 +362,36 @@ class FeedwaterPumpLubricationSystem(BaseLubricationSystem):
             # Cavitation near seals increases wear dramatically
             cavitation_seal_factor = 1.0 + cavitation_intensity * 5.0
             
+            # IMPELLER → SEAL COUPLING: Impeller wear creates flow disturbances affecting seals
+            impeller_coupling_factor = 1.0 + (impeller_wear / 100.0) * 0.15  # Up to 15% acceleration
+            
+            # BEARING → SEAL COUPLING: Bearing wear causes shaft runout affecting seal faces
+            bearing_coupling_factor = 1.0 + (max_bearing_wear / 100.0) * 0.2  # Up to 20% acceleration
+            
             wear_rate = (component.base_wear_rate * 
                         (pressure_factor ** component.load_wear_exponent) *
-                        seal_water_quality * cavitation_seal_factor)
+                        seal_water_quality * cavitation_seal_factor *
+                        impeller_coupling_factor * bearing_coupling_factor)
             
         elif component_id == "coupling_system":
             # Coupling wear depends on misalignment and torque variations
             misalignment_factor = operating_conditions.get('misalignment_factor', 1.0)
             torque_variation = operating_conditions.get('torque_variation', 1.0)
             
+            # BEARING → COUPLING COUPLING: Bearing wear increases misalignment
+            bearing_coupling_factor = 1.0 + (max_bearing_wear / 100.0) * 0.3  # Up to 30% acceleration
+            
             wear_rate = (component.base_wear_rate * misalignment_factor * 
-                        torque_variation * (load_factor ** component.load_wear_exponent))
+                        torque_variation * (load_factor ** component.load_wear_exponent) *
+                        bearing_coupling_factor)
             
         else:
             # Default wear calculation
             wear_rate = component.base_wear_rate * load_factor
+        
+        # Apply chemistry wear factor if provided
+        chemistry_wear_factor = operating_conditions.get('chemistry_wear_factor', 1.0)
+        wear_rate *= chemistry_wear_factor
         
         return wear_rate
     
@@ -516,7 +596,7 @@ class FeedwaterPumpLubricationSystem(BaseLubricationSystem):
         
         # Calculate total leakage with very conservative progression
         total_leakage = base_seal_leakage + wear_leakage + cavitation_leakage
-        self.seal_leakage_rate = min(total_leakage, 0.05)  # Cap at 50 mL/min maximum - FIXED: Reduced from 0.2 to 0.05
+        self.seal_leakage_rate = min(total_leakage, 0.0005)  # Cap at 50 mL/min maximum - FIXED: Reduced from 0.2 to 0.05
         
         # Oil level decreases due to seal leakage
         if self.seal_leakage_rate > 0:
@@ -557,6 +637,11 @@ class FeedwaterPumpLubricationSystem(BaseLubricationSystem):
         Returns:
             Dictionary with maintenance results compatible with MaintenanceResult
         """
+        
+        # Set maintenance action flag when maintenance is performed
+        if maintenance_type in self.maintenance_action_flags:
+            self.maintenance_action_flags[maintenance_type] = True
+        self.last_maintenance_action = maintenance_type
         
         # Dictionary mapping maintenance types to their handler methods
         maintenance_handlers = {
@@ -675,7 +760,6 @@ class FeedwaterPumpLubricationSystem(BaseLubricationSystem):
             component_id: Specific bearing to replace or "all"
         """
         components_replaced = []
-        
         if component_id == "all":
             # Replace all bearings
             old_motor_wear = self.component_wear.get('motor_bearings', 0.0)
@@ -878,64 +962,164 @@ class FeedwaterPumpLubricationSystem(BaseLubricationSystem):
     
     def _perform_impeller_inspection(self, **kwargs) -> Dict[str, Any]:
         """
-        Impeller inspection - Note: Impeller wear tracked as pump bearing wear in lubrication system
+        Enhanced impeller inspection with explicit impeller wear tracking and coupling analysis
         """
-        # In the lubrication system, impeller wear is tracked as part of pump bearing wear
-        # since the impeller affects pump bearing loads
+        # Get explicit impeller wear and related component wear
+        impeller_wear = self.component_wear.get('impeller', 0.0)
+        motor_bearing_wear = self.component_wear.get('motor_bearings', 0.0)
         pump_bearing_wear = self.component_wear.get('pump_bearings', 0.0)
+        thrust_bearing_wear = self.component_wear.get('thrust_bearing', 0.0)
+        max_bearing_wear = max(motor_bearing_wear, pump_bearing_wear, thrust_bearing_wear)
+        
+        # Calculate coupling effects for assessment
+        bearing_to_impeller_coupling = max_bearing_wear * 0.3  # 30% coupling factor
+        impeller_to_bearing_coupling = impeller_wear * 0.4    # 40% coupling factor (highest)
         
         # Inspection can detect and partially address minor wear
-        if pump_bearing_wear > 5.0:
-            # Apply 10% improvement from cleaning
-            old_wear = pump_bearing_wear
-            self.component_wear['pump_bearings'] *= 0.9
+        if impeller_wear > 3.0 or max_bearing_wear > 5.0:
+            # Apply cleaning improvements
+            old_impeller_wear = impeller_wear
+            old_max_bearing_wear = max_bearing_wear
+            
+            # Clean impeller (10% improvement)
+            self.component_wear['impeller'] = max(0.0, impeller_wear * 0.9)
+            
+            # Minor bearing cleaning due to reduced impeller loads
+            bearing_improvement = 0.5  # 0.5% improvement from reduced impeller loads
+            self.component_wear['motor_bearings'] = max(0.0, motor_bearing_wear - bearing_improvement)
+            self.component_wear['pump_bearings'] = max(0.0, pump_bearing_wear - bearing_improvement)
+            self.component_wear['thrust_bearing'] = max(0.0, thrust_bearing_wear - bearing_improvement)
             
             # Recalculate performance factors after cleaning
             self._calculate_pump_performance_factors()
             
-            new_wear = self.component_wear['pump_bearings']
-            findings = f"Impeller/pump bearing wear: {old_wear:.1f}% -> {new_wear:.1f}% (cleaned)"
-            recommendations = ["Monitor impeller wear closely", "Consider replacement if wear exceeds 15%"]
+            new_impeller_wear = self.component_wear['impeller']
+            new_max_bearing_wear = max(
+                self.component_wear['motor_bearings'],
+                self.component_wear['pump_bearings'],
+                self.component_wear['thrust_bearing']
+            )
+            
+            findings = (f"Impeller wear: {old_impeller_wear:.1f}% → {new_impeller_wear:.1f}% (cleaned). "
+                       f"Max bearing wear: {old_max_bearing_wear:.1f}% → {new_max_bearing_wear:.1f}% (improved). "
+                       f"Coupling effects: Bearing→Impeller {bearing_to_impeller_coupling:.1f}%, "
+                       f"Impeller→Bearing {impeller_to_bearing_coupling:.1f}%")
+            
+            # Enhanced recommendations based on coupling analysis
+            recommendations = []
+            if new_impeller_wear > 8.0:
+                recommendations.append("Schedule impeller replacement within 3 months")
+            elif new_impeller_wear > 5.0:
+                recommendations.append("Monitor impeller wear closely")
+            
+            if new_max_bearing_wear > 10.0:
+                recommendations.append("Consider bearing inspection due to impeller coupling effects")
+            
+            if bearing_to_impeller_coupling > 2.0:
+                recommendations.append("Address bearing wear to prevent impeller degradation")
+            
+            if impeller_to_bearing_coupling > 3.0:
+                recommendations.append("Monitor bearing condition due to impeller wear coupling")
+            
+            if not recommendations:
+                recommendations.append("Continue normal operation with routine monitoring")
+                
         else:
-            findings = f"Impeller in good condition, wear: {pump_bearing_wear:.1f}%"
-            recommendations = ["Continue normal operation"]
+            findings = (f"Impeller in good condition: wear {impeller_wear:.1f}%, "
+                       f"max bearing wear {max_bearing_wear:.1f}%. "
+                       f"Minimal coupling effects detected.")
+            recommendations = ["Continue normal operation", "Next inspection in 6 months"]
         
         return {
             'success': True,
             'duration_hours': 4.0,
-            'work_performed': 'Impeller inspection with cleaning',
+            'work_performed': 'Enhanced impeller inspection with coupling analysis',
             'findings': findings,
             'recommendations': recommendations,
             'effectiveness_score': 0.9,
-            'impeller_wear_after': self.component_wear['pump_bearings'],
+            'impeller_wear_after': self.component_wear['impeller'],
+            'max_bearing_wear_after': max(
+                self.component_wear['motor_bearings'],
+                self.component_wear['pump_bearings'],
+                self.component_wear['thrust_bearing']
+            ),
+            'bearing_to_impeller_coupling': bearing_to_impeller_coupling,
+            'impeller_to_bearing_coupling': impeller_to_bearing_coupling,
             'next_maintenance_due': 4380.0  # 6 months
         }
     
     def _perform_impeller_replacement(self, **kwargs) -> Dict[str, Any]:
         """
-        Impeller replacement - Resets pump bearing wear and improves performance
+        Enhanced impeller replacement with explicit wear tracking and coupling benefits
         """
-        # Store old wear for reporting
+        # Store old wear values for reporting
+        old_impeller_wear = self.component_wear.get('impeller', 0.0)
+        old_motor_bearing_wear = self.component_wear.get('motor_bearings', 0.0)
         old_pump_bearing_wear = self.component_wear.get('pump_bearings', 0.0)
+        old_thrust_bearing_wear = self.component_wear.get('thrust_bearing', 0.0)
         
-        # Reset pump bearing wear (impeller replacement reduces bearing loads)
-        self.component_wear['pump_bearings'] = 0.0
+        # Calculate coupling benefits before replacement
+        impeller_to_bearing_coupling_reduction = old_impeller_wear * 0.4  # 40% coupling factor
+        
+        # Reset impeller wear to zero (new impeller)
+        self.component_wear['impeller'] = 0.0
+        
+        # Reduce bearing wear due to eliminated impeller coupling effects
+        # New impeller eliminates unbalanced forces and hydraulic disturbances
+        bearing_improvement_motor = min(old_motor_bearing_wear, impeller_to_bearing_coupling_reduction * 0.2)
+        bearing_improvement_pump = min(old_pump_bearing_wear, impeller_to_bearing_coupling_reduction * 0.4)  # Highest coupling
+        bearing_improvement_thrust = min(old_thrust_bearing_wear, impeller_to_bearing_coupling_reduction * 0.25)
+        
+        self.component_wear['motor_bearings'] = max(0.0, old_motor_bearing_wear - bearing_improvement_motor)
+        self.component_wear['pump_bearings'] = max(0.0, old_pump_bearing_wear - bearing_improvement_pump)
+        self.component_wear['thrust_bearing'] = max(0.0, old_thrust_bearing_wear - bearing_improvement_thrust)
+        
+        # Calculate total bearing improvement
+        total_bearing_improvement = bearing_improvement_motor + bearing_improvement_pump + bearing_improvement_thrust
         
         # Recalculate performance factors after impeller replacement
         self._calculate_pump_performance_factors()
         
-        # Reduce vibration from impeller replacement
-        self.vibration_increase = max(0.0, self.vibration_increase - old_pump_bearing_wear * 0.05)
+        # Reduce vibration from impeller replacement and bearing improvement
+        vibration_reduction_impeller = old_impeller_wear * 0.08  # Direct impeller vibration reduction
+        vibration_reduction_bearings = total_bearing_improvement * 0.05  # Bearing improvement vibration reduction
+        total_vibration_reduction = vibration_reduction_impeller + vibration_reduction_bearings
+        
+        self.vibration_increase = max(0.0, self.vibration_increase - total_vibration_reduction)
+        
+        # Calculate new bearing wear levels for reporting
+        new_motor_bearing_wear = self.component_wear['motor_bearings']
+        new_pump_bearing_wear = self.component_wear['pump_bearings']
+        new_thrust_bearing_wear = self.component_wear['thrust_bearing']
+        
+        findings = (f"Replaced impeller (wear: {old_impeller_wear:.1f}% → 0%). "
+                   f"Bearing improvements from coupling elimination: "
+                   f"Motor {old_motor_bearing_wear:.1f}% → {new_motor_bearing_wear:.1f}%, "
+                   f"Pump {old_pump_bearing_wear:.1f}% → {new_pump_bearing_wear:.1f}%, "
+                   f"Thrust {old_thrust_bearing_wear:.1f}% → {new_thrust_bearing_wear:.1f}%. "
+                   f"Total vibration reduction: {total_vibration_reduction:.2f} mm/s")
+        
+        # Enhanced performance improvement calculation
+        base_improvement = 15.0  # Base improvement from new impeller
+        coupling_improvement = total_bearing_improvement * 2.0  # Additional improvement from bearing coupling benefits
+        total_performance_improvement = base_improvement + coupling_improvement
         
         return {
             'success': True,
             'duration_hours': 8.0,
-            'work_performed': 'Impeller replacement with bearing load reduction',
-            'findings': f'Replaced impeller, reduced pump bearing wear from {old_pump_bearing_wear:.1f}% to 0%',
-            'performance_improvement': 15.0,  # 15% improvement from new impeller
+            'work_performed': 'Enhanced impeller replacement with coupling benefits',
+            'findings': findings,
+            'performance_improvement': total_performance_improvement,
             'effectiveness_score': 1.0,
-            'impeller_wear_removed': old_pump_bearing_wear,
-            'vibration_reduction': old_pump_bearing_wear * 0.05,
+            'impeller_wear_removed': old_impeller_wear,
+            'bearing_improvements': {
+                'motor_bearings': bearing_improvement_motor,
+                'pump_bearings': bearing_improvement_pump,
+                'thrust_bearing': bearing_improvement_thrust,
+                'total': total_bearing_improvement
+            },
+            'vibration_reduction': total_vibration_reduction,
+            'coupling_benefits_realized': True,
             'next_maintenance_due': 17520.0  # 2 years
         }
     
@@ -1258,13 +1442,14 @@ class FeedwaterPumpLubricationSystem(BaseLubricationSystem):
         thrust_bearing_wear = self.component_wear.get('thrust_bearing', 0.0)
         
         # Calculate efficiency losses from mechanical wear
-        bearing_efficiency_loss = (motor_bearing_wear * 0.01 + 
-                                 pump_bearing_wear * 0.015 + 
-                                 thrust_bearing_wear * 0.02)
+        # FIXED: Convert percentage (0-100) to fractional (0-1) first
+        bearing_efficiency_loss = ((motor_bearing_wear / 100.0) * 0.01 + 
+                                 (pump_bearing_wear / 100.0) * 0.015 + 
+                                 (thrust_bearing_wear / 100.0) * 0.02)
         
         # Seal wear effects
         seal_wear = self.component_wear.get('mechanical_seals', 0.0)
-        seal_efficiency_loss = seal_wear * 0.01  # Seal wear increases internal leakage
+        seal_efficiency_loss = (seal_wear / 100.0) * 0.01  # FIXED: Convert percentage to fractional first
         
         # === LUBRICATION QUALITY EFFECTS ===
         lubrication_efficiency_loss = (1.0 - self.lubrication_effectiveness) * 0.02
@@ -1409,8 +1594,21 @@ class FeedwaterPumpLubricationSystem(BaseLubricationSystem):
 
     def get_state_dict(self) -> Dict[str, float]:
         """Get pump-specific lubrication state for integration with pump models"""
-        return {
-            
+        
+        # NEW: Get explicit impeller wear and individual bearing wear
+        impeller_wear = self.component_wear.get('impeller', 0.0)  # FIXED: Use explicit impeller wear
+        motor_bearing_wear = self.component_wear.get('motor_bearings', 0.0)
+        pump_bearing_wear = self.component_wear.get('pump_bearings', 0.0)
+        thrust_bearing_wear = self.component_wear.get('thrust_bearing', 0.0)
+        seal_wear = self.component_wear.get('mechanical_seals', 0.0)
+        
+        # Use maximum bearing wear to avoid double-counting
+        max_bearing_wear = max(motor_bearing_wear, pump_bearing_wear, thrust_bearing_wear)
+        
+        # Calculate sum wear (additive approach) - now includes explicit impeller wear
+        sum_wear_level = impeller_wear + max_bearing_wear + seal_wear
+        
+        state_dict = {
             # Oil system state (replaces individual pump oil tracking)
             'oil_level': self.oil_level,
             'oil_temperature': self.oil_temperature,
@@ -1419,12 +1617,16 @@ class FeedwaterPumpLubricationSystem(BaseLubricationSystem):
             'oil_moisture_content': self.oil_moisture_content,
             'lubrication_effectiveness': self.lubrication_effectiveness,
             
-            # Component wear state (replaces individual wear tracking)
-            'motor_bearing_wear': self.component_wear.get('motor_bearings', 0.0),
-            'pump_bearing_wear': self.component_wear.get('pump_bearings', 0.0),
-            'thrust_bearing_wear': self.component_wear.get('thrust_bearing', 0.0),
-            'seal_wear': self.component_wear['mechanical_seals'],
+            # Enhanced component wear state with explicit impeller tracking
+            'impeller_wear': impeller_wear,  # NEW: Explicit impeller wear
+            'motor_bearing_wear': motor_bearing_wear,
+            'pump_bearing_wear': pump_bearing_wear,
+            'thrust_bearing_wear': thrust_bearing_wear,
+            'seal_wear': seal_wear,
             'coupling_wear': self.component_wear.get('coupling_system', 0.0),
+            
+            # Enhanced sum wear tracking for maintenance system
+            'sum_wear_level': sum_wear_level,
             
             # Performance factors (multipliers: 1.0 = perfect, 0.85 = 85% performance)
             'efficiency_factor': self.pump_efficiency_factor,
@@ -1441,8 +1643,18 @@ class FeedwaterPumpLubricationSystem(BaseLubricationSystem):
             
             # System health
             'system_health_factor': self.system_health_factor,
-            'maintenance_due': self.maintenance_due
+            'maintenance_due': self.maintenance_due,
+            
+            # Maintenance action flags (True or False)
+            'maintenance_action_occurred': any(self.maintenance_action_flags.values()),
+            **{f'{action}_occurred': flag for action, flag in self.maintenance_action_flags.items()}
         }
+        
+        # CLEAR FLAGS after including them in state dict (reset to False)
+        self.maintenance_action_flags = {key: False for key in self.maintenance_action_flags}
+        self.last_maintenance_action = None
+        
+        return state_dict
 
 
 # Integration functions for existing feedwater pump models

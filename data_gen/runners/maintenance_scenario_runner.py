@@ -34,27 +34,20 @@ try:
 except ImportError:
     PWRConfigManager = None
 
-# Import maintenance system (simplified for now)
-try:
-    from systems.maintenance.work_orders import WorkOrderType, Priority
-    from systems.maintenance.maintenance_actions import get_maintenance_catalog
-except ImportError:
-    # Create simple enums if not available
-    from enum import Enum
-    class WorkOrderType(Enum):
-        PREVENTIVE = "preventive"
-        CORRECTIVE = "corrective"
-        EMERGENCY = "emergency"
-    
-    class Priority(Enum):
-        LOW = "low"
-        MEDIUM = "medium"
-        HIGH = "high"
-        CRITICAL = "critical"
-        EMERGENCY = "emergency"
-    
-    # Create a dummy maintenance catalog if import fails
-    get_maintenance_catalog = lambda: None
+# Simple enums for work orders (no longer import from maintenance system)
+from enum import Enum
+
+class WorkOrderType(Enum):
+    PREVENTIVE = "preventive"
+    CORRECTIVE = "corrective"
+    EMERGENCY = "emergency"
+
+class Priority(Enum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
+    EMERGENCY = "emergency"
 
 
 class MaintenanceScenarioRunner:
@@ -83,8 +76,8 @@ class MaintenanceScenarioRunner:
         self.work_order_events = []
         self.component_health_data = []
         
-        # Initialize maintenance catalog
-        self.maintenance_catalog = get_maintenance_catalog()
+        # No longer use maintenance catalog - rely on conditions files only
+        self.maintenance_catalog = None
         
         # PHASE 1: Load configuration from dictionary or YAML file
         self.config = self._load_config(config)
@@ -360,11 +353,20 @@ class MaintenanceScenarioRunner:
             print(f"{'Time (min)':<10} {'Power (%)':<10} {'Maintenance Events':<18} {'Work Orders':<12}")
             print("-" * 60)
         
-        # Calculate simulation parameters
+        # PHASE 1 FIX: Calculate simulation parameters using actual dt
         duration_minutes = int(self.duration_hours * 60)
+        dt_minutes = self.simulator.dt  # Get actual dt from simulator
+        num_steps = int(duration_minutes / dt_minutes)  # Calculate correct number of steps
         
-        # Generate power profile
-        power_profile = self._generate_power_profile(duration_minutes)
+        if self.verbose:
+            print(f"📊 Simulation parameters:")
+            print(f"   Duration: {self.duration_hours} hours ({duration_minutes} minutes)")
+            print(f"   Time step (dt): {dt_minutes} minutes")
+            print(f"   Number of steps: {num_steps}")
+            print(f"   Total simulation time: {num_steps * dt_minutes} minutes")
+        
+        # Generate power profile for correct number of steps
+        power_profile = self._generate_power_profile(num_steps)
         
         # Track maintenance triggering
         maintenance_triggered = False
@@ -373,30 +375,34 @@ class MaintenanceScenarioRunner:
         # Run simulation
         start_time = time.time()
         
-        for t in range(duration_minutes):
+        for step in range(num_steps):
+            # Calculate current simulation time
+            current_time_minutes = step * dt_minutes
+            
             # Set target power
-            target_power = power_profile[t]
+            target_power = power_profile[step]
             self._set_target_power(target_power)
             
             # Step simulator
             result = self.simulator.step(action=ControlAction.NO_ACTION)
             
             # Simulate component degradation to trigger maintenance
-            self._simulate_component_degradation(t)
+            self._simulate_component_degradation(current_time_minutes)
             
             # Check for maintenance triggers
-            maintenance_events = self._check_maintenance_triggers(t)
+            maintenance_events = self._check_maintenance_triggers(current_time_minutes)
             if maintenance_events:
                 maintenance_triggered = True
                 work_orders_created += len(maintenance_events)
                 self.maintenance_events.extend(maintenance_events)
             
             # Collect data
-            self._collect_simulation_data(t, result, target_power, maintenance_events)
+            self._collect_simulation_data(current_time_minutes, result, target_power, maintenance_events)
             
-            # Print status every 10 minutes
-            if t % 10 == 0 and self.verbose:
-                print(f"{t:<10} {self.simulator.state.power_level:<10.1f} "
+            # PHASE 3 FIX: Print status at appropriate intervals based on simulation time
+            print_interval = max(1, int(10.0 / dt_minutes))  # Print every ~10 minutes of sim time
+            if step % print_interval == 0 and self.verbose:
+                print(f"{current_time_minutes:<10.0f} {self.simulator.state.power_level:<10.1f} "
                       f"{len(maintenance_events):<18} {work_orders_created:<12}")
         
         end_time = time.time()
@@ -543,7 +549,7 @@ class MaintenanceScenarioRunner:
         
         return expected_changes_map.get(action_type, {})
     
-    def _generate_power_profile(self, duration_minutes: int) -> np.ndarray:
+    def _generate_power_profile(self, num_steps: int) -> np.ndarray:
         """Generate power profile for the scenario"""
         # Get load profile configuration
         load_profiles = self.config.get('load_profiles', {})
@@ -558,9 +564,9 @@ class MaintenanceScenarioRunner:
             base_power = 90.0
             noise_std = 2.0
         
-        # Generate profile
-        time_points = np.arange(duration_minutes)
-        noise = noise_std * np.random.normal(0, 1, duration_minutes)
+        # PHASE 4 FIX: Generate profile for correct number of steps
+        time_points = np.arange(num_steps)
+        noise = noise_std * np.random.normal(0, 1, num_steps)
         power_profile = base_power + noise
         
         # Clip to reasonable bounds
@@ -968,8 +974,9 @@ class MaintenanceScenarioRunner:
         exported_files = []
         
         # Export simulation data using state manager
-        filename = f"{filename_prefix}_simulation_data.csv"
-        self.simulator.state_manager.export_by_category('secondary',  filename)
+        filename = f"{filename_prefix}_simulation_data"
+        self.simulator.state_manager.export_by_category('secondary',  f"{filename}.csv")
+        self.simulator.state_manager.export_by_subcategory('secondary', 'feedwater_FWP-1', f"{filename}_fwp_1_data.csv")
         exported_files.append(filename)
         if self.verbose:
             print(f"📄 Simulation data exported to {filename}")
@@ -1004,9 +1011,8 @@ class MaintenanceScenarioRunner:
                 'timestamp_minutes': event['time_hours'] * 60,
                 'simulation_time_formatted': self._format_simulation_time(event['time_hours'] * 60),
                 
-                # Component & Action
+                # Component & Action (simplified - only action_name)
                 'component_id': event['component_id'],
-                'action_type': event['action_type'],
                 'action_name': event.get('action_name', event['action_type'].replace('_', ' ').title()),
                 'work_order_id': event.get('work_order_id', ''),
                 
@@ -1081,8 +1087,40 @@ class MaintenanceScenarioRunner:
         
         return filename
 
+    def smart_parse_action_type(self, work_order_title: str) -> str:
+        """
+        Smart parsing to extract action type from work order titles
+        
+        Examples:
+        "Auto: Oil Change - FWP-1" → "oil_change"
+        "Auto: Bearing Replacement - FWP-2" → "bearing_replacement" 
+        "Auto: Lubrication System Check - FWP-3" → "lubrication_system_check"
+        "Auto: Seal Replacement - FWP-1" → "seal_replacement"
+        """
+        import re
+        
+        if not work_order_title:
+            return "maintenance_action"
+        
+        # Step 1: Clean the title
+        # Remove "Auto: " prefix and component suffix
+        cleaned = work_order_title.lower()
+        cleaned = re.sub(r'^auto:\s*', '', cleaned)  # Remove "Auto: "
+        cleaned = re.sub(r'\s*-\s*\w+-\d+$', '', cleaned)  # Remove " - FWP-1"
+        
+        # Step 2: Transform to action_type format
+        # Replace spaces with underscores
+        action_type = cleaned.replace(' ', '_')
+        
+        # Step 3: Handle common variations
+        # "lubrication_system_check" stays as is
+        # "oil_change" stays as is
+        # etc.
+        
+        return action_type.strip()
+    
     def _infer_action_type_from_work_order(self, work_order_dict: dict) -> str:
-        """Get action type from work order - direct access preferred, enum lookup fallback"""
+        """Get action type from work order using smart parsing"""
         
         # BEST: Direct access to stored action type (most reliable)
         maintenance_actions = work_order_dict.get('maintenance_actions', [])
@@ -1091,29 +1129,19 @@ class MaintenanceScenarioRunner:
             if isinstance(action, dict) and 'action_type' in action:
                 return action['action_type']
         
-        # FALLBACK: Enum lookup in title/description
-        from systems.maintenance.maintenance_actions import MaintenanceActionType
-        title = work_order_dict.get('title', '').lower()
-        description = work_order_dict.get('description', '').lower()
-        search_text = f"{title} {description}".strip()
+        # SMART PARSING: Extract from work order title
+        title = work_order_dict.get('title', '')
+        if title:
+            action_type = self.smart_parse_action_type(title)
+            if action_type and action_type != "maintenance_action":
+                return action_type
         
-        # Try direct action type lookup - check if any enum value appears in text
-        for action_type in MaintenanceActionType:
-            if action_type.value in search_text:
-                return action_type.value
-        
-        # Final fallback
-        return getattr(self, 'target_action', 'routine_maintenance')
+        # Final fallback - generic action, NOT scenario name
+        return "maintenance_action"
 
     def _get_action_display_name(self, action_type: str) -> str:
-        """Get human-readable name for maintenance action"""
-        try:
-            from systems.maintenance.maintenance_actions import MaintenanceActionType
-            action_enum = MaintenanceActionType(action_type)
-            metadata = self.maintenance_catalog.get_action_metadata(action_enum)
-            return metadata.display_name if metadata else action_type.replace('_', ' ').title()
-        except:
-            return action_type.replace('_', ' ').title()
+        """Get human-readable name for maintenance action - simplified without maintenance system"""
+        return action_type.replace('_', ' ').title()
 
     def _format_simulation_time(self, time_minutes: Optional[float]) -> Optional[str]:
         """Format simulation time in minutes to HH:MM:SS format"""

@@ -10,6 +10,8 @@ import numpy as np
 from typing import Dict, Any, List, Optional, Tuple, Union
 import warnings
 from pathlib import Path
+from datetime import datetime, timedelta, timezone
+import random
 
 from .interfaces import StateProvider, StateCollector, StateVariable, StateCategory
 from .state_registry import StateRegistry
@@ -45,8 +47,9 @@ class StateManager(StateCollector):
         self.data = pd.DataFrame()
         self.providers: List[Tuple[StateProvider, str]] = []
         
-        # State tracking
-        self.current_time = 0.0
+        # Datetime tracking - NEW
+        self.start_datetime = self._generate_random_start_date()
+        self.current_datetime = self.start_datetime
         self.row_count = 0
         self.last_collection_time = None
         
@@ -72,8 +75,61 @@ class StateManager(StateCollector):
         self._maintenance_orchestrator = None
         
         print(f"STATE MANAGER: Initialized with maintenance capabilities")
+        print(f"STATE MANAGER: Simulation start time: {self.start_datetime.isoformat()}")
         if config:
             print(f"STATE MANAGER: Configuration provided - will load maintenance settings")
+    
+    def _generate_random_start_date(self) -> datetime:
+        """
+        Generate a random simulation start date.
+        
+        Returns:
+            Random datetime between 2020-2030 in UTC timezone
+        """
+        start_year = random.randint(2020, 2030)
+        start_month = random.randint(1, 12)
+        start_day = random.randint(1, 28)  # Safe for all months
+        start_hour = random.randint(0, 23)
+        start_minute = random.randint(0, 59)
+        
+        return datetime(start_year, start_month, start_day, 
+                       start_hour, start_minute, 0)
+    
+    def advance_time(self, dt_minutes: float) -> datetime:
+        """
+        Advance simulation time by dt_minutes.
+        
+        Args:
+            dt_minutes: Time step in minutes
+            
+        Returns:
+            Updated current datetime
+        """
+        self.current_datetime += timedelta(minutes=dt_minutes)
+        return self.current_datetime
+    
+    def get_elapsed_time(self) -> timedelta:
+        """
+        Get elapsed simulation time since start.
+        
+        Returns:
+            Timedelta representing elapsed simulation time
+        """
+        return self.current_datetime - self.start_datetime
+    
+    def to_iso_string(self, dt: datetime = None) -> str:
+        """
+        Convert datetime to ISO string format.
+        
+        Args:
+            dt: Datetime to convert (default: current_datetime)
+            
+        Returns:
+            ISO formatted datetime string
+        """
+        if dt is None:
+            dt = self.current_datetime
+        return dt.isoformat()
         
     def register_provider(self, provider: StateProvider, category: str) -> None:
         """
@@ -93,12 +149,12 @@ class StateManager(StateCollector):
         except Exception as e:
             warnings.warn(f"Failed to register state variables from provider {category}: {e}")
     
-    def collect_states(self, timestamp: float) -> Dict[str, Any]:
+    def collect_states(self, current_datetime: datetime) -> Dict[str, Any]:
         """
         Collect current state from all registered providers and add to DataFrame.
         
         Args:
-            timestamp: Current simulation time
+            current_datetime: Current simulation datetime
             
         Returns:
             Dictionary of collected state data
@@ -106,8 +162,8 @@ class StateManager(StateCollector):
         import time
         start_time = time.time()
         
-        # Start with timestamp
-        row_data = {'time': timestamp}
+        # Start with datetime
+        row_data = {'time': current_datetime}
         
         # Collect from all providers
         for provider, category in self.providers:
@@ -138,11 +194,13 @@ class StateManager(StateCollector):
         self._add_row(row_data)
         
         # PHASE 1: Check maintenance thresholds during state collection
-        self._check_maintenance_thresholds(timestamp, row_data)
+        # Convert datetime to minutes for maintenance threshold checking (legacy compatibility)
+        elapsed_minutes = (current_datetime - self.start_datetime).total_seconds() / 60.0
+        self._check_maintenance_thresholds(elapsed_minutes, row_data)
         
         # Update tracking
-        self.current_time = timestamp
-        self.last_collection_time = timestamp
+        self.current_datetime = current_datetime
+        self.last_collection_time = current_datetime
         
         # Performance tracking
         collection_time = time.time() - start_time
@@ -256,6 +314,11 @@ class StateManager(StateCollector):
                 data_to_export = self.data[mask]
             else:
                 data_to_export = self.data
+        
+        # Convert datetime column to ISO strings for CSV export
+        if not data_to_export.empty and 'time' in data_to_export.columns:
+            data_to_export = data_to_export.copy()
+            data_to_export['time'] = data_to_export['time'].apply(lambda x: x.isoformat() if hasattr(x, 'isoformat') else x)
         
         # Export to CSV
         data_to_export.to_csv(filename, index=False)
@@ -1281,7 +1344,8 @@ class StateManager(StateCollector):
                             'threshold': threshold_config.get('threshold'),
                             'comparison': threshold_config.get('comparison'),
                             'action': threshold_config.get('action'),
-                            'priority': threshold_config.get('priority', 'MEDIUM')
+                            'priority': threshold_config.get('priority', 'MEDIUM'),
+                            'component_id': threshold_config.get('component_id')  # CRITICAL FIX: Include component_id from threshold config
                         }
                         violations.append(violation_data)
             

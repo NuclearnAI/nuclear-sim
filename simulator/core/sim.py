@@ -30,8 +30,7 @@ class NuclearPlantSimulator:
     def __init__(self, dt: float = 1.0, heat_source=None, enable_secondary: bool = True, 
                  enable_state_management: bool = True, max_state_rows: int = 100000,
                  secondary_config=None, secondary_config_file: str = None):
-        self.dt = dt  # Time step in seconds
-        self.time = 0.0
+        self.dt = dt  # Time step in minutes
         self.enable_state_management = enable_state_management
         self.enable_secondary = enable_secondary
         
@@ -180,15 +179,26 @@ class NuclearPlantSimulator:
             # Apply secondary-to-primary feedback (simplified)
             self._apply_secondary_to_primary_feedback(secondary_result)
         
-        # Update time
-        self.time += self.dt
+        # Advance time using StateManager
+        if self.enable_state_management and self.state_manager is not None:
+            current_datetime = self.state_manager.advance_time(self.dt)
+            # Get elapsed time in minutes for legacy compatibility
+            elapsed_minutes = self.state_manager.get_elapsed_time().total_seconds() / 60.0
+        else:
+            # Fallback for when state management is disabled
+            if not hasattr(self, 'time'):
+                self.time = 0.0
+            self.time += self.dt
+            current_datetime = None
+            elapsed_minutes = self.time
         
         # Get observation for RL
         observation = self.get_observation()
 
         # Prepare return information
         info = {
-            "time": self.time,
+            "time": elapsed_minutes,  # Use elapsed minutes for backward compatibility
+            "datetime": current_datetime.isoformat() if current_datetime else None,
             "thermal_power": primary_result['thermal_power_mw'],
             "scram_activated": primary_result['scram_activated'],
             "reactivity": primary_result['total_reactivity_pcm'],
@@ -198,7 +208,7 @@ class NuclearPlantSimulator:
         # Update maintenance system if available
         if hasattr(self, 'maintenance_system') and self.maintenance_system is not None:
             try:
-                maintenance_work_orders = self.maintenance_system.update(self.time, self.dt)
+                maintenance_work_orders = self.maintenance_system.update(elapsed_minutes, self.dt)
                 # Add maintenance info to result if work orders were created/executed
                 if maintenance_work_orders:
                     info['maintenance_work_orders'] = [wo.to_dict() for wo in maintenance_work_orders]
@@ -208,7 +218,7 @@ class NuclearPlantSimulator:
         # Collect states using the new state management system
         if self.enable_state_management and self.state_manager is not None:
             try:
-                collected_states = self.state_manager.collect_states(self.time)
+                collected_states = self.state_manager.collect_states(current_datetime)
             except Exception as e:
                 warnings.warn(f"State collection failed: {e}")
         

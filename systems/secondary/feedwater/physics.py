@@ -247,19 +247,19 @@ class EnhancedFeedwaterPhysics(HeatFlowProvider, ChemistryFlowProvider):
                 # Apply individual bearing wear parameters directly
                 
                 # Motor bearing wear
-                motor_wear = ic.motor_bearing_wear[i] * 100.0 if i < len(ic.motor_bearing_wear) else 0.0
+                motor_wear = ic.motor_bearing_wear[i] if i < len(ic.motor_bearing_wear) else 0.0
                 print(f"      Motor bearing wear: {motor_wear:.1f}%")
                 
                 # Pump bearing wear
-                pump_wear = ic.pump_bearing_wear[i] * 100.0 if i < len(ic.pump_bearing_wear) else 0.0
+                pump_wear = ic.pump_bearing_wear[i] if i < len(ic.pump_bearing_wear) else 0.0
                 print(f"      Pump bearing wear: {pump_wear:.1f}%")
                 
                 # Thrust bearing wear
-                thrust_wear = ic.thrust_bearing_wear[i] * 100.0 if i < len(ic.thrust_bearing_wear) else 0.0
+                thrust_wear = ic.thrust_bearing_wear[i] if i < len(ic.thrust_bearing_wear) else 0.0
                 print(f"      Thrust bearing wear: {thrust_wear:.1f}%")
                 
                 # Seal wear
-                seal_wear_value = ic.seal_face_wear[i] * 100.0 if (hasattr(ic, 'seal_face_wear') and i < len(ic.seal_face_wear)) else 0.0
+                seal_wear_value = ic.seal_face_wear[i] if (hasattr(ic, 'seal_face_wear') and i < len(ic.seal_face_wear)) else 0.0
                 
                 # Apply to lubrication system components
                 pump.lubrication_system.component_wear['motor_bearings'] = motor_wear
@@ -339,6 +339,10 @@ class EnhancedFeedwaterPhysics(HeatFlowProvider, ChemistryFlowProvider):
                     design_power = pump.config.rated_power if hasattr(pump.config, 'rated_power') else 10.0
                     pump.state.power_consumption = ic.pump_power[i] * design_power
                     print(f"    Power consumption: {pump.state.power_consumption} MW")
+                
+                # CRITICAL: Mark that initial conditions have been applied to prevent overwriting
+                pump._initial_conditions_applied = True
+                print(f"    Initial conditions applied flag set for {pump_id}")
                 
                 # NO SYNC NEEDED - unidirectional flow from lubrication system to pump state
                 # The integration function handles this automatically
@@ -737,7 +741,9 @@ class EnhancedFeedwaterPhysics(HeatFlowProvider, ChemistryFlowProvider):
             pump_results=pump_results.get('pump_details', {}),
             water_quality_results=water_quality_results,
             system_conditions=pump_system_conditions,
-            dt=dt
+            dt=dt,
+            pump_lubrication_systems=self.pump_system.pump_lubrication_systems,
+            pump_objects=self.pump_system.pumps  # ADD THIS LINE
         )
         
         # Update protection system
