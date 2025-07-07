@@ -476,6 +476,224 @@ class ScenarioRunner:
         
         return batch_results
     
+    def run_from_yaml_file(
+        self,
+        yaml_path: Union[str, Path],
+        save_results: bool = True
+    ) -> Dict[str, Any]:
+        """
+        PHASE 2: Run scenario from YAML configuration file
+        
+        Args:
+            yaml_path: Path to YAML configuration file
+            save_results: Save results and plots
+            
+        Returns:
+            Simulation results dictionary
+        """
+        yaml_path = Path(yaml_path)
+        
+        if self.verbose:
+            print(f"\n📄 Running scenario from YAML file: {yaml_path}")
+            print("=" * 60)
+        
+        try:
+            # Create MaintenanceScenarioRunner with YAML file
+            simulation = MaintenanceScenarioRunner(yaml_path, verbose=self.verbose)
+            
+            # Extract metadata for result tracking
+            target_action = simulation.target_action
+            target_subsystem = simulation.target_subsystem
+            duration_hours = simulation.duration_hours
+            
+            # Create run directory
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            run_name = f"{target_action}_yaml_{timestamp}"
+            run_dir = self.output_dir / run_name
+            run_dir.mkdir(exist_ok=True)
+            
+            # Change to run directory for simulation
+            original_cwd = Path.cwd()
+            try:
+                import os
+                os.chdir(run_dir)
+                
+                # Run simulation
+                start_time = time.time()
+                sim_results = simulation.run_scenario()
+                end_time = time.time()
+                
+                if save_results:
+                    # Generate outputs
+                    simulation.create_plots(save_plots=True)
+                    simulation.export_data(filename_prefix=run_name)
+                
+                # Collect results
+                results = {
+                    'run_name': run_name,
+                    'yaml_file': str(yaml_path),
+                    'target_action': target_action,
+                    'target_subsystem': target_subsystem,
+                    'duration_hours': duration_hours,
+                    'execution_time_seconds': end_time - start_time,
+                    'run_directory': str(run_dir),
+                    'success': sim_results['success'],
+                    'work_orders_created': sim_results['work_orders_created'],
+                    'work_orders_executed': sim_results['work_orders_executed'],
+                    'maintenance_events': sim_results['maintenance_events'],
+                    'simulation_data_points': sim_results['simulation_data_points'],
+                    'final_power_level': sim_results['final_power_level']
+                }
+                
+                # Add work order details for compatibility
+                results['work_orders'] = {
+                    'completed': sim_results['work_orders_executed'],
+                    'active': 0,
+                    'total_created': sim_results['work_orders_created']
+                }
+                
+                self.results.append(results)
+                
+                if self.verbose:
+                    self._print_yaml_results(results, simulation)
+                
+                return results
+                
+            finally:
+                os.chdir(original_cwd)
+                
+        except Exception as e:
+            print(f"   ❌ Error running YAML scenario: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
+    
+    def run_batch_from_yaml_directory(
+        self,
+        yaml_dir: Union[str, Path],
+        pattern: str = "*.yaml",
+        save_results: bool = True
+    ) -> List[Dict[str, Any]]:
+        """
+        PHASE 2: Run multiple scenarios from YAML files in a directory
+        
+        Args:
+            yaml_dir: Directory containing YAML files
+            pattern: File pattern to match (default: "*.yaml")
+            save_results: Save results and plots for each scenario
+            
+        Returns:
+            List of results for all scenarios
+        """
+        yaml_dir = Path(yaml_dir)
+        
+        if not yaml_dir.exists():
+            raise FileNotFoundError(f"YAML directory not found: {yaml_dir}")
+        
+        # Find YAML files
+        yaml_files = list(yaml_dir.glob(pattern))
+        if not yaml_files:
+            print(f"⚠️ No YAML files found in {yaml_dir} matching pattern '{pattern}'")
+            return []
+        
+        if self.verbose:
+            print(f"\n📁 Running batch scenarios from YAML directory: {yaml_dir}")
+            print("=" * 70)
+            print(f"   Pattern: {pattern}")
+            print(f"   Files found: {len(yaml_files)}")
+            print(f"   Save results: {save_results}")
+        
+        batch_results = []
+        
+        for i, yaml_file in enumerate(yaml_files, 1):
+            if self.verbose:
+                print(f"\n[{i}/{len(yaml_files)}] Processing: {yaml_file.name}")
+            
+            try:
+                result = self.run_from_yaml_file(yaml_file, save_results=save_results)
+                batch_results.append(result)
+                
+            except Exception as e:
+                print(f"   ❌ Failed to process {yaml_file.name}: {e}")
+                # Continue with next file
+                continue
+        
+        if self.verbose:
+            self._print_yaml_batch_summary(batch_results, yaml_dir)
+        
+        return batch_results
+    
+    def validate_yaml_config(self, yaml_path: Union[str, Path]) -> bool:
+        """
+        PHASE 2: Validate YAML configuration without running simulation
+        
+        Args:
+            yaml_path: Path to YAML configuration file
+            
+        Returns:
+            True if valid, False otherwise
+        """
+        yaml_path = Path(yaml_path)
+        
+        if self.verbose:
+            print(f"\n🔍 Validating YAML configuration: {yaml_path}")
+        
+        try:
+            # Try to create MaintenanceScenarioRunner (validation happens in constructor)
+            simulation = MaintenanceScenarioRunner(yaml_path, verbose=False)
+            
+            if self.verbose:
+                print(f"   ✅ YAML configuration is valid")
+                print(f"   🎯 Target action: {simulation.target_action}")
+                print(f"   🏭 Target subsystem: {simulation.target_subsystem}")
+                print(f"   ⏱️ Duration: {simulation.duration_hours} hours")
+            
+            return True
+            
+        except Exception as e:
+            if self.verbose:
+                print(f"   ❌ YAML configuration is invalid: {e}")
+            return False
+    
+    def _print_yaml_results(self, results: Dict[str, Any], simulation: MaintenanceScenarioRunner):
+        """Print YAML scenario results"""
+        print(f"\n📋 YAML Scenario Results")
+        print("-" * 40)
+        print(f"   📄 YAML file: {Path(results['yaml_file']).name}")
+        print(f"   ⏱️ Execution time: {results['execution_time_seconds']:.1f}s")
+        print(f"   📁 Output directory: {results['run_directory']}")
+        print(f"   ✅ Success: {results['success']}")
+        print(f"   🔧 Work orders created: {results['work_orders']['total_created']}")
+        print(f"   ✅ Work orders completed: {results['work_orders']['completed']}")
+        print(f"   📊 Data points: {results['simulation_data_points']}")
+        print(f"   📊 Maintenance events: {results['maintenance_events']}")
+        print(f"   ⚡ Final power: {results['final_power_level']:.1f}%")
+    
+    def _print_yaml_batch_summary(self, batch_results: List[Dict[str, Any]], yaml_dir: Path):
+        """Print YAML batch execution summary"""
+        print(f"\n📊 YAML Batch Summary")
+        print("=" * 50)
+        print(f"   📁 Directory: {yaml_dir}")
+        print(f"   📄 Total YAML files processed: {len(batch_results)}")
+        
+        if batch_results:
+            successful_runs = sum(1 for r in batch_results if r.get('success', False))
+            print(f"   ✅ Successful runs: {successful_runs}/{len(batch_results)} ({successful_runs/len(batch_results):.1%})")
+            
+            total_work_orders = sum(r.get('work_orders', {}).get('total_created', 0) for r in batch_results)
+            print(f"   🔧 Total work orders: {total_work_orders}")
+            
+            avg_execution_time = sum(r['execution_time_seconds'] for r in batch_results) / len(batch_results)
+            print(f"   ⏱️ Average execution time: {avg_execution_time:.1f}s")
+            
+            # Show top performing scenarios
+            print(f"\n🏆 Top Performing Scenarios:")
+            sorted_results = sorted(batch_results, key=lambda r: r.get('work_orders', {}).get('total_created', 0), reverse=True)
+            for i, result in enumerate(sorted_results[:3]):
+                wo_count = result.get('work_orders', {}).get('total_created', 0)
+                yaml_name = Path(result['yaml_file']).name
+                print(f"   {i+1}. {yaml_name}: {wo_count} work orders")
+    
     def run_all_actions(
         self,
         duration_hours: float = 2.0,
@@ -928,6 +1146,16 @@ Examples:
   # Run all actions except specific ones
   python scenario_runner.py --run-all-actions --exclude-actions "oil_top_off,bearing_inspection"
   
+  # YAML-FIRST EXAMPLES (NEW):
+  # Run scenario from YAML file
+  python scenario_runner.py --yaml-file my_scenario.yaml
+  
+  # Run all YAML files in directory
+  python scenario_runner.py --yaml-dir ./scenarios/
+  
+  # Validate YAML without running
+  python scenario_runner.py --validate-yaml my_scenario.yaml
+  
   # List available actions
   python scenario_runner.py --list-actions
   
@@ -942,6 +1170,9 @@ Examples:
     mode_group.add_argument('--scenario', type=str, help='Run operational scenario')
     mode_group.add_argument('--batch-maintenance', action='store_true', help='Run batch maintenance scenarios')
     mode_group.add_argument('--run-all-actions', action='store_true', help='Run ALL available maintenance actions')
+    mode_group.add_argument('--yaml-file', type=str, help='PHASE 3: Run scenario from YAML configuration file')
+    mode_group.add_argument('--yaml-dir', type=str, help='PHASE 3: Run all YAML files in directory')
+    mode_group.add_argument('--validate-yaml', type=str, help='PHASE 3: Validate YAML configuration without running')
     mode_group.add_argument('--list-actions', action='store_true', help='List available maintenance actions')
     mode_group.add_argument('--list-scenarios', action='store_true', help='List available operational scenarios')
     mode_group.add_argument('--interactive', action='store_true', help='Interactive mode')
@@ -1182,6 +1413,26 @@ def main():
                 subsystem_filter=args.subsystem,
                 exclude_actions=exclude_actions
             )
+        
+        elif args.yaml_file:
+            # PHASE 3: Run scenario from YAML file
+            runner.run_from_yaml_file(
+                yaml_path=args.yaml_file,
+                save_results=True
+            )
+        
+        elif args.yaml_dir:
+            # PHASE 3: Run batch scenarios from YAML directory
+            runner.run_batch_from_yaml_directory(
+                yaml_dir=args.yaml_dir,
+                pattern="*.yaml",
+                save_results=True
+            )
+        
+        elif args.validate_yaml:
+            # PHASE 3: Validate YAML configuration
+            is_valid = runner.validate_yaml_config(args.validate_yaml)
+            return 0 if is_valid else 1
         
         return 0
         

@@ -66,6 +66,16 @@ class ComprehensiveComposer:
             "eddy_current_testing": "steam_generator",
             "tube_sheet_inspection": "steam_generator",
             
+            # TSP Enhanced Actions (NEW)
+            "tsp_inspection": "steam_generator",
+            "tsp_flow_test": "steam_generator",
+            
+            # Tube Interior Actions (NEW)
+            "tube_interior_inspection": "steam_generator",
+            "tube_interior_scale_cleaning": "steam_generator",
+            "tube_interior_eddy_current_testing": "steam_generator",
+            "primary_chemistry_optimization": "steam_generator",
+            
             # Turbine Actions
             "turbine_bearing_inspection": "turbine",
             "turbine_bearing_replacement": "turbine",
@@ -112,6 +122,12 @@ class ComprehensiveComposer:
             "lubrication_system_check": "feedwater",
             "cooling_system_check": "feedwater",
             "component_overhaul": "feedwater",
+            
+            # Individual Bearing Replacement Actions
+            "motor_bearing_replacement": "feedwater",
+            "pump_bearing_replacement": "feedwater",
+            "thrust_bearing_replacement": "feedwater",
+            "multiple_bearing_replacement": "feedwater",
             
             # Condenser Actions
             "condenser_tube_cleaning": "condenser",

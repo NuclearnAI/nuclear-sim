@@ -16,19 +16,83 @@ TURBINE_CONDITIONS: Dict[str, Dict[str, Any]] = {
     # === TURBINE BEARING ACTIONS ===
     
     "turbine_bearing_inspection": {
-        "bearing_temperatures": [95.0, 96.0, 94.0, 95.5],  # °C, elevated but safe
+        # UNIFIED LUBRICATION SYSTEM - Elevated conditions requiring inspection
+        "lubrication_system": {
+            "oil_base_contamination": 10.0,  # ppm, elevated
+            "oil_base_temperature": 52.0,    # °C, elevated from normal 45°C
+            "oil_base_viscosity": 30.0,      # cSt, slightly degraded
+            "oil_base_acidity": 1.2,         # mg KOH/g, elevated
+            "oil_base_moisture": 0.05,       # % by volume, elevated
+            "oil_reservoir_level": 88.0,     # %, slightly low
+            "component_contamination_factors": {
+                "hp_journal_bearing": 1.2,   # 20% higher contamination
+                "lp_journal_bearing": 0.9,   # 10% lower contamination
+                "thrust_bearing": 1.4,       # 40% higher contamination
+                "seal_oil_system": 1.1,      # 10% higher contamination
+                "oil_coolers": 0.8           # 20% lower contamination
+            },
+            "component_temperature_offsets": {
+                "hp_journal_bearing": 10.0,  # +10°C from base (62°C total)
+                "lp_journal_bearing": 4.0,   # +4°C from base (56°C total)
+                "thrust_bearing": 15.0,      # +15°C from base (67°C total)
+                "seal_oil_system": -1.0,     # -1°C from base (51°C)
+                "oil_coolers": -7.0          # -7°C from base (45°C)
+            },
+            "component_wear_levels": {
+                "hp_journal_bearing": 6.0,   # 6% wear
+                "lp_journal_bearing": 4.5,   # 4.5% wear
+                "thrust_bearing": 8.5,       # 8.5% wear (highest)
+                "seal_oil_system": 5.5,      # 5.5% wear
+                "oil_coolers": 3.0           # 3% wear (lowest)
+            },
+            "pump_efficiency": 0.86,         # Slightly reduced
+            "filter_effectiveness": 0.90,    # Slightly reduced
+            "cooler_effectiveness": 0.85,    # Reduced effectiveness
+            "system_health_factor": 0.88     # Good overall condition
+        },
         "bearing_vibrations": [18.0, 19.0, 17.0, 18.5],  # mils, elevated
         "bearing_clearances": [0.08, 0.09, 0.07, 0.085],  # mm, increasing
-        "bearing_oil_flow": [0.88, 0.86, 0.90, 0.87],  # Fraction of design
         "description": "Bearing parameters requiring inspection",
         "safety_notes": "Conservative temperatures to avoid thermal expansion trips"
     },
     
     "turbine_bearing_replacement": {
-        "bearing_temperatures": [105.0, 106.0, 104.0, 105.5],  # °C, near 110°C threshold
+        # UNIFIED LUBRICATION SYSTEM - Severe degradation requiring replacement
+        "lubrication_system": {
+            "oil_base_contamination": 16.0,  # ppm, high contamination
+            "oil_base_temperature": 62.0,    # °C, high temperature
+            "oil_base_viscosity": 26.0,      # cSt, significantly degraded
+            "oil_base_acidity": 2.5,         # mg KOH/g, high acidity
+            "oil_base_moisture": 0.12,       # % by volume, high moisture
+            "oil_reservoir_level": 78.0,     # %, low level
+            "component_contamination_factors": {
+                "hp_journal_bearing": 1.4,   # 40% higher contamination
+                "lp_journal_bearing": 1.0,   # Normal contamination
+                "thrust_bearing": 1.8,       # 80% higher contamination (worst)
+                "seal_oil_system": 1.3,      # 30% higher contamination
+                "oil_coolers": 0.9           # 10% lower contamination
+            },
+            "component_temperature_offsets": {
+                "hp_journal_bearing": 15.0,  # +15°C from base (77°C total)
+                "lp_journal_bearing": 8.0,   # +8°C from base (70°C total)
+                "thrust_bearing": 22.0,      # +22°C from base (84°C total)
+                "seal_oil_system": 2.0,      # +2°C from base (64°C)
+                "oil_coolers": -5.0          # -5°C from base (57°C)
+            },
+            "component_wear_levels": {
+                "hp_journal_bearing": 15.0,  # 15% wear
+                "lp_journal_bearing": 12.0,  # 12% wear
+                "thrust_bearing": 20.0,      # 20% wear (highest)
+                "seal_oil_system": 14.0,     # 14% wear
+                "oil_coolers": 8.0           # 8% wear (lowest)
+            },
+            "pump_efficiency": 0.78,         # Significantly reduced
+            "filter_effectiveness": 0.82,    # Significantly reduced
+            "cooler_effectiveness": 0.75,    # Poor effectiveness
+            "system_health_factor": 0.75     # Poor overall condition
+        },
         "bearing_vibrations": [23.0, 24.0, 22.0, 23.5],  # mils, near 25 threshold
         "bearing_wear": [0.88, 0.90, 0.86, 0.89],  # Fraction of life used
-        "bearing_metal_temperature": [108.0, 109.0, 107.0, 108.5],  # °C
         "description": "Bearing parameters indicating replacement needed",
         "safety_notes": "Carefully controlled to avoid thrust bearing displacement trips"
     },
@@ -60,18 +124,80 @@ TURBINE_CONDITIONS: Dict[str, Dict[str, Any]] = {
     # === TURBINE LUBRICATION ACTIONS ===
     
     "turbine_oil_change": {
-        "oil_contamination": [13.0, 14.0, 12.0, 13.5],  # ppm, near 15 threshold
-        "oil_viscosity": [28.5, 29.0, 28.0, 28.8],  # cSt, degraded from 32
-        "oil_acid_number": [1.8, 1.9, 1.7, 1.85],  # mg KOH/g
-        "oil_water_content": [0.08, 0.09, 0.07, 0.085],  # % by volume
-        "description": "Oil quality parameters indicating change needed"
+        # UNIFIED LUBRICATION SYSTEM - Single base values with component factors
+        "lubrication_system": {
+            "oil_contamination_level": 15.5,  # ppm, near 15 threshold
+            "oil_base_temperature": 58.0,  # °C, elevated from normal 45°C
+            "oil_base_viscosity": 28.5,  # cSt, degraded from 32
+            "oil_base_acidity": 1.8,  # mg KOH/g, elevated
+            "oil_base_moisture": 0.08,  # % by volume, elevated
+            "oil_reservoir_level": 85.0,  # %, slightly low
+            "component_contamination_factors": {
+                "hp_journal_bearing": 1.3,  # 30% higher contamination
+                "lp_journal_bearing": 0.9,  # 10% lower contamination
+                "thrust_bearing": 1.6,  # 60% higher contamination (worst)
+                "seal_oil_system": 1.2,  # 20% higher contamination
+                "oil_coolers": 0.7   # 30% lower contamination (cleanest)
+            },
+            "component_temperature_offsets": {
+                "hp_journal_bearing": 12.0,  # +12°C from base (70°C total)
+                "lp_journal_bearing": 5.0,   # +5°C from base (63°C total)
+                "thrust_bearing": 18.0,      # +18°C from base (76°C total)
+                "seal_oil_system": 0.0,      # No offset (58°C)
+                "oil_coolers": -8.0          # -8°C from base (50°C)
+            },
+            "component_wear_levels": {
+                "hp_journal_bearing": 8.5,   # 8.5% wear
+                "lp_journal_bearing": 6.0,   # 6% wear
+                "thrust_bearing": 12.0,      # 12% wear (highest)
+                "seal_oil_system": 9.0,      # 9% wear
+                "oil_coolers": 4.0           # 4% wear (lowest)
+            },
+            "pump_efficiency": 0.82,         # Reduced from 0.9
+            "filter_effectiveness": 0.88,    # Reduced from 0.95
+            "cooler_effectiveness": 0.82,    # Reduced from 0.9
+            "system_health_factor": 0.85     # Overall degradation
+        },
+        "description": "Unified lubrication system parameters indicating oil change needed"
     },
     
     "turbine_oil_top_off": {
-        "oil_level": 72.0,  # %, just above 70% threshold
-        "oil_consumption_rate": [0.8, 0.9, 0.7, 0.85],  # L/day, elevated
+        # UNIFIED LUBRICATION SYSTEM - Low oil level scenario
+        "lubrication_system": {
+            "oil_reservoir_level": 72.0,     # %, just above 70% threshold
+            "oil_base_contamination": 8.0,   # ppm, moderate
+            "oil_base_temperature": 48.0,    # °C, normal
+            "oil_base_viscosity": 31.0,      # cSt, slightly degraded
+            "oil_base_acidity": 0.8,         # mg KOH/g, normal
+            "oil_base_moisture": 0.04,       # % by volume, normal
+            "component_contamination_factors": {
+                "hp_journal_bearing": 1.1,
+                "lp_journal_bearing": 0.9,
+                "thrust_bearing": 1.3,
+                "seal_oil_system": 1.0,
+                "oil_coolers": 0.8
+            },
+            "component_temperature_offsets": {
+                "hp_journal_bearing": 8.0,
+                "lp_journal_bearing": 3.0,
+                "thrust_bearing": 12.0,
+                "seal_oil_system": -2.0,
+                "oil_coolers": -5.0
+            },
+            "component_wear_levels": {
+                "hp_journal_bearing": 4.0,
+                "lp_journal_bearing": 2.5,
+                "thrust_bearing": 6.0,
+                "seal_oil_system": 3.5,
+                "oil_coolers": 1.5
+            },
+            "pump_efficiency": 0.88,         # Slightly reduced
+            "filter_effectiveness": 0.92,    # Good condition
+            "cooler_effectiveness": 0.88,    # Slightly reduced
+            "system_health_factor": 0.92     # Good overall condition
+        },
         "description": "Oil level near threshold requiring top-off",
-        "threshold_info": {"parameter": "oil_level", "threshold": 70.0, "direction": "less_than"}
+        "threshold_info": {"parameter": "oil_reservoir_level", "threshold": 70.0, "direction": "less_than"}
     },
     
     "oil_filter_replacement": {

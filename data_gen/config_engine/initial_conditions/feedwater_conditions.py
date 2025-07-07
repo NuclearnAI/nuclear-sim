@@ -62,7 +62,7 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
     
     "oil_top_off": {
         # === PRIMARY TRIGGER ===
-        "pump_oil_levels": [75.0, 77.0, 78.0, 100.0],  # <75.0 triggers oil_top_off
+        "pump_oil_levels": [61.0, 67.0, 78.0, 100.0],  # <75.0 triggers oil_top_off
         
         # === KEEP ALL OTHER PARAMETERS SAFE ===
         """
@@ -120,69 +120,53 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
     # === BEARING REPLACEMENT SCENARIO ===
     # Triggers bearing_replacement action only by setting bearing wear above threshold
     
-    "bearing_replacement": {
-        # === PRIMARY TRIGGER ===
-        "bearing_wear": [0.085, 0.082, 0.088, 0.083],  # >8.0% triggers bearing_replacement
+    # === INDIVIDUAL BEARING REPLACEMENT SCENARIOS ===
+    
+    "motor_bearing_replacement": {
+        # Only motor bearings need replacement
+        "motor_bearing_wear": [0.085, 0.082, 0.088, 0.083],  # >8.0% triggers motor bearing replacement
+        "pump_bearing_wear": [0.055, 0.052, 0.058, 0.053],   # <6.0% (safe)
+        "thrust_bearing_wear": [0.035, 0.032, 0.038, 0.033], # <4.0% (safe)
         
-        # === KEEP ALL OTHER PARAMETERS SAFE ===
-        "pump_oil_contamination": 12.0,          # <15.0 (safe)
-        "pump_oil_water_content": 0.06,          # <0.08 (safe)
-        "pump_oil_acid_number": 1.3,             # <1.6 (safe)
-        "oil_temperature": 52.0,                 # <55.0 (safe)
-        "motor_temperature": [78.0, 78.0, 78.0, 78.0],  # <85.0 (safe)
-        "bearing_temperatures": [68.0, 68.0, 68.0, 25.0],  # <70.0 (safe)
-        "pump_oil_levels": [80.0, 80.0, 80.0, 100.0],  # Above 75.0 (safe)
-        
-        # === REALISTIC SUPPORTING VALUES ===
-        "seal_face_wear": [0.02, 0.02, 0.02, 0.02],    # Low seal wear
-        "impeller_wear": [0.015, 0.015, 0.015, 0.015],  # Low impeller wear
-        "pump_vibrations": [12.0, 12.0, 12.0, 0.0],    # Elevated (bearing wear)
-        "cavitation_intensity": [0.08, 0.08, 0.08, 0.08],  # Low cavitation
-        "npsh_available": [14.0, 14.0, 14.0, 14.0],    # Good NPSH
-        
-        "description": "Pure bearing wear scenario - triggers bearing_replacement only",
+        "description": "Motor bearing wear scenario - triggers motor bearing replacement only",
         "expected_action": "bearing_replacement",
-        "threshold_triggered": {"param": "bearing_wear", "value": 8.5, "threshold": 8.0},
-        "competing_actions_prevented": ["oil_change", "motor_inspection", "component_overhaul"]
+        "component_id": "motor_bearings",
+        "threshold_triggered": {"param": "motor_bearing_wear", "value": 8.5, "threshold": 8.0}
     },
-    
-    # === IMPELLER REPLACEMENT SCENARIO ===
-    # Triggers impeller_replacement action only by setting cavitation damage above threshold
-    
-    "impeller_replacement": {
-        # === PRIMARY TRIGGER ===
-        "impeller_cavitation_damage": [0.8, 0.8, 0.8, 0.8],  # >8.0 (scaled) triggers impeller_replacement
-        "cavitation_intensity": [0.26, 0.28, 0.25, 0.27],  # >0.25 supports cavitation damage
+
+    "pump_bearing_replacement": {
+        # Only pump bearings need replacement
+        "motor_bearing_wear": [0.055, 0.052, 0.058, 0.053],  # <8.0% (safe)
+        "pump_bearing_wear": [0.059, 0.049, 0.058, 0.043],   # >6.0% triggers pump bearing replacement
+        "thrust_bearing_wear": [0.015, 0.012, 0.018, 0.013], # <4.0% (safe)
         
-        # === KEEP ALL OTHER PARAMETERS SAFE ===
-        "pump_oil_contamination": 8.0,           # <15.0 (safe)
-        "pump_oil_water_content": 0.04,          # <0.08 (safe)
-        "oil_temperature": 48.0,                 # <55.0 (safe)
-        "motor_temperature": [72.0, 72.0, 72.0, 72.0],  # <85.0 (safe)
-        
-        # === REALISTIC SUPPORTING VALUES ===
-        "impeller_wear": [0.08, 0.08, 0.08, 0.08],     # High impeller wear (cavitation)
-        "seal_face_wear": [0.025, 0.025, 0.025, 0.025],  # Moderate seal wear
-        #"pump_vibrations": [15.0, 15.0, 15.0, 0.0],    # High vibration (cavitation)
-        #"npsh_available": [8.4, 8.2, 8.6, 8.3],       # Low NPSH (cavitation cause)
-        
-        "description": "Pure cavitation damage scenario - triggers impeller_replacement only",
-        "expected_action": "impeller_replacement",
-        "threshold_triggered": {"param": "cavitation_damage", "value": 8.5, "threshold": 8.0},
-        "competing_actions_prevented": ["oil_change", "bearing_replacement", "motor_inspection"]
+        "description": "Pump bearing wear scenario - triggers pump bearing replacement only",
+        "expected_action": "bearing_replacement", 
+        "component_id": "pump_bearings",
+        "threshold_triggered": {"param": "pump_bearing_wear", "value": 6.5, "threshold": 6.0}
     },
-    
-    
-    # === BEARING-BASED MECHANICAL MAINTENANCE ===
-    # These conditions trigger bearing replacement based on lubrication system wear tracking
-    
-    
-    "bearing_inspection": {
-        # Bearing conditions requiring inspection
-        "motor_bearing_wear": [6.5, 6.2, 6.8, 6.4],  # Moderate wear levels
-        "pump_bearing_wear": [4.5, 4.2, 4.8, 4.4],   # Moderate wear levels
-        "thrust_bearing_wear": [2.8, 2.5, 3.0, 2.7], # Moderate wear levels
+
+    "thrust_bearing_replacement": {
+        # Only thrust bearings need replacement
+        "motor_bearing_wear": [0.075, 0.072, 0.078, 0.073],  # <8.0% (safe)
+        "pump_bearing_wear": [0.055, 0.052, 0.058, 0.053],   # <6.0% (safe)
+        "thrust_bearing_wear": [0.045, 0.042, 0.048, 0.043], # >4.0% triggers thrust bearing replacement
         
+        "description": "Thrust bearing wear scenario - triggers thrust bearing replacement only",
+        "expected_action": "bearing_replacement",
+        "component_id": "thrust_bearing", 
+        "threshold_triggered": {"param": "thrust_bearing_wear", "value": 4.5, "threshold": 4.0}
+    },
+
+    "multiple_bearing_replacement": {
+        # Multiple bearing types need replacement
+        "motor_bearing_wear": [0.085, 0.082, 0.088, 0.083],  # >8.0% triggers motor bearing replacement
+        "pump_bearing_wear": [0.065, 0.062, 0.068, 0.063],   # >6.0% triggers pump bearing replacement
+        "thrust_bearing_wear": [0.045, 0.042, 0.048, 0.043], # >4.0% triggers thrust bearing replacement
+        
+        "description": "Multiple bearing wear scenario - triggers multiple bearing replacements",
+        "expected_action": "bearing_replacement",
+        "component_id": "all",
         # Supporting vibration and temperature indicators
         "vibration_increase": [1.5, 1.3, 1.7, 1.4],  # mm/s increase from wear
         "oil_temperature": 52.0,  # °C, elevated but below threshold

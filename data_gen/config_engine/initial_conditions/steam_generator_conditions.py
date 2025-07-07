@@ -17,7 +17,7 @@ STEAM_GENERATOR_CONDITIONS: Dict[str, Dict[str, Any]] = {
     # === TSP (TUBE SUPPORT PLATE) ACTIONS ===
     
     "tsp_chemical_cleaning": {
-        "tsp_fouling_thicknesses": [0.049, 0.048, 0.0485],  # Very close to 5% (0.05) threshold
+        "tsp_fouling_thicknesses": [15.49, 18.48, 5.485], 
         "description": "TSP fouling near threshold requiring chemical cleaning",
         "threshold_info": {"parameter": "tsp_fouling_thicknesses", "threshold": 0.05, "direction": "greater_than"},
         "safety_notes": "Fouling set just below threshold to trigger during operation"
@@ -31,9 +31,10 @@ STEAM_GENERATOR_CONDITIONS: Dict[str, Dict[str, Any]] = {
     # === SCALE AND DEPOSIT ACTIONS ===
     
     "scale_removal": {
-        "sg_temperatures": [315.0, 318.0, 316.0],  # °C, near 320°C threshold
-        "tube_wall_temperature": [325.0, 328.0, 322.0],  # °C, elevated
-        "description": "Scale buildup affecting heat transfer and temperatures"
+        "scale_thicknesses": [0., 1.8, 2.5],  # mm, scale buildup causing high tube wall temps
+        "description": "Scale buildup affecting heat transfer and temperatures - tube wall temp calculated from scale",
+        "threshold_info": {"parameter": "scale_thicknesses", "threshold": 0.5, "direction": "greater_than"},
+        "safety_notes": "Scale thickness set to cause tube wall temps >320°C - tube wall temp is calculated from thermal resistance"
     },
     
     "secondary_side_cleaning": {
@@ -44,7 +45,7 @@ STEAM_GENERATOR_CONDITIONS: Dict[str, Dict[str, Any]] = {
     # === MOISTURE SEPARATION ACTIONS ===
     
     "moisture_separator_maintenance": {
-        "sg_steam_qualities": [0.994, 0.993, 0.9935],  # Near 99.5% threshold
+        "sg_steam_qualities": [0.84, 0.83, 0.85],  # Near 99.5% threshold
         # TODO: Revisit - removed non-standard parameters: moisture_separator_efficiency, steam_dryer_pressure_drop, carryover_solids
         "description": "Steam quality parameters requiring moisture separator maintenance"
     },

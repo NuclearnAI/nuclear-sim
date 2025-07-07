@@ -14,8 +14,9 @@ import json
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
+import yaml
 from pathlib import Path
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Union
 from datetime import datetime
 from dataclasses import asdict
 
@@ -64,15 +65,14 @@ class MaintenanceScenarioRunner:
     configurations and test maintenance action triggering.
     """
     
-    def __init__(self, config: Dict[str, Any], verbose: bool = True):
+    def __init__(self, config: Union[Dict[str, Any], str, Path], verbose: bool = True):
         """
         Initialize the maintenance scenario runner
         
         Args:
-            config: Configuration dictionary from ComprehensiveComposer
+            config: Configuration dictionary from ComprehensiveComposer OR path to YAML file
             verbose: Enable verbose output
         """
-        self.config = config
         self.verbose = verbose
         self.simulator = None
         self.maintenance_system = None
@@ -86,11 +86,14 @@ class MaintenanceScenarioRunner:
         # Initialize maintenance catalog
         self.maintenance_catalog = get_maintenance_catalog()
         
+        # PHASE 1: Load configuration from dictionary or YAML file
+        self.config = self._load_config(config)
+        
         # CRITICAL FIX: Enhanced target action processing with validation
-        self.target_action = config['metadata']['target_action']
-        self.target_subsystem = config['metadata']['target_subsystem']
-        self.subsystem_modes = config['metadata'].get('subsystem_modes', {})
-        self.duration_hours = config['simulation_config']['duration_hours']
+        self.target_action = self.config['metadata']['target_action']
+        self.target_subsystem = self.config['metadata']['target_subsystem']
+        self.subsystem_modes = self.config['metadata'].get('subsystem_modes', {})
+        self.duration_hours = self.config['simulation_config']['duration_hours']
         
         # CRITICAL FIX: Validate target action consistency
         print(f"SCENARIO RUNNER: 🎯 Target action from config: {self.target_action}")
@@ -106,6 +109,105 @@ class MaintenanceScenarioRunner:
             print(f"   Target subsystem: {self.target_subsystem}")
             print(f"   Duration: {self.duration_hours} hours")
             print(f"   Config validation: ✅ Target action preserved")
+    
+    def _load_config(self, config: Union[Dict[str, Any], str, Path]) -> Dict[str, Any]:
+        """
+        PHASE 1: Load configuration from dictionary or YAML file
+        
+        Args:
+            config: Configuration dictionary OR path to YAML file
+            
+        Returns:
+            Configuration dictionary
+            
+        Raises:
+            FileNotFoundError: If YAML file doesn't exist
+            yaml.YAMLError: If YAML file is malformed
+            ValueError: If configuration is invalid
+        """
+        if isinstance(config, dict):
+            # Already a dictionary - validate and return
+            if self.verbose:
+                print(f"📄 Using provided configuration dictionary")
+            self._validate_config(config)
+            return config
+        
+        # Convert to Path object for easier handling
+        yaml_path = Path(config)
+        
+        if not yaml_path.exists():
+            raise FileNotFoundError(f"YAML configuration file not found: {yaml_path}")
+        
+        if not yaml_path.suffix.lower() in ['.yaml', '.yml']:
+            raise ValueError(f"File must have .yaml or .yml extension: {yaml_path}")
+        
+        if self.verbose:
+            print(f"📄 Loading YAML configuration from: {yaml_path}")
+        
+        try:
+            with open(yaml_path, 'r') as f:
+                loaded_config = yaml.safe_load(f)
+            
+            if self.verbose:
+                print(f"   ✅ Successfully loaded YAML configuration")
+                print(f"   📊 Configuration sections: {len(loaded_config)}")
+            
+            # Validate the loaded configuration
+            self._validate_config(loaded_config)
+            
+            return loaded_config
+            
+        except yaml.YAMLError as e:
+            raise yaml.YAMLError(f"Error parsing YAML file {yaml_path}: {e}")
+        except Exception as e:
+            raise ValueError(f"Error loading configuration from {yaml_path}: {e}")
+    
+    def _validate_config(self, config: Dict[str, Any]) -> None:
+        """
+        PHASE 1: Validate configuration has required sections
+        
+        Args:
+            config: Configuration dictionary to validate
+            
+        Raises:
+            ValueError: If required sections are missing
+        """
+        required_sections = [
+            'metadata',
+            'simulation_config', 
+            'secondary_system',
+            'maintenance_system'
+        ]
+        
+        missing_sections = []
+        for section in required_sections:
+            if section not in config:
+                missing_sections.append(section)
+        
+        if missing_sections:
+            raise ValueError(f"Configuration missing required sections: {missing_sections}")
+        
+        # Validate metadata section has required fields
+        metadata = config['metadata']
+        required_metadata = ['target_action', 'target_subsystem']
+        missing_metadata = []
+        for field in required_metadata:
+            if field not in metadata:
+                missing_metadata.append(field)
+        
+        if missing_metadata:
+            raise ValueError(f"Metadata section missing required fields: {missing_metadata}")
+        
+        # Validate simulation_config has duration
+        sim_config = config['simulation_config']
+        if 'duration_hours' not in sim_config:
+            raise ValueError("simulation_config section missing 'duration_hours' field")
+        
+        if self.verbose:
+            print(f"   ✅ Configuration validation passed")
+            print(f"   🎯 Target action: {metadata['target_action']}")
+            print(f"   🏭 Target subsystem: {metadata['target_subsystem']}")
+            print(f"   ⏱️ Duration: {sim_config['duration_hours']} hours")
     
     def _initialize_simulator(self):
         """Initialize the nuclear plant simulator with maintenance system"""

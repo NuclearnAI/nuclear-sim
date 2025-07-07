@@ -178,6 +178,9 @@ secondary_system:
       tsp_fouling_thicknesses: [0.0, 0.0, 0.0]         # → deposits.get_total_thickness()
       tsp_heat_transfer_degradations: [0.0, 0.0, 0.0]  # → heat_transfer_degradation
       
+      # Tube interior scale parameters (map to TubeInteriorFouling class state)
+      scale_thicknesses: [0., 0., 0.]               # → scale_thickness → scale_thermal_resistance (calculated)
+      
       # Heat transfer parameters (map to SteamGenerator class state)
       tube_wall_temperature: [300.0, 300.0, 300.0]     # → tube_wall_temp
     
@@ -268,25 +271,25 @@ secondary_system:
       thrust_load: 500.0                            # kN thrust load
       
       # Lubrication system conditions
-      oil_contamination: 5.0                        # ppm oil contamination level
-      oil_level: 100.0                              # % oil level
-      oil_temperature: 45.0                         # °C oil temperature
+      oil_contamination: [5.0, 5.0, 5.0, 5.0]      # ppm oil contamination level per bearing
+      oil_level: [100.0, 100.0, 100.0, 100.0]      # % oil level per bearing
+      oil_temperature: [45.0, 45.0, 45.0, 45.0]    # °C oil temperature per bearing
       
       # Extended Oil & Lubrication Parameters
       oil_viscosity: 32.0                           # cSt oil viscosity
       oil_acid_number: 0.5                          # mg KOH/g acid number
       oil_water_content: 0.02                       # % water content
       oil_consumption_rate: [0.3, 0.3, 0.3, 0.3]   # L/day consumption rate
-      filter_pressure_drop: 0.1                     # MPa filter pressure drop
-      filter_contamination: 30.0                    # % filter capacity used
-      filter_bypass_flow: 0.05                      # % bypass flow
-      cooler_effectiveness: 0.9                     # Heat transfer effectiveness
-      cooling_water_temperature_rise: 10.0          # °C temperature rise
-      fouling_factor: 0.1                           # m²K/W fouling factor
-      oil_pressure: 0.25                            # MPa oil pressure
-      oil_flow_rate: 1.0                            # Fraction of design flow
-      pump_efficiency: 0.9                          # Oil pump efficiency
-      system_response_time: 1.5                     # seconds response time
+      filter_pressure_drop: [0.1, 0.1, 0.1, 0.1]   # MPa filter pressure drop per bearing
+      filter_contamination: [30.0, 30.0, 30.0, 30.0] # % filter capacity used per bearing
+      filter_bypass_flow: [0.05, 0.05, 0.05, 0.05] # % bypass flow per bearing
+      cooler_effectiveness: [0.9, 0.9, 0.9, 0.9]   # Heat transfer effectiveness per bearing
+      cooling_water_temperature_rise: [10.0, 10.0, 10.0, 10.0] # °C temperature rise per bearing
+      fouling_factor: [0.1, 0.1, 0.1, 0.1]         # m²K/W fouling factor per bearing
+      oil_pressure: [0.25, 0.25, 0.25, 0.25]       # MPa oil pressure per bearing
+      oil_flow_rate: [1.0, 1.0, 1.0, 1.0]          # Fraction of design flow per bearing
+      pump_efficiency: [0.9, 0.9, 0.9, 0.9]        # Oil pump efficiency per bearing
+      system_response_time: [1.5, 1.5, 1.5, 1.5]   # seconds response time per bearing
       
       # Rotor & Vibration Parameters
       rotor_vibration: 8.0                          # mils rotor vibration
@@ -473,8 +476,12 @@ secondary_system:
       # === EXTENDED MECHANICAL PARAMETERS ===
       # Enhanced bearing parameters
       bearing_vibrations: [10.0, 10.0, 10.0, 10.0]  # mm/s bearing vibrations per pump
-      bearing_wear: [0., 0., 0., 0.]     # Fraction of bearing life used per pump
       bearing_noise_level: [70.0, 70.0, 70.0, 70.0]  # dB bearing noise per pump
+      
+      # Individual bearing wear parameters (for selective bearing replacement)
+      motor_bearing_wear: [0.0, 0.0, 0.0, 0.0]      # Motor bearing wear per pump (0-1 fraction)
+      pump_bearing_wear: [0.0, 0.0, 0.0, 0.0]       # Pump bearing wear per pump (0-1 fraction)
+      thrust_bearing_wear: [0.0, 0.0, 0.0, 0.0]     # Thrust bearing wear per pump (0-1 fraction)
       
       # Enhanced seal parameters
       seal_face_wear: [0., 0., 0., 0.]   # Fraction of seal life used per pump
@@ -737,24 +744,27 @@ maintenance_system:
         # === BEARING-BASED MECHANICAL MAINTENANCE ===
         # Bearing issues trigger bearing maintenance, not impeller maintenance
         motor_bearing_wear:
-          threshold: 8.0               # Motor bearing wear (lubrication_system.component_wear['motor_bearings'])
+          threshold: 8.0
           comparison: "greater_than"
           action: "bearing_replacement"
-          cooldown_hours: 2190.0       # Quarterly cooldown
+          component_id: "motor_bearings"  # NEW: Specify which bearing
+          cooldown_hours: 2190.0
           priority: "HIGH"
         
         pump_bearing_wear:
-          threshold: 6.0               # Pump bearing wear (lubrication_system.component_wear['pump_bearings'])
-          comparison: "greater_than"
+          threshold: 6.0
+          comparison: "greater_than" 
           action: "bearing_replacement"
-          cooldown_hours: 2190.0       # Quarterly cooldown
+          component_id: "pump_bearings"   # NEW: Specify which bearing
+          cooldown_hours: 2190.0
           priority: "HIGH"
         
         thrust_bearing_wear:
-          threshold: 4.0               # Thrust bearing wear (lubrication_system.component_wear['thrust_bearing'])
+          threshold: 4.0
           comparison: "greater_than"
           action: "bearing_replacement"
-          cooldown_hours: 2190.0       # Quarterly cooldown
+          component_id: "thrust_bearing"  # NEW: Specify which bearing
+          cooldown_hours: 2190.0
           priority: "CRITICAL"
         
         seal_wear:
@@ -779,12 +789,12 @@ maintenance_system:
           cooldown_hours: 168.0        # Weekly cooldown
           priority: "HIGH"
         
-        efficiency_factor:
-          threshold: 0.85              # 85% efficiency factor (multiplier)
-          comparison: "less_than"
-          action: "pump_inspection"
-          cooldown_hours: 720.0        # Monthly cooldown
-          priority: "MEDIUM"
+        #efficiency_factor:
+        #  threshold: 0.85              # 85% efficiency factor (multiplier)
+        #  comparison: "less_than"
+        #  action: "pump_inspection"
+        #  cooldown_hours: 720.0        # Monthly cooldown
+        #  priority: "MEDIUM"
         
         # Only include thresholds that map to actual lubrication system state variables
         oil_water_content:
@@ -984,7 +994,7 @@ maintenance_system:
           action: "efficiency_analysis"
           cooldown_hours: 720.0        # Monthly cooldown
           priority: "MEDIUM"
-        oil_contamination:
+        oil_contamination_level:
           threshold: 15.0              # ppm - Change-out level
           comparison: "greater_than"
           action: "turbine_oil_change"
@@ -1009,19 +1019,19 @@ maintenance_system:
       cooldown_hours: 24.0
       thresholds:
         tsp_fouling_fraction:
-          threshold: 0.05              # 5% fouling triggers cleaning
+          threshold: .30             # 5% fouling triggers cleaning
           comparison: "greater_than"
           action: "tsp_chemical_cleaning"
-          cooldown_hours: 4380.0       # Semi-annual cooldown
+          cooldown_hours: 1.0       # Semi-annual cooldown
           priority: "HIGH"
         tube_wall_temperature:
-          threshold: 320.0             # °C - Alarm point
+          threshold: 305.0             # °C - Increased from 300.0 to provide margin after maintenance
           comparison: "greater_than"
           action: "scale_removal"
-          cooldown_hours: 4380.0       # Semi-annual cooldown
+          cooldown_hours: 24.0         # Increased from 1.0 to 24.0 hours to prevent rapid cycling
           priority: "HIGH"
         steam_quality:
-          threshold: 0.995             # 99.5% minimum quality
+          threshold: 0.90             # 99.5% minimum quality
           comparison: "less_than"
           action: "moisture_separator_maintenance"
           cooldown_hours: 2190.0       # Quarterly cooldown
