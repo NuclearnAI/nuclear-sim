@@ -14,5 +14,8 @@ build-backend = "setuptools.build_meta"
 dependencies = {file = ["requirements.txt"]}
 
 [tool.setuptools.packages.find]
-include = ["simulator*", "systems*", "data_gen*", "data*", "tests*"]
-exclude = ["sim_env*"]
+where = ["."]
+include = ["nuclear_simulator*"]
+
+[tool.setuptools.package-dir]
+nuclear_simulator = "."
