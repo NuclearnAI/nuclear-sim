@@ -228,7 +228,7 @@ class ScenarioRunner:
                 if self.verbose:
                     self._print_maintenance_results(results, simulation)
                 
-                return results
+                return results, run_name
                 
             finally:
                 os.chdir(original_cwd)
