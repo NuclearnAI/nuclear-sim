@@ -214,7 +214,7 @@ class MaintenanceScenarioRunner:
             heat_source = ConstantHeatSource(
                 rated_power_mw=thermal_power_mw,
                 noise_enabled=True,
-                noise_std_percent=5.0,
+                noise_std_percent=0.1,  # Reduced from 5.0% to 0.1% for ultra-smooth power
                 noise_seed=42
             )
             
@@ -564,6 +564,9 @@ class MaintenanceScenarioRunner:
             base_power = 90.0
             noise_std = 2.0
         
+        # Reduce noise to make power changes even smoother
+        noise_std = min(0.2, noise_std)  # Cap noise at 0.2% for very smooth operation
+        
         # PHASE 4 FIX: Generate profile for correct number of steps
         time_points = np.arange(num_steps)
         noise = noise_std * np.random.normal(0, 1, num_steps)
@@ -572,12 +575,66 @@ class MaintenanceScenarioRunner:
         # Clip to reasonable bounds
         power_profile = np.clip(power_profile, 20.0, 105.0)
         
+        # Apply smoothing and rate limiting for less aggressive changes
+        power_profile = self._smooth_power_array(power_profile)
+        power_profile = self._apply_power_rate_limit(power_profile)
+        
         return power_profile
     
+    def _smooth_power_array(self, power_profile: np.ndarray) -> np.ndarray:
+        """Apply smoothing filter to power profile to reduce aggressive changes"""
+        if len(power_profile) < 3:
+            return power_profile
+        
+        # Apply 3-point moving average for smoothing
+        smoothed = np.copy(power_profile)
+        for i in range(1, len(power_profile) - 1):
+            smoothed[i] = (power_profile[i-1] + power_profile[i] + power_profile[i+1]) / 3.0
+        
+        return smoothed
+    
+    def _apply_power_rate_limit(self, power_profile: np.ndarray) -> np.ndarray:
+        """Apply rate limiting to prevent aggressive power changes between time steps"""
+        if len(power_profile) < 2:
+            return power_profile
+        
+        # Maximum power change rate: 0.05% per time step (ultra-smooth for nuclear plants)
+        max_change_per_step = 0.05
+        
+        rate_limited = np.copy(power_profile)
+        for i in range(1, len(power_profile)):
+            power_change = rate_limited[i] - rate_limited[i-1]
+            
+            # Limit the change if it exceeds the maximum rate
+            if abs(power_change) > max_change_per_step:
+                if power_change > 0:
+                    rate_limited[i] = rate_limited[i-1] + max_change_per_step
+                else:
+                    rate_limited[i] = rate_limited[i-1] - max_change_per_step
+        
+        return rate_limited
+    
     def _set_target_power(self, target_power: float):
-        """Set target power using heat source"""
+        """Set target power using heat source with gradual ramping"""
         if hasattr(self.simulator.primary_physics.heat_source, 'set_power_setpoint'):
-            self.simulator.primary_physics.heat_source.set_power_setpoint(target_power)
+            # Store previous power for gradual ramping
+            if not hasattr(self, '_previous_power'):
+                self._previous_power = target_power
+            
+            # Apply ultra-gradual ramping instead of instant changes
+            max_ramp_rate = 0.02  # Maximum 0.02% change per time step for ultra-smooth operation
+            power_difference = target_power - self._previous_power
+            
+            if abs(power_difference) > max_ramp_rate:
+                if power_difference > 0:
+                    ramped_power = self._previous_power + max_ramp_rate
+                else:
+                    ramped_power = self._previous_power - max_ramp_rate
+            else:
+                ramped_power = target_power
+            
+            self._previous_power = ramped_power
+            self.simulator.primary_physics.heat_source.set_power_setpoint(ramped_power)
     
     def _simulate_component_degradation(self, time_step: int):
         """Monitor real component degradation - no artificial degradation needed"""
@@ -976,7 +1033,7 @@ class MaintenanceScenarioRunner:
         # Export simulation data using state manager
         filename = f"{filename_prefix}_simulation_data"
         self.simulator.state_manager.export_by_category('secondary',  f"{filename}.csv")
-        self.simulator.state_manager.export_by_subcategory('secondary', 'feedwater_FWP-1', f"{filename}_fwp_1_data.csv")
+        self.simulator.state_manager.export_by_subcategory('secondary', 'feedwater_FWP-1', f"fwp.csv")
         exported_files.append(filename)
         if self.verbose:
             print(f"📄 Simulation data exported to {filename}")

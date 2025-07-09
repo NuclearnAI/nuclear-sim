@@ -6,3 +6,4 @@ rich>=13.0.0
 uvicorn>=0.34.3
 websockets>=15.0.0
 seaborn>=0.13.2
+pandas

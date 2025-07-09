@@ -1,15 +1,18 @@
 [project]
 name = "nuclear-simulator"
 version = "0.1.0"
-description = "Add your description here"
+description = "A comprehensive nuclear power plant simulator with hierarchical system architecture"
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = [
-    "fastapi>=0.115.12",
-    "jupyter>=1.1.1",
-    "matplotlib>=3.10.3",
-    "numpy>=2.2.6",
-    "rich>=13.0.0",
-    "uvicorn>=0.34.3",
-    "websockets>=15.0.1",
-]
+dynamic = ["dependencies"]
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}
+
+[tool.setuptools.packages.find]
+include = ["simulator*", "systems*", "data_gen*", "data*", "tests*"]
+exclude = ["sim_env*"]

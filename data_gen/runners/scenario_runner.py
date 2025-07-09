@@ -32,12 +32,7 @@ from config_engine.composers.comprehensive_composer import (
     create_action_test_config,
     save_action_test_config
 )
-from scenarios.scenario_generator import (
-    ScenarioGenerator,
-    ScenarioType,
-    Scenario,
-    run_scenario
-)
+# Note: scenarios module removed - operational scenarios functionality disabled
 
 # Import simulation infrastructure
 from runners.maintenance_scenario_runner import MaintenanceScenarioRunner
@@ -65,7 +60,7 @@ class ScenarioRunner:
         
         # Initialize composers
         self.maintenance_composer = ComprehensiveComposer()
-        self.scenario_generator = ScenarioGenerator(random_seed=42)
+        # Note: scenario_generator removed - operational scenarios functionality disabled
         
         # Track results
         self.results = []
@@ -122,12 +117,12 @@ class ScenarioRunner:
     
     def generate_operational_scenario(
         self,
-        scenario_type: Union[str, ScenarioType],
+        scenario_type: Union[str, Any],
         duration_hours: float = 2.0,
         **kwargs
-    ) -> Scenario:
+    ) -> Any:
         """
-        Generate an operational scenario
+        Generate an operational scenario - DISABLED
         
         Args:
             scenario_type: Type of scenario to generate
@@ -135,46 +130,9 @@ class ScenarioRunner:
             **kwargs: Additional parameters for scenario generation
             
         Returns:
-            Scenario object
+            None - functionality disabled
         """
-        if self.verbose:
-            print(f"⚡ Generating operational scenario: {scenario_type}")
-        
-        # Convert string to enum if needed
-        if isinstance(scenario_type, str):
-            scenario_type = ScenarioType(scenario_type)
-        
-        duration_seconds = duration_hours * 3600
-        
-        try:
-            if scenario_type == ScenarioType.NORMAL_OPERATION:
-                scenario = self.scenario_generator.generate_normal_operation(duration_seconds)
-            elif scenario_type == ScenarioType.POWER_RAMP_UP:
-                target_power = kwargs.get('target_power', 110)
-                scenario = self.scenario_generator.generate_power_ramp_up(target_power, duration_seconds)
-            elif scenario_type == ScenarioType.POWER_RAMP_DOWN:
-                target_power = kwargs.get('target_power', 70)
-                scenario = self.scenario_generator.generate_power_ramp_down(target_power, duration_seconds)
-            elif scenario_type == ScenarioType.LOAD_FOLLOWING:
-                scenario = self.scenario_generator.generate_load_following(duration_seconds)
-            elif scenario_type == ScenarioType.STEAM_LINE_BREAK:
-                scenario = self.scenario_generator.generate_steam_line_break(duration_seconds)
-            elif scenario_type == ScenarioType.LOSS_OF_COOLANT:
-                scenario = self.scenario_generator.generate_loss_of_coolant(duration_seconds)
-            elif scenario_type == ScenarioType.TURBINE_TRIP:
-                scenario = self.scenario_generator.generate_turbine_trip(duration_seconds)
-            else:
-                scenario = self.scenario_generator.generate_random_scenario(duration_seconds)
-            
-            if self.verbose:
-                print(f"   ✅ Generated {scenario.name}")
-                print(f"   📊 Actions: {len(scenario.actions)}")
-            
-            return scenario
-            
-        except Exception as e:
-            print(f"   ❌ Error generating operational scenario: {e}")
-            raise
+        raise NotImplementedError("Operational scenario generation is disabled - scenarios module not available")
     
     def run_maintenance_scenario(
         self,
@@ -283,12 +241,12 @@ class ScenarioRunner:
     
     def run_operational_scenario(
         self,
-        scenario_type: Union[str, ScenarioType],
+        scenario_type: Union[str, Any],
         duration_hours: float = 2.0,
         **kwargs
     ) -> Dict[str, Any]:
         """
-        Generate and run an operational scenario
+        Generate and run an operational scenario - DISABLED
         
         Args:
             scenario_type: Type of scenario to generate
@@ -298,128 +256,7 @@ class ScenarioRunner:
         Returns:
             Simulation results
         """
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        scenario_name = scenario_type if isinstance(scenario_type, str) else scenario_type.value
-        run_name = f"{scenario_name}_{timestamp}"
-        
-        if self.verbose:
-            print(f"\n⚡ Running Operational Scenario: {scenario_name}")
-            print("=" * 60)
-        
-        # Generate scenario
-        scenario = self.generate_operational_scenario(
-            scenario_type=scenario_type,
-            duration_hours=duration_hours,
-            **kwargs
-        )
-        
-        # Generate configuration for the operational scenario
-        config = self._generate_operational_config(scenario, duration_hours, **kwargs)
-        
-        # Save configuration
-        config_file = None
-        config_file = self.output_dir / f"{run_name}_config.yaml"
-        with open(config_file, 'w') as f:
-            yaml.dump(config, f, default_flow_style=False, sort_keys=False, indent=2)
-        if self.verbose:
-            print(f"   💾 Saved config: {config_file}")
-        
-        # Create run directory
-        run_dir = self.output_dir / run_name
-        run_dir.mkdir(exist_ok=True)
-        
-        # Run scenario using configured simulator
-        try:
-            # Change to run directory for simulation
-            original_cwd = Path.cwd()
-            try:
-                import os
-                os.chdir(run_dir)
-                
-                # Create configured simulation runner
-                simulation = MaintenanceScenarioRunner(config, verbose=self.verbose)
-                
-                # Run simulation
-                start_time = time.time()
-                sim_results = simulation.run_scenario()
-                end_time = time.time()
-                
-                # Generate outputs
-                simulation.create_plots(save_plots=True)
-                simulation.export_data(filename_prefix=run_name)
-                
-                # Use the simulation results format
-                result = {
-                    'success': sim_results['success'],
-                    'results': simulation.simulation_data,
-                    'simulator': simulation.simulator
-                }
-                
-            finally:
-                os.chdir(original_cwd)
-            
-            # Save scenario details
-            scenario_file = run_dir / "scenario.json"
-            scenario_data = {
-                'name': scenario.name,
-                'type': scenario.scenario_type.value,
-                'duration': scenario.duration,
-                'description': scenario.description,
-                'actions': [
-                    {
-                        'time': action.time,
-                        'action': action.action.name,
-                        'magnitude': action.magnitude,
-                        'description': action.description
-                    }
-                    for action in scenario.actions
-                ]
-            }
-            
-            with open(scenario_file, 'w') as f:
-                json.dump(scenario_data, f, indent=2)
-            
-            # Save simulation results
-            results_file = run_dir / "results.json"
-            simulation_results = {
-                'success': result['success'],
-                'data_points': len(result['results']),
-                'final_state': {
-                    'power_level': result['simulator'].state.power_level,
-                    'fuel_temperature': result['simulator'].state.fuel_temperature,
-                    'control_rod_position': result['simulator'].state.control_rod_position
-                }
-            }
-            
-            with open(results_file, 'w') as f:
-                json.dump(simulation_results, f, indent=2)
-            
-            # Collect results
-            results = {
-                'run_name': run_name,
-                'scenario_type': scenario_name,
-                'duration_hours': duration_hours,
-                'execution_time_seconds': end_time - start_time,
-                'scenario_file': str(scenario_file),
-                'results_file': str(results_file),
-                'run_directory': str(run_dir),
-                'success': result['success'],
-                'data_points': len(result['results']),
-                'final_power_level': result['simulator'].state.power_level
-            }
-            
-            self.results.append(results)
-            
-            if self.verbose:
-                self._print_operational_results(results, result)
-            
-            return results
-            
-        except Exception as e:
-            print(f"   ❌ Error running operational scenario: {e}")
-            import traceback
-            traceback.print_exc()
-            raise
+        raise NotImplementedError("Operational scenario execution is disabled - scenarios module not available")
     
     def run_batch_maintenance(
         self,
@@ -904,141 +741,14 @@ class ScenarioRunner:
         return self.maintenance_composer.list_available_actions()
     
     def list_available_scenarios(self) -> List[str]:
-        """List all available operational scenario types"""
-        return [scenario_type.value for scenario_type in ScenarioType]
+        """List all available operational scenario types - DISABLED"""
+        return []  # Operational scenarios disabled - scenarios module not available
     
     def get_actions_by_subsystem(self, subsystem: str) -> List[str]:
         """Get maintenance actions for a specific subsystem from conditions files"""
         return self.maintenance_composer.get_actions_by_subsystem(subsystem)
     
-    def _generate_operational_config(
-        self, 
-        scenario: Scenario, 
-        duration_hours: float, 
-        **kwargs
-    ) -> Dict[str, Any]:
-        """
-        Generate configuration for operational scenarios
-        
-        Args:
-            scenario: Generated scenario object
-            duration_hours: Simulation duration in hours
-            **kwargs: Additional parameters
-            
-        Returns:
-            Configuration dictionary compatible with MaintenanceScenarioRunner
-        """
-        # Create base configuration similar to ComprehensiveComposer output
-        config = {
-            'metadata': {
-                'target_action': f'operational_{scenario.scenario_type.value}',
-                'target_subsystem': 'operational',
-                'scenario_type': scenario.scenario_type.value,
-                'scenario_name': scenario.name,
-                'scenario_description': scenario.description,
-                'generated_by': 'ScenarioRunner.operational',
-                'timestamp': datetime.now().isoformat()
-            },
-            'simulation_config': {
-                'duration_hours': duration_hours,
-                'time_step_minutes': 1.0,  # Default time step
-                'scenario': self._map_scenario_to_load_profile(scenario.scenario_type)
-            },
-            'thermal_power_mw': 3000.0,  # Default PWR power
-            'secondary_system': self._get_operational_secondary_config(scenario, **kwargs),
-            'maintenance_system': {
-                'maintenance_mode': 'conservative',
-                'maintenance_default_check_interval_hours': 4.0
-            },
-            'load_profiles': self._generate_operational_load_profiles(scenario, duration_hours, **kwargs)
-        }
-        
-        return config
-    
-    def _map_scenario_to_load_profile(self, scenario_type: ScenarioType) -> str:
-        """Map scenario type to load profile name"""
-        mapping = {
-            ScenarioType.NORMAL_OPERATION: 'steady_with_noise',
-            ScenarioType.POWER_RAMP_UP: 'power_ramp_up',
-            ScenarioType.POWER_RAMP_DOWN: 'power_ramp_down',
-            ScenarioType.LOAD_FOLLOWING: 'load_following',
-            ScenarioType.STEAM_LINE_BREAK: 'emergency_steam_break',
-            ScenarioType.LOSS_OF_COOLANT: 'emergency_loca',
-            ScenarioType.TURBINE_TRIP: 'emergency_turbine_trip'
-        }
-        return mapping.get(scenario_type, 'steady_with_noise')
-    
-    def _get_operational_secondary_config(self, scenario: Scenario, **kwargs) -> Dict[str, Any]:
-        """Generate secondary system configuration for operational scenarios"""
-        # Use default secondary system configuration
-        # This could be expanded to customize based on scenario type
-        return {
-            'steam_generator_system': {
-                'num_steam_generators': 2,
-                'design_thermal_power_mw_per_sg': 1500.0
-            },
-            'turbine': {
-                'design_power_mw': 1000.0,
-                'efficiency': 0.33
-            },
-            'feedwater_system': {
-                'num_pumps': 2,
-                'design_flow_rate_kg_s': 1500.0
-            },
-            'condenser': {
-                'design_thermal_power_mw': 2000.0
-            }
-        }
-    
-    def _generate_operational_load_profiles(
-        self, 
-        scenario: Scenario, 
-        duration_hours: float, 
-        **kwargs
-    ) -> Dict[str, Any]:
-        """Generate load profiles for operational scenarios"""
-        profile_name = self._map_scenario_to_load_profile(scenario.scenario_type)
-        
-        # Base profile configuration
-        profiles = {
-            profile_name: {
-                'base_power_percent': 90.0,
-                'noise_std_percent': 2.0
-            }
-        }
-        
-        # Customize based on scenario type
-        if scenario.scenario_type == ScenarioType.POWER_RAMP_UP:
-            target_power = kwargs.get('target_power', 110)
-            profiles[profile_name].update({
-                'base_power_percent': 80.0,
-                'target_power_percent': target_power,
-                'ramp_rate_percent_per_hour': 10.0
-            })
-        elif scenario.scenario_type == ScenarioType.POWER_RAMP_DOWN:
-            target_power = kwargs.get('target_power', 70)
-            profiles[profile_name].update({
-                'base_power_percent': 100.0,
-                'target_power_percent': target_power,
-                'ramp_rate_percent_per_hour': -10.0
-            })
-        elif scenario.scenario_type == ScenarioType.LOAD_FOLLOWING:
-            profiles[profile_name].update({
-                'base_power_percent': 85.0,
-                'variation_amplitude_percent': 15.0,
-                'variation_period_hours': 0.5
-            })
-        elif scenario.scenario_type in [ScenarioType.STEAM_LINE_BREAK, ScenarioType.LOSS_OF_COOLANT, ScenarioType.TURBINE_TRIP]:
-            profiles[profile_name].update({
-                'base_power_percent': 100.0,
-                'emergency_power_drop_percent': 50.0,
-                'emergency_trigger_time_hours': 0.25
-            })
-        
-        return {
-            'profiles': profiles,
-            'default_profile': profile_name
-        }
+    # Operational scenario helper methods disabled - scenarios module not available
     
     def _print_maintenance_results(self, results: Dict[str, Any], simulation: MaintenanceScenarioRunner):
         """Enhanced maintenance scenario results with state manager integration"""
