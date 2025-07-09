@@ -18,21 +18,18 @@ Usage:
 
 __version__ = "0.1.0"
 
-# Simple direct imports - no path manipulation needed
-# setuptools will handle making all modules available
-from simulator.core.sim import NuclearPlantSimulator
-from systems.primary.reactor.heat_sources.constant_heat_source import ConstantHeatSource
-from systems.primary.reactor.heat_sources.reactor_heat_source import ReactorHeatSource
-from data_gen.runners.scenario_runner import ScenarioRunner
-from data_gen.runners.maintenance_scenario_runner import MaintenanceScenarioRunner
-from data_gen.config_engine.composers.comprehensive_composer import ComprehensiveComposer
+# Simple relative imports for the new package structure
+from .simulator.core.sim import NuclearPlantSimulator
+from .systems.primary.reactor.heat_sources.constant_heat_source import ConstantHeatSource
+from .systems.primary.reactor.heat_sources.reactor_heat_source import ReactorHeatSource
+from .data_gen.runners.scenario_runner import ScenarioRunner
+from .data_gen.runners.maintenance_scenario_runner import MaintenanceScenarioRunner
+from .data_gen.config_engine.composers.comprehensive_composer import ComprehensiveComposer
 
 # Make submodules available for advanced users
-import simulator
-import systems
-import data_gen
-import data
-import tests
+from . import simulator
+from . import systems
+from . import data_gen
 
 # Make everything available at top level
 __all__ = [
@@ -49,7 +46,5 @@ __all__ = [
     # Submodules (for advanced users)
     "simulator",
     "systems", 
-    "data_gen",
-    "data",
-    "tests"
+    "data_gen"
 ]
