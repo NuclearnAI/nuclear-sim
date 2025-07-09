@@ -18,11 +18,8 @@ Usage:
 
 __version__ = "0.1.0"
 
-# Import all major submodules for internal access (from parent directory)
-import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-
+# Simple direct imports - no path manipulation needed
+# setuptools will handle making all modules available
 from simulator.core.sim import NuclearPlantSimulator
 from systems.primary.reactor.heat_sources.constant_heat_source import ConstantHeatSource
 from systems.primary.reactor.heat_sources.reactor_heat_source import ReactorHeatSource
@@ -30,7 +27,7 @@ from data_gen.runners.scenario_runner import ScenarioRunner
 from data_gen.runners.maintenance_scenario_runner import MaintenanceScenarioRunner
 from data_gen.config_engine.composers.comprehensive_composer import ComprehensiveComposer
 
-# Import submodules for advanced users
+# Make submodules available for advanced users
 import simulator
 import systems
 import data_gen
