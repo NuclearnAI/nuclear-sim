@@ -1,0 +1,35 @@
+{
+  "timestamp": "2025-06-25T22:29:41.833348",
+  "approach": "realistic_thresholds_with_targeted_initial_conditions",
+  "scenario_profiles": {
+    "demo_fast": {
+      "name": "demo_fast",
+      "description": "15-minute demos with quick maintenance triggers",
+      "target_duration_hours": 0.25,
+      "expected_trigger_time_hours": 0.1,
+      "max_execution_time_seconds": 30.0
+    },
+    "training_realistic": {
+      "name": "training_realistic",
+      "description": "4-hour training with realistic maintenance timing",
+      "target_duration_hours": 4.0,
+      "expected_trigger_time_hours": 1.0,
+      "max_execution_time_seconds": 120.0
+    },
+    "validation_thorough": {
+      "name": "validation_thorough",
+      "description": "24-hour validation with comprehensive testing",
+      "target_duration_hours": 24.0,
+      "expected_trigger_time_hours": 4.0,
+      "max_execution_time_seconds": 300.0
+    }
+  },
+  "validation_results": [],
+  "summary": {
+    "total_tests": 0,
+    "successful_tests": 0,
+    "passed_tests": 0,
+    "actions_tested": 0,
+    "profiles_tested": 0
+  }
+}
