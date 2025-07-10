@@ -137,11 +137,11 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
     # Actual rate: 0.0025 × 1.21 × 1.2 = 0.0036%/hour
     # Target: 80 minutes = 0.0036 × 1.33 hours = 0.005% distance needed
     "pump_bearing_replacement": {
-        "pump_bearing_wear": [5.995, 0.1, 0.1, 0.0],     # 6.0 - 0.005 = 5.995
+        "pump_bearing_wear": [5.85, 0.1, 0.1, 0.0],     # 6.0 - 0.005 = 5.995
         
         # Conditions that create hydraulic load + cavitation acceleration
         "cavitation_intensity": [0.1, 0.01, 0.01, 0.01], # Moderate cavitation for FWP-1
-        "npsh_available": [12.0, 18.0, 18.0, 20.0],      # Reduced NPSH for FWP-1 only
+        "npsh_available": [18.0, 18.0, 18.0, 20.0],      # Reduced NPSH for FWP-1 only
         "pump_vibrations": [12.0, 1.0, 1.0, 0.0],        # Cavitation-induced vibration
         
         # Safe values for other components
@@ -185,6 +185,7 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
     
     # === MULTIPLE BEARING REPLACEMENT ===
     # All bearings approaching thresholds at different rates based on their physics
+    """
     "multiple_bearing_replacement": {
         "motor_bearing_wear": [7.994, 0.1, 0.1, 0.0],    # 100 min target (0.0022%/h × 1.67h = 0.004%)
         "pump_bearing_wear": [5.992, 0.1, 0.1, 0.0],     # 80 min target (0.0036%/h × 1.33h = 0.005%)
@@ -201,7 +202,7 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
         "component_id": "all",
         "target_pump": "FWP-1"
     },
-    
+    """
     # === SEAL REPLACEMENT ===
     # Base rate: 0.004%/hour
     # With pressure_factor^1.8 = 1.1^1.8 = 1.19x
