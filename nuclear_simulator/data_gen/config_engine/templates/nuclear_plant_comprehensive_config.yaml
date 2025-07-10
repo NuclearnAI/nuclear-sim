@@ -14,7 +14,7 @@ simulation_config:
   # Primary simulation parameters
   duration_hours: 24.0
   scenario: "load_following_with_maintenance"
-  time_step_minutes: 10.0
+  time_step_minutes: 1.0
   
   # Environment settings
   enable_noise: true
