@@ -231,25 +231,25 @@ class BaseLubricationSystem(ABC):
         base_degradation_rate = 0.00001  # Very conservative base rate (90% reduction)
         thermal_degradation_rate = base_degradation_rate * activation_factor
         
-        # STEP 4: Improved filtration system effectiveness for realistic industrial behavior
-        # Base filtration efficiency increased from 75% to 85%
-        base_filtration_efficiency = 0.85  # 85% - improved industrial oil filtration
+        # STEP 4: FIXED - Reduced filtration effectiveness for maintenance scenario realism
+        # Base filtration efficiency reduced from 85% to 60% for more realistic contamination buildup
+        base_filtration_efficiency = 0.60  # 60% - realistic industrial oil filtration for maintenance scenarios
         
-        # Reduced filter loading sensitivity - filters less affected by contamination
-        filter_loading_factor = max(0.5, 1.0 - (self.oil_contamination_level / 75.0))
-        # At 25 ppm: factor = 0.67 (33% efficiency reduction) - improved from 50%
-        # At 50 ppm: factor = 0.33 (67% efficiency reduction) - improved threshold
+        # Increased filter loading sensitivity - filters more affected by contamination
+        filter_loading_factor = max(0.3, 1.0 - (self.oil_contamination_level / 50.0))
+        # At 15 ppm: factor = 0.7 (30% efficiency reduction) - more realistic
+        # At 25 ppm: factor = 0.5 (50% efficiency reduction) - more realistic
         
-        # Less temperature sensitivity for modern filtration systems
-        temp_factor = max(0.75, 1.0 - (self.oil_temperature - 65.0) / 90.0)
-        # At 80°C: factor = 0.83 (17% efficiency reduction) - improved from 25%
-        # At 100°C: factor = 0.61 (39% efficiency reduction) - improved from 50%
+        # Increased temperature sensitivity for realistic filter performance
+        temp_factor = max(0.5, 1.0 - (self.oil_temperature - 60.0) / 60.0)
+        # At 80°C: factor = 0.67 (33% efficiency reduction) - more realistic
+        # At 100°C: factor = 0.33 (67% efficiency reduction) - more realistic
         
         # Combined filtration efficiency
         effective_filtration_efficiency = base_filtration_efficiency * filter_loading_factor * temp_factor
         
-        # Increased circulation rate from 0.008 to 0.012 (50% improvement)
-        circulation_rate = 0.012  # 1.2% per time step - more effective circulation
+        # FIXED - Reduced circulation rate from 1.2% to 0.5% for more realistic contamination buildup
+        circulation_rate = 0.005  # 0.5% per time step - more realistic circulation for maintenance scenarios
         contamination_removal_rate = self.oil_contamination_level * effective_filtration_efficiency * circulation_rate
         
         # Reduced thermal contamination generation with wear factor

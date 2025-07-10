@@ -127,9 +127,9 @@ class FeedwaterPumpLubricationSystem(BaseLubricationSystem):
                 oil_flow_requirement=8.0,          # L/min
                 oil_pressure_requirement=0.25,     # MPa
                 oil_temperature_max=85.0,          # °C
-                base_wear_rate=0.0015,             # %/hour (3x faster - realistic for nuclear conditions)
-                load_wear_exponent=1.5,            # High load sensitivity
-                speed_wear_exponent=1.8,           # Very high speed sensitivity
+                base_wear_rate=0.004,              # %/hour (FIXED: Increased from 0.0015 to 0.004 - 2.7x faster for maintenance scenarios)
+                load_wear_exponent=1.8,            # FIXED: Increased from 1.5 to 1.8 for more aggressive load effects
+                speed_wear_exponent=2.0,           # FIXED: Increased from 1.8 to 2.0 for more aggressive speed effects
                 contamination_wear_factor=2.5,     # High contamination sensitivity
                 wear_performance_factor=0.015,     # 1.5% performance loss per % wear
                 lubrication_performance_factor=0.05, # 5% performance loss with poor lube (reduced)
@@ -142,9 +142,9 @@ class FeedwaterPumpLubricationSystem(BaseLubricationSystem):
                 oil_flow_requirement=12.0,         # L/min (higher flow for pump bearings)
                 oil_pressure_requirement=0.25,     # MPa
                 oil_temperature_max=80.0,          # °C (stricter for pump bearings)
-                base_wear_rate=0.0025,             # %/hour (3x faster - realistic for nuclear conditions)
-                load_wear_exponent=2.0,            # Very high load sensitivity
-                speed_wear_exponent=1.6,           # High speed sensitivity
+                base_wear_rate=0.006,              # %/hour (FIXED: Increased from 0.0025 to 0.006 - 2.4x faster for maintenance scenarios)
+                load_wear_exponent=2.2,            # FIXED: Increased from 2.0 to 2.2 for more aggressive load effects
+                speed_wear_exponent=1.8,           # FIXED: Increased from 1.6 to 1.8 for more aggressive speed effects
                 contamination_wear_factor=3.0,     # Very sensitive to contamination
                 wear_performance_factor=0.02,      # 2% performance loss per % wear
                 lubrication_performance_factor=0.1, # 10% performance loss with poor lube (reduced)
@@ -157,9 +157,9 @@ class FeedwaterPumpLubricationSystem(BaseLubricationSystem):
                 oil_flow_requirement=15.0,         # L/min (highest flow for thrust bearing)
                 oil_pressure_requirement=0.3,      # MPa (higher pressure for thrust loads)
                 oil_temperature_max=75.0,          # °C (strictest for thrust bearing)
-                base_wear_rate=0.003,              # %/hour (3x faster - realistic for nuclear conditions)
-                load_wear_exponent=2.2,            # Extremely high load sensitivity
-                speed_wear_exponent=1.4,           # Moderate speed sensitivity
+                base_wear_rate=0.008,              # %/hour (FIXED: Increased from 0.003 to 0.008 - 2.7x faster for maintenance scenarios)
+                load_wear_exponent=2.4,            # FIXED: Increased from 2.2 to 2.4 for more aggressive load effects
+                speed_wear_exponent=1.6,           # FIXED: Increased from 1.4 to 1.6 for more aggressive speed effects
                 contamination_wear_factor=3.5,     # Extremely sensitive to contamination
                 wear_performance_factor=0.025,     # 2.5% performance loss per % wear
                 lubrication_performance_factor=0.15, # 15% performance loss with poor lube (reduced)
@@ -172,9 +172,9 @@ class FeedwaterPumpLubricationSystem(BaseLubricationSystem):
                 oil_flow_requirement=5.0,          # L/min
                 oil_pressure_requirement=0.2,      # MPa
                 oil_temperature_max=70.0,          # °C
-                base_wear_rate=0.004,              # %/hour (3.3x faster - realistic for nuclear conditions)
-                load_wear_exponent=1.8,            # High load sensitivity
-                speed_wear_exponent=1.2,           # Moderate speed sensitivity
+                base_wear_rate=0.01,               # %/hour (FIXED: Increased from 0.004 to 0.01 - 2.5x faster for maintenance scenarios)
+                load_wear_exponent=2.0,            # FIXED: Increased from 1.8 to 2.0 for more aggressive load effects
+                speed_wear_exponent=1.4,           # FIXED: Increased from 1.2 to 1.4 for more aggressive speed effects
                 contamination_wear_factor=4.0,     # Extremely sensitive to contamination
                 wear_performance_factor=0.03,      # 3% performance loss per % wear
                 lubrication_performance_factor=0.2, # 20% performance loss with poor lube (reduced)
@@ -588,15 +588,15 @@ class FeedwaterPumpLubricationSystem(BaseLubricationSystem):
         # Cavitation creates vibration and shock loads that affect oil film
         self.cavitation_lubrication_effect = max(0.3, 1.0 - cavitation_intensity * 0.5)
         
-        # Calculate seal leakage based on seal wear - FIXED: Much more conservative progression
+        # Calculate seal leakage based on seal wear - FIXED: Increased for realistic maintenance scenarios
         seal_wear = self.component_wear['mechanical_seals']
-        base_seal_leakage = self.seal_leakage_rate  # L/min base leakage (5 mL/min) - realistic baseline for modern seals
-        wear_leakage = seal_wear * 0.002  # Additional leakage from wear - FIXED: Reduced from 0.02 to 0.002 (90% reduction)
-        cavitation_leakage = cavitation_intensity * 0.001  # Cavitation damages seals - FIXED: Reduced from 0.01 to 0.001 (90% reduction)
+        base_seal_leakage = 0.001  # L/min base leakage (1 mL/min) - realistic baseline for modern seals
+        wear_leakage = seal_wear * 0.2  # Additional leakage from wear - FIXED: Increased from 0.002 to 0.2 (100x increase)
+        cavitation_leakage = cavitation_intensity * 0.1  # Cavitation damages seals - FIXED: Increased from 0.001 to 0.1 (100x increase)
         
-        # Calculate total leakage with very conservative progression
+        # Calculate total leakage with realistic progression for maintenance scenarios
         total_leakage = base_seal_leakage + wear_leakage + cavitation_leakage
-        self.seal_leakage_rate = min(total_leakage, 0.0005)  # Cap at 50 mL/min maximum - FIXED: Reduced from 0.2 to 0.05
+        self.seal_leakage_rate = min(total_leakage, 0.05)  # Cap at 50 L/min maximum - FIXED: Increased from 0.0005 to 0.05 (100x increase)
         
         # Oil level decreases due to seal leakage
         if self.seal_leakage_rate > 0:
@@ -1750,9 +1750,9 @@ def integrate_lubrication_with_pump(pump, lubrication_system: FeedwaterPumpLubri
             oil_temp = base_temp + motor_heat + feedwater_heat_effect + pressure_heat + cavitation_heat
             oil_temp = max(35.0, min(75.0, oil_temp))  # More conservative upper limit
             
-            # STEP 5: Very conservative pump-specific contamination generation for stable behavior
-            # ENHANCED: Ultra-conservative base contamination input reduced to 0.0002 (80% reduction from original)
-            base_contamination_input = load_factor * 0.0002  # Very conservative base rate
+            # STEP 5: FIXED - Increased contamination generation for realistic maintenance scenarios
+            # FIXED: Increased base contamination input for realistic maintenance scenarios (10x increase)
+            base_contamination_input = load_factor * 0.002  # Increased from 0.0002 to 0.002 (10x increase)
             
             # Add wear-based contamination generation
             bearing_wear_contamination = 0.0
@@ -1764,34 +1764,34 @@ def integrate_lubrication_with_pump(pump, lubrication_system: FeedwaterPumpLubri
             thrust_bearing_wear = lubrication_system.component_wear.get('thrust_bearing', 0.0)
             seal_wear = lubrication_system.component_wear.get('mechanical_seals', 0.0)
             
-            # ENHANCED: Ultra-conservative bearing wear contamination (reduced rates by 75%)
-            bearing_wear_contamination = (motor_bearing_wear + pump_bearing_wear + thrust_bearing_wear) * 0.0005
+            # FIXED: Increased bearing wear contamination (5x increase from ultra-conservative)
+            bearing_wear_contamination = (motor_bearing_wear + pump_bearing_wear + thrust_bearing_wear) * 0.0025
             
-            # ENHANCED: Ultra-conservative seal wear contamination (reduced rate by 75%)
-            seal_wear_contamination = seal_wear * 0.0008
+            # FIXED: Increased seal wear contamination (5x increase from ultra-conservative)
+            seal_wear_contamination = seal_wear * 0.004
             
-            # ENHANCED: Ultra-conservative cavitation contamination (reduced rate by 75%)
-            cavitation_contamination = pump_conditions['cavitation_intensity'] * 0.002
+            # FIXED: Increased cavitation contamination (5x increase from ultra-conservative)
+            cavitation_contamination = pump_conditions['cavitation_intensity'] * 0.01
             
-            # ENHANCED: Ultra-conservative temperature contamination (reduced rate by 75%)
-            if oil_temp > 75.0:  # Higher threshold for temperature effects
-                temp_contamination = (oil_temp - 75.0) * 0.0005
+            # FIXED: Increased temperature contamination (5x increase from ultra-conservative)
+            if oil_temp > 70.0:  # Lower threshold for temperature effects
+                temp_contamination = (oil_temp - 70.0) * 0.0025
             else:
                 temp_contamination = 0.0
             
-            # ENHANCED: Add condition-based scaling - better lubrication = less contamination generation
-            lubrication_quality_factor = max(0.5, lubrication_system.lubrication_effectiveness)
-            contamination_scaling = 1.5 - (lubrication_quality_factor * 0.5)  # 1.0 to 1.25 range (reduced scaling)
+            # FIXED: More aggressive condition-based scaling for maintenance scenarios
+            lubrication_quality_factor = max(0.3, lubrication_system.lubrication_effectiveness)
+            contamination_scaling = 2.0 - (lubrication_quality_factor * 0.7)  # 1.3 to 2.0 range (more aggressive)
             
-            # Total contamination input with very conservative bounds and rate limiting
+            # Total contamination input with increased bounds for maintenance scenarios
             total_contamination_input = (base_contamination_input + 
                                        bearing_wear_contamination + 
                                        seal_wear_contamination + 
                                        cavitation_contamination + 
                                        temp_contamination) * contamination_scaling
             
-            # ENHANCED: Very conservative contamination bounds (cap at 0.05 ppm/hour maximum)
-            total_contamination_input = min(0.05, max(0.00005, total_contamination_input))
+            # FIXED: Increased contamination bounds (cap at 0.5 ppm/hour maximum - 10x increase)
+            total_contamination_input = min(0.5, max(0.0005, total_contamination_input))
             
             moisture_input = 0.0001  # Reduced moisture input to realistic level
             
