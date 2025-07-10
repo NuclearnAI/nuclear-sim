@@ -185,24 +185,24 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
     
     # === MULTIPLE BEARING REPLACEMENT ===
     # All bearings approaching thresholds at different rates based on their physics
-    """
-    "multiple_bearing_replacement": {
-        "motor_bearing_wear": [7.994, 0.1, 0.1, 0.0],    # 100 min target (0.0022%/h × 1.67h = 0.004%)
-        "pump_bearing_wear": [5.992, 0.1, 0.1, 0.0],     # 80 min target (0.0036%/h × 1.33h = 0.005%)
-        "thrust_bearing_wear": [3.992, 0.1, 0.1, 0.0],   # 60 min target (0.004%/h × 1.0h = 0.004%)
+    
+    #"multiple_bearing_replacement": {
+    #    "motor_bearing_wear": [7.994, 0.1, 0.1, 0.0],    # 100 min target (0.0022%/h × 1.67h = 0.004%)
+    #    "pump_bearing_wear": [5.992, 0.1, 0.1, 0.0],     # 80 min target (0.0036%/h × 1.33h = 0.005%)
+    #    "thrust_bearing_wear": [3.992, 0.1, 0.1, 0.0],   # 60 min target (0.004%/h × 1.0h = 0.004%)
         
         # Supporting conditions for multiple bearing issues
-        "vibration_increase": [2.0, 0.1, 0.1, 0.1],      # High vibration from multiple bearing wear
-        "oil_temperature": 52.0,                          # Elevated from multiple heat sources
-        "motor_temperature": [80.0, 30.0, 30.0, 25.0],   # Elevated electrical load
-        "bearing_temperatures": [66.0, 30.0, 30.0, 25.0], # Heat from multiple bearing friction
+    #    "vibration_increase": [2.0, 0.1, 0.1, 0.1],      # High vibration from multiple bearing wear
+    #    "oil_temperature": 52.0,                          # Elevated from multiple heat sources
+    #    "motor_temperature": [80.0, 30.0, 30.0, 25.0],   # Elevated electrical load
+    #    "bearing_temperatures": [66.0, 30.0, 30.0, 25.0], # Heat from multiple bearing friction
         
-        "description": "Multiple bearing wear with staggered physics-based timing - 60-100 min targets",
-        "expected_action": "bearing_replacement",
-        "component_id": "all",
-        "target_pump": "FWP-1"
-    },
-    """
+    #    "description": "Multiple bearing wear with staggered physics-based timing - 60-100 min targets",
+    #    "expected_action": "bearing_replacement",
+    #    "component_id": "all",
+    #    "target_pump": "FWP-1"
+    #},
+    
     # === SEAL REPLACEMENT ===
     # Base rate: 0.004%/hour
     # With pressure_factor^1.8 = 1.1^1.8 = 1.19x
