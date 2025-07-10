@@ -374,63 +374,63 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
     
     # === GRADUAL DEGRADATION ===
     # Multiple actions triggered at different time intervals based on different degradation rates
-    "gradual_degradation": {
-        # Immediate action (Week 1)
-        "pump_oil_contamination": 15.2,                   # Already above 15.0 → immediate oil_change
-        "pump_oil_levels": [62.0, 58.0, 90.0, 100.0],    # FWP-2 below 60% → immediate oil_top_off
-        
-        # Medium-term actions (Month 2-3)
-        "seal_face_wear": [12.0, 8.0, 11.0, 9.5],        # Moderate seal wear
-        "motor_bearing_wear": [7.8, 6.1, 7.2, 0.0],      # FWP-1,3 approaching 8.0% threshold
-        "pump_bearing_wear": [5.0, 4.5, 4.0, 0.3],       # FWP-1 approaching 6.0% threshold
-        "thrust_bearing_wear": [2.0, 3.5, 3.0, 0.3],     # Various levels approaching thresholds
-        
-        # Long-term indicators
-        "motor_temperature": [82.0, 70.0, 78.0, 25.0],   # Elevated but below 85°C threshold
-        "oil_temperature": 52.0,                          # Elevated but below 55°C threshold
-        "bearing_temperatures": [65.0, 60.0, 68.0, 25.0], # Elevated but below 70°C threshold
-        
-        "description": "Staggered degradation timeline - multiple actions over different timeframes",
-        "target_pump": "Multiple pumps at different times"
-    },
+    #"gradual_degradation": {
+    #    # Immediate action (Week 1)
+    #    "pump_oil_contamination": 15.2,                   # Already above 15.0 → immediate oil_change
+    #    "pump_oil_levels": [62.0, 58.0, 90.0, 100.0],    # FWP-2 below 60% → immediate oil_top_off
+    #    
+    #    # Medium-term actions (Month 2-3)
+    #    "seal_face_wear": [12.0, 8.0, 11.0, 9.5],        # Moderate seal wear
+    #    "motor_bearing_wear": [7.8, 6.1, 7.2, 0.0],      # FWP-1,3 approaching 8.0% threshold
+    #    "pump_bearing_wear": [5.0, 4.5, 4.0, 0.3],       # FWP-1 approaching 6.0% threshold
+    #    "thrust_bearing_wear": [2.0, 3.5, 3.0, 0.3],     # Various levels approaching thresholds
+    #    
+    #    # Long-term indicators
+    #    "motor_temperature": [82.0, 70.0, 78.0, 25.0],   # Elevated but below 85°C threshold
+    #    "oil_temperature": 52.0,                          # Elevated but below 55°C threshold
+    #    "bearing_temperatures": [65.0, 60.0, 68.0, 25.0], # Elevated but below 70°C threshold
+    #    
+    #    "description": "Staggered degradation timeline - multiple actions over different timeframes",
+    #    "target_pump": "Multiple pumps at different times"
+    #},
     
     # === DYNAMIC CAVITATION COUPLING TEST ===
     # Conditions that drive cavitation calculation dynamically with proper physics
-    "dynamic_cavitation_coupling_test": {
-        # NPSH conditions that promote cavitation
-        "npsh_available": [17.0, 18.5, 19.5, 20.0],      # FWP-1 has reduced NPSH margin
-        "suction_pressure": 0.35,                         # Low suction pressure system-wide
-        "feedwater_temperature": 240.0,                   # High temperature increases vapor pressure
-        "oil_temperature": 54.0,                          # Elevated oil temperature
+    # "dynamic_cavitation_coupling_test": {
+        # # NPSH conditions that promote cavitation
+        # "npsh_available": [17.0, 18.5, 19.5, 20.0],      # FWP-1 has reduced NPSH margin
+        # "suction_pressure": 0.35,                         # Low suction pressure system-wide
+        # "feedwater_temperature": 240.0,                   # High temperature increases vapor pressure
+        # "oil_temperature": 54.0,                          # Elevated oil temperature
         
-        # Initial wear levels that will couple with cavitation
-        "impeller_wear": [2.0, 2.5, 1.5, 0.0],          # Small initial impeller wear
-        "motor_bearing_wear": [1.5, 2.0, 1.0, 0.0],     # Small initial motor bearing wear
-        "pump_bearing_wear": [1.0, 1.5, 0.8, 0.0],      # Small initial pump bearing wear
-        "thrust_bearing_wear": [0.5, 0.8, 0.3, 0.0],    # Small initial thrust bearing wear
+        # # Initial wear levels that will couple with cavitation
+        # "impeller_wear": [2.0, 2.5, 1.5, 0.0],          # Small initial impeller wear
+        # "motor_bearing_wear": [1.5, 2.0, 1.0, 0.0],     # Small initial motor bearing wear
+        # "pump_bearing_wear": [1.0, 1.5, 0.8, 0.0],      # Small initial pump bearing wear
+        # "thrust_bearing_wear": [0.5, 0.8, 0.3, 0.0],    # Small initial thrust bearing wear
         
-        # Lubrication conditions
-        "pump_oil_contamination": 12.0,                  # Moderate contamination
-        "pump_oil_water_content": 0.07,                  # Elevated moisture
-        "pump_oil_acid_number": 1.4,                     # Elevated acidity
-        "lubrication_effectiveness": [0.88, 0.85, 0.90, 0.95], # Declining effectiveness
+        # # Lubrication conditions
+        # "pump_oil_contamination": 12.0,                  # Moderate contamination
+        # "pump_oil_water_content": 0.07,                  # Elevated moisture
+        # "pump_oil_acid_number": 1.4,                     # Elevated acidity
+        # "lubrication_effectiveness": [0.88, 0.85, 0.90, 0.95], # Declining effectiveness
         
-        # Operational conditions that create high loads
-        "motor_temperature": [82.0, 84.0, 80.0, 25.0],  # Elevated motor temperatures
-        "pump_oil_levels": [88.0, 85.0, 90.0, 100.0],   # Lower oil levels
-        "pump_vibrations": [8.0, 9.0, 7.0, 0.0],        # Elevated vibration
-        "pump_flows": [520.0, 530.0, 510.0, 0.0],       # Above rated flow
-        "pump_speeds": [3700.0, 3750.0, 3650.0, 0.0],   # Above rated speed
+        # # Operational conditions that create high loads
+        # "motor_temperature": [82.0, 84.0, 80.0, 25.0],  # Elevated motor temperatures
+        # "pump_oil_levels": [88.0, 85.0, 90.0, 100.0],   # Lower oil levels
+        # "pump_vibrations": [8.0, 9.0, 7.0, 0.0],        # Elevated vibration
+        # "pump_flows": [520.0, 530.0, 510.0, 0.0],       # Above rated flow
+        # "pump_speeds": [3700.0, 3750.0, 3650.0, 0.0],   # Above rated speed
         
-        "description": "Dynamic cavitation coupling test with physics-based progression",
-        "physics_notes": [
-            "Reduced NPSH margin triggers cavitation calculation",
-            "Above-rated flow increases cavitation intensity", 
-            "Initial wear increases NPSH requirements",
-            "Cavitation accelerates wear through coupling",
-            "Positive feedback loop develops over time"
-        ]
-    }
+        # "description": "Dynamic cavitation coupling test with physics-based progression",
+        # "physics_notes": [
+            # "Reduced NPSH margin triggers cavitation calculation",
+            # "Above-rated flow increases cavitation intensity", 
+            # "Initial wear increases NPSH requirements",
+            # "Cavitation accelerates wear through coupling",
+            # "Positive feedback loop develops over time"
+        # ]
+    # }
 }
 
 # === ARCHITECTURE VALIDATION ===
