@@ -33,27 +33,28 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
     
     "oil_change": {
         # === PRIMARY TRIGGER ===
-        "pump_oil_contamination": 14.8,          # >15.0 triggers oil_change (100-200 min timing)
+        "pump_oil_contamination": 14.99,          # Very close to 15.0 threshold - should trigger within 100-200 min
         
         # === KEEP ALL OTHER PARAMETERS SAFE (below thresholds) ===
-        "pump_oil_water_content": 0.06,          # <0.08 (safe, reduced from 0.07)
-        "pump_oil_acid_number": 1.3,             # <1.6 (safe, reduced from 1.5)
-        "oil_temperature": 52.0,                 # <55.0 (safe, reduced from 54.0)
-        "motor_temperature": [70.0, 70.0, 70.0, 70.0],  # <85.0 (safe, reduced from 75.0)
-        "bearing_temperatures": [60.0, 60.0, 60.0, 25.0],  # <70.0 (safe, reduced from 65.0)
+        "pump_oil_water_content": 0.06,          # <0.08 (safe)
+        "pump_oil_acid_number": 1.3,             # <1.6 (safe)
+        "oil_temperature": 52.0,                 # <55.0 (safe)
+        "motor_temperature": [70.0, 70.0, 70.0, 70.0],  # <85.0 (safe)
+        "bearing_temperatures": [60.0, 60.0, 60.0, 25.0],  # <70.0 (safe)
         
         # === REALISTIC SUPPORTING VALUES ===
-        "pump_oil_levels": [90.0, 90.0, 90.0, 100.0],  # Higher levels (increased from 85.0)
-        "bearing_wear": [1.0, 1.0, 1.0, 1.0],      # Very low wear (reduced from 2.0)
-        "seal_face_wear": [0.5, 0.5, 0.5, 0.5],  # Very low wear (reduced from 1.0)
-        "impeller_wear": [0.5, 0.5, 0.5, 0.5],  # Very low wear (reduced from 1.0)
-        "pump_vibrations": [3.0, 3.0, 3.0, 0.0],       # Lower vibration (reduced from 5.0)
-        "cavitation_intensity": [0.02, 0.02, 0.02, 0.02],  # Very low cavitation (reduced from 0.05)
-        "npsh_available": [18.0, 18.0, 18.0, 18.0],    # Excellent NPSH (increased from 15.0)
+        "pump_oil_levels": [90.0, 90.0, 90.0, 100.0],  # Higher levels
+        "motor_bearing_wear": [1.0, 1.0, 1.0, 1.0],    # Very low wear
+        "pump_bearing_wear": [1.0, 1.0, 1.0, 1.0],     # Very low wear
+        "thrust_bearing_wear": [0.5, 0.5, 0.5, 0.5],   # Very low wear
+        "seal_face_wear": [0.5, 0.5, 0.5, 0.5],        # Very low wear
+        "pump_vibrations": [3.0, 3.0, 3.0, 0.0],       # Lower vibration
+        "cavitation_intensity": [0.02, 0.02, 0.02, 0.02],  # Very low cavitation
+        "npsh_available": [20.0, 20.0, 20.0, 20.0],    # Excellent NPSH
         
         "description": "Pure oil contamination scenario - triggers oil_change only (100-200 min)",
         "expected_action": "oil_change",
-        "threshold_triggered": {"param": "pump_oil_contamination", "value": 14.8, "threshold": 15.0},
+        "threshold_triggered": {"param": "pump_oil_contamination", "value": 14.9, "threshold": 15.0},
         "competing_actions_prevented": ["motor_inspection", "bearing_inspection", "lubrication_system_check", "component_overhaul"]
     },
     
@@ -62,7 +63,9 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
     
     "oil_top_off": {
         # === PRIMARY TRIGGER ===
-        "pump_oil_levels": [62.0, 64.0, 66.0, 100.0],  # <60.0 triggers oil_top_off (100-200 min timing)
+        "pump_oil_levels": [60.5, 60.8, 61.0, 100.0],  # Very close to 60.0 threshold - should trigger within 100-200 min
+        "seal_face_wear": [0.008, 0.008, 0.008, 0.008],  # Low wear
+
         
         # === KEEP ALL OTHER PARAMETERS SAFE ===
         """
@@ -75,7 +78,6 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
         
         # === REALISTIC SUPPORTING VALUES ===
         "bearing_wear": [0.015, 0.015, 0.015, 0.015],  # Low wear
-        "seal_face_wear": [0.008, 0.008, 0.008, 0.008],  # Low wear
         "impeller_wear": [0.005, 0.005, 0.005, 0.005],  # Low wear
         "pump_vibrations": [4.0, 4.0, 4.0, 0.0],       # Low vibration
         "cavitation_intensity": [0.03, 0.03, 0.03, 0.03],  # Very low cavitation
@@ -93,7 +95,7 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
     
     "motor_inspection": {
         # === PRIMARY TRIGGER ===
-        "motor_temperature": [82.5, 83.0, 82.8, 83.2],  # >85.0 triggers motor_inspection (100-200 min timing)
+        "motor_temperature": [83.0, 84.7, 83.5, 25.0],  # Very close to 85.0 threshold - should trigger within 100-200 min
         
         # === KEEP ALL OTHER PARAMETERS SAFE ===
         #"pump_oil_contamination": 10.0,          # <15.0 (safe)
@@ -124,9 +126,9 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
     
     "motor_bearing_replacement": {
         # Only motor bearings need replacement
-        "motor_bearing_wear": [7.8, 7.7, 7.9, 7.6],  # >8.0% triggers motor bearing replacement (100-200 min timing)
-        "pump_bearing_wear": [5.5, 5.2, 5.8, 5.3],   # <6.0% (safe)
-        "thrust_bearing_wear": [3.5, 3.2, 3.8, 3.3], # <4.0% (safe)
+        "motor_bearing_wear": [7.9, 7.8, 7.92, 0.0],  # Very close to 8.0% threshold - should trigger within 100-200 min
+        "pump_bearing_wear": [4.0, 4.2, 4.8, 0.0],    # <6.0% (safe)
+        "thrust_bearing_wear": [2.5, 2.2, 2.8, 0.0],  # <4.0% (safe)
         
         "description": "Motor bearing wear scenario - triggers motor bearing replacement only (100-200 min)",
         "expected_action": "bearing_replacement",
@@ -136,9 +138,9 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
 
     "pump_bearing_replacement": {
         # Only pump bearings need replacement
-        "motor_bearing_wear": [5.5, 5.2, 5.8, 5.3],  # <8.0% (safe)
-        "pump_bearing_wear": [5.8, 5.7, 5.9, 5.6],   # >6.0% triggers pump bearing replacement (100-200 min timing)
-        "thrust_bearing_wear": [1.5, 1.2, 1.8, 1.3], # <4.0% (safe)
+        "motor_bearing_wear": [5.5, 5.2, 5.8, 0.0],   # <8.0% (safe)
+        "pump_bearing_wear": [5.9, 5.8, 5.95, 0.0],   # Very close to 6.0% threshold - should trigger within 100-200 min
+        "thrust_bearing_wear": [2.5, 2.2, 2.8, 0.0],  # <4.0% (safe)
         
         "description": "Pump bearing wear scenario - triggers pump bearing replacement only (100-200 min)",
         "expected_action": "bearing_replacement", 
@@ -148,9 +150,9 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
 
     "thrust_bearing_replacement": {
         # Only thrust bearings need replacement
-        "motor_bearing_wear": [7.5, 7.2, 7.8, 7.3],  # <8.0% (safe)
-        "pump_bearing_wear": [5.5, 5.2, 5.8, 5.3],   # <6.0% (safe)
-        "thrust_bearing_wear": [3.8, 3.7, 3.9, 3.6], # >4.0% triggers thrust bearing replacement (100-200 min timing)
+        "motor_bearing_wear": [6.5, 6.2, 6.8, 0.0],   # <8.0% (safe)
+        "pump_bearing_wear": [4.5, 4.2, 4.8, 0.0],    # <6.0% (safe)
+        "thrust_bearing_wear": [3.9, 3.8, 3.95, 0.0], # Very close to 4.0% threshold - should trigger within 100-200 min
         
         "description": "Thrust bearing wear scenario - triggers thrust bearing replacement only (100-200 min)",
         "expected_action": "bearing_replacement",

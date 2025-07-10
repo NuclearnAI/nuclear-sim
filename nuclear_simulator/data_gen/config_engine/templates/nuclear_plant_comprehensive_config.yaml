@@ -712,7 +712,7 @@ maintenance_system:
         # === PERFORMANCE MONITORING THRESHOLDS ===
         # Lubrication effectiveness checked AFTER oil_contamination
         lubrication_effectiveness:
-          threshold: 0.5              # 85% lubrication effectiveness
+          threshold: 0.35              # 85% lubrication effectiveness
           comparison: "less_than"
           action: "lubrication_system_check"
           cooldown_hours: 720.0        # Monthly cooldown
