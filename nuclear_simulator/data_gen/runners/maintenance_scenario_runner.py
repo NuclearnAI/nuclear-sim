@@ -751,6 +751,13 @@ class MaintenanceScenarioRunner:
                                 # Try to infer from work order details
                                 action_type = self._infer_action_type_from_work_order(work_order_dict)
                             
+                            # Enhanced trigger reason logic for FWP bearing replacements
+                            trigger_reason = self._create_enhanced_trigger_reason(
+                                action_type, 
+                                work_order_dict['component_id'], 
+                                work_order_dict
+                            )
+                            
                             event = {
                                 'time_hours': completion_time_hours,
                                 'component_id': work_order_dict['component_id'],
@@ -762,7 +769,7 @@ class MaintenanceScenarioRunner:
                                 'effectiveness_score': action.get('effectiveness_score', 1.0),  # Default effectiveness
                                 'findings': action.get('findings', ''),
                                 'triggered': True,
-                                'trigger_reason': f'Maintenance action completed: {action_type}'
+                                'trigger_reason': trigger_reason
                             }
                             events.append(event)
                             
@@ -1195,6 +1202,75 @@ class MaintenanceScenarioRunner:
         
         # Final fallback - generic action, NOT scenario name
         return "maintenance_action"
+
+    def _create_enhanced_trigger_reason(self, action_type: str, component_id: str, work_order_dict: dict) -> str:
+        """
+        Create enhanced trigger reason with component ID for FWP bearing replacements
+        
+        Args:
+            action_type: The maintenance action type (e.g., "bearing_replacement")
+            component_id: The component ID (e.g., "FWP-1")
+            work_order_dict: The work order dictionary containing additional context
+            
+        Returns:
+            Enhanced trigger reason string
+        """
+        # Check if this is a bearing replacement on an FWP component
+        if (action_type == "bearing_replacement" and 
+            component_id and 
+            component_id.startswith('FWP')):
+            
+            # Try to extract bearing type from work order context
+            bearing_component_id = self._extract_bearing_component_id(work_order_dict)
+            
+            if bearing_component_id and "_bearing" in bearing_component_id:
+                # Extract bearing type from component_id (e.g., "thrust_bearing" -> "thrust")
+                bearing_type = bearing_component_id.replace("_bearing", "")
+                return f'{bearing_type}_bearing_replacement'
+            else:
+                # Fallback if we can't extract bearing type
+                return f'Maintenance action completed: {action_type}'
+        else:
+            # Default for all other actions
+            return f'Maintenance action completed: {action_type}'
+    
+    def _extract_bearing_component_id(self, work_order_dict: dict) -> str:
+        """
+        Extract bearing component ID from work order context
+        
+        This method looks for bearing-specific information in the work order
+        to determine which type of bearing is being replaced.
+        
+        Args:
+            work_order_dict: Work order dictionary
+            
+        Returns:
+            Bearing component ID (e.g., "thrust_bearing", "motor_bearing") or empty string
+        """
+        # Check work order title for bearing type hints
+        title = work_order_dict.get('title', '').lower()
+        
+        # Look for bearing type keywords in the title
+        bearing_types = ['thrust', 'motor', 'pump', 'journal', 'radial']
+        
+        for bearing_type in bearing_types:
+            if bearing_type in title:
+                return f"{bearing_type}_bearing"
+        
+        # Check work order description
+        description = work_order_dict.get('description', '').lower()
+        for bearing_type in bearing_types:
+            if bearing_type in description:
+                return f"{bearing_type}_bearing"
+        
+        # Check trigger_id for bearing type information
+        trigger_id = work_order_dict.get('trigger_id', '').lower()
+        for bearing_type in bearing_types:
+            if bearing_type in trigger_id:
+                return f"{bearing_type}_bearing"
+        
+        # If no specific bearing type found, return empty string for fallback
+        return ""
 
     def _get_action_display_name(self, action_type: str) -> str:
         """Get human-readable name for maintenance action - simplified without maintenance system"""
