@@ -33,7 +33,7 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
     
     "oil_change": {
         # === PRIMARY TRIGGER ===
-        "pump_oil_contamination": 15.5,          # >15.0 triggers oil_change (reduced from 16.0)
+        "pump_oil_contamination": 14.8,          # >15.0 triggers oil_change (100-200 min timing)
         
         # === KEEP ALL OTHER PARAMETERS SAFE (below thresholds) ===
         "pump_oil_water_content": 0.06,          # <0.08 (safe, reduced from 0.07)
@@ -51,9 +51,9 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
         "cavitation_intensity": [0.02, 0.02, 0.02, 0.02],  # Very low cavitation (reduced from 0.05)
         "npsh_available": [18.0, 18.0, 18.0, 18.0],    # Excellent NPSH (increased from 15.0)
         
-        "description": "Pure oil contamination scenario - triggers oil_change only",
+        "description": "Pure oil contamination scenario - triggers oil_change only (100-200 min)",
         "expected_action": "oil_change",
-        "threshold_triggered": {"param": "pump_oil_contamination", "value": 15.5, "threshold": 15.0},
+        "threshold_triggered": {"param": "pump_oil_contamination", "value": 14.8, "threshold": 15.0},
         "competing_actions_prevented": ["motor_inspection", "bearing_inspection", "lubrication_system_check", "component_overhaul"]
     },
     
@@ -62,7 +62,7 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
     
     "oil_top_off": {
         # === PRIMARY TRIGGER ===
-        "pump_oil_levels": [61.0, 67.0, 78.0, 100.0],  # <75.0 triggers oil_top_off
+        "pump_oil_levels": [62.0, 64.0, 66.0, 100.0],  # <60.0 triggers oil_top_off (100-200 min timing)
         
         # === KEEP ALL OTHER PARAMETERS SAFE ===
         """
@@ -81,9 +81,9 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
         "cavitation_intensity": [0.03, 0.03, 0.03, 0.03],  # Very low cavitation
         "npsh_available": [16.0, 16.0, 16.0, 16.0],    # Excellent NPSH
         """    
-        "description": "Pure oil level scenario - triggers oil_top_off only",
+        "description": "Pure oil level scenario - triggers oil_top_off only (100-200 min)",
         "expected_action": "oil_top_off",
-        "threshold_triggered": {"param": "pump_oil_levels", "value": 74.0, "threshold": 75.0},
+        "threshold_triggered": {"param": "pump_oil_levels", "value": 64.0, "threshold": 60.0},
         "competing_actions_prevented": ["oil_change", "motor_inspection", "bearing_inspection"]
     
     },
@@ -93,7 +93,7 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
     
     "motor_inspection": {
         # === PRIMARY TRIGGER ===
-        "motor_temperature": [86.0, 85.5, 87.0, 85.8],  # >85.0 triggers motor_inspection
+        "motor_temperature": [82.5, 83.0, 82.8, 83.2],  # >85.0 triggers motor_inspection (100-200 min timing)
         
         # === KEEP ALL OTHER PARAMETERS SAFE ===
         #"pump_oil_contamination": 10.0,          # <15.0 (safe)
@@ -111,9 +111,9 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
         #"cavitation_intensity": [0.02, 0.02, 0.02, 0.02],  # Very low cavitation
         #"npsh_available": [18.0, 18.0, 18.0, 18.0],    # Excellent NPSH
         
-        "description": "Pure motor temperature scenario - triggers motor_inspection only",
+        "description": "Pure motor temperature scenario - triggers motor_inspection only (100-200 min)",
         "expected_action": "motor_inspection",
-        "threshold_triggered": {"param": "motor_temperature", "value": 86.0, "threshold": 85.0},
+        "threshold_triggered": {"param": "motor_temperature", "value": 83.0, "threshold": 85.0},
         "competing_actions_prevented": ["oil_change", "oil_top_off", "bearing_inspection"]
     },
     
@@ -124,47 +124,47 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
     
     "motor_bearing_replacement": {
         # Only motor bearings need replacement
-        "motor_bearing_wear": [8.5, 8.2, 8.8, 8.3],  # >8.0% triggers motor bearing replacement
+        "motor_bearing_wear": [7.8, 7.7, 7.9, 7.6],  # >8.0% triggers motor bearing replacement (100-200 min timing)
         "pump_bearing_wear": [5.5, 5.2, 5.8, 5.3],   # <6.0% (safe)
         "thrust_bearing_wear": [3.5, 3.2, 3.8, 3.3], # <4.0% (safe)
         
-        "description": "Motor bearing wear scenario - triggers motor bearing replacement only",
+        "description": "Motor bearing wear scenario - triggers motor bearing replacement only (100-200 min)",
         "expected_action": "bearing_replacement",
         "component_id": "motor_bearings",
-        "threshold_triggered": {"param": "motor_bearing_wear", "value": 8.5, "threshold": 8.0}
+        "threshold_triggered": {"param": "motor_bearing_wear", "value": 7.8, "threshold": 8.0}
     },
 
     "pump_bearing_replacement": {
         # Only pump bearings need replacement
         "motor_bearing_wear": [5.5, 5.2, 5.8, 5.3],  # <8.0% (safe)
-        "pump_bearing_wear": [6.5, 6.2, 6.8, 6.3],   # >6.0% triggers pump bearing replacement
+        "pump_bearing_wear": [5.8, 5.7, 5.9, 5.6],   # >6.0% triggers pump bearing replacement (100-200 min timing)
         "thrust_bearing_wear": [1.5, 1.2, 1.8, 1.3], # <4.0% (safe)
         
-        "description": "Pump bearing wear scenario - triggers pump bearing replacement only",
+        "description": "Pump bearing wear scenario - triggers pump bearing replacement only (100-200 min)",
         "expected_action": "bearing_replacement", 
         "component_id": "pump_bearings",
-        "threshold_triggered": {"param": "pump_bearing_wear", "value": 6.5, "threshold": 6.0}
+        "threshold_triggered": {"param": "pump_bearing_wear", "value": 5.8, "threshold": 6.0}
     },
 
     "thrust_bearing_replacement": {
         # Only thrust bearings need replacement
         "motor_bearing_wear": [7.5, 7.2, 7.8, 7.3],  # <8.0% (safe)
         "pump_bearing_wear": [5.5, 5.2, 5.8, 5.3],   # <6.0% (safe)
-        "thrust_bearing_wear": [4.5, 4.2, 4.8, 4.3], # >4.0% triggers thrust bearing replacement
+        "thrust_bearing_wear": [3.8, 3.7, 3.9, 3.6], # >4.0% triggers thrust bearing replacement (100-200 min timing)
         
-        "description": "Thrust bearing wear scenario - triggers thrust bearing replacement only",
+        "description": "Thrust bearing wear scenario - triggers thrust bearing replacement only (100-200 min)",
         "expected_action": "bearing_replacement",
         "component_id": "thrust_bearing", 
-        "threshold_triggered": {"param": "thrust_bearing_wear", "value": 4.5, "threshold": 4.0}
+        "threshold_triggered": {"param": "thrust_bearing_wear", "value": 3.8, "threshold": 4.0}
     },
 
     "multiple_bearing_replacement": {
         # Multiple bearing types need replacement
-        "motor_bearing_wear": [8.5, 8.2, 8.8, 8.3],  # >8.0% triggers motor bearing replacement
-        "pump_bearing_wear": [6.5, 6.2, 6.8, 6.3],   # >6.0% triggers pump bearing replacement
-        "thrust_bearing_wear": [4.5, 4.2, 4.8, 4.3], # >4.0% triggers thrust bearing replacement
+        "motor_bearing_wear": [7.8, 7.7, 7.9, 7.6],  # >8.0% triggers motor bearing replacement (100-200 min timing)
+        "pump_bearing_wear": [5.8, 5.7, 5.9, 5.6],   # >6.0% triggers pump bearing replacement (100-200 min timing)
+        "thrust_bearing_wear": [3.8, 3.7, 3.9, 3.6], # >4.0% triggers thrust bearing replacement (100-200 min timing)
         
-        "description": "Multiple bearing wear scenario - triggers multiple bearing replacements",
+        "description": "Multiple bearing wear scenario - triggers multiple bearing replacements (100-200 min)",
         "expected_action": "bearing_replacement",
         "component_id": "all",
         # Supporting vibration and temperature indicators
@@ -177,8 +177,8 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
     },
     
     "seal_replacement": {
-        # PRIMARY: Seal wear and leakage (lubrication system tracking) - UPDATED for 25% threshold
-        "seal_face_wear": [.165, .158, .172, .161],         # lubrication_system.component_wear['mechanical_seals'] - Above 25% threshold
+        # PRIMARY: Seal wear and leakage (lubrication system tracking) - UPDATED for 15% threshold (100-200 min timing)
+        "seal_face_wear": [14.8, 14.7, 14.9, 14.6],         # lubrication_system.component_wear['mechanical_seals'] - Above 15% threshold
         #"seal_leakage_rate": [0.16, 0.14, 0.18, 0.15], # lubrication_system.seal_leakage_rate (L/min) - Above 0.15 threshold
         
         # SUPPORTING: Conditions that accelerate seal wear - realistic degraded conditions
@@ -195,8 +195,8 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
         #"pump_vibrations": [18.0, 16.0, 20.0, 0.0],   # High vibration from seal wear
         #"npsh_available": [10.0, 9.5, 10.5, 10.2],    # Reduced NPSH from system degradation
         
-        "description": "Seal wear above 25% threshold with significant leakage - replacement required",
-        "threshold_info": {"parameter": "seal_wear", "threshold": 25.0, "direction": "greater_than"},
+        "description": "Seal wear above 15% threshold with significant leakage - replacement required (100-200 min)",
+        "threshold_info": {"parameter": "seal_wear", "threshold": 15.0, "direction": "greater_than"},
         "physics_notes": "High seal wear with cavitation and poor oil quality requires immediate replacement"
     },
     
@@ -205,11 +205,11 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
     
     "oil_analysis": {
         # PRIMARY: Oil quality parameters from lubrication system
-        "oil_water_content": 0.085,      # lubrication_system.oil_moisture_content (%)
-        "oil_acid_number": 1.65,         # lubrication_system.oil_acidity_number (mg KOH/g)
+        "oil_water_content": 0.078,      # lubrication_system.oil_moisture_content (%) - 100-200 min timing
+        "oil_acid_number": 1.58,         # lubrication_system.oil_acidity_number (mg KOH/g) - 100-200 min timing
         "oil_contamination_level": 13.5, # lubrication_system.oil_contamination_level (ppm)
         
-        "description": "Oil quality parameters requiring analysis",
+        "description": "Oil quality parameters requiring analysis (100-200 min)",
         "threshold_info": {"parameter": "oil_water_content", "threshold": 0.08, "direction": "greater_than"},
         "maintenance_notes": "Analysis determines if oil change or treatment needed"
     },
@@ -217,11 +217,11 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
  
     "lubrication_system_check": {
         # Lubrication system performance requiring check
-        "lubrication_effectiveness": [0.84, 0.83, 0.86, 0.82], # Below 0.85 threshold
-        "oil_pressure": [0.14, 0.13, 0.15, 0.12],  # MPa, near 0.15 threshold
-        "oil_flow_rate": [0.89, 0.88, 0.91, 0.87], # Below 0.90 threshold
+        "lubrication_effectiveness": [0.86, 0.87, 0.85, 0.86], # Below 0.85 threshold (100-200 min timing)
+        "oil_pressure": [0.16, 0.17, 0.15, 0.16],  # MPa, near 0.15 threshold (100-200 min timing)
+        "oil_flow_rate": [0.91, 0.92, 0.90, 0.91], # Below 0.90 threshold (100-200 min timing)
         
-        "description": "Lubrication system performance requiring check",
+        "description": "Lubrication system performance requiring check (100-200 min)",
         "threshold_info": {"parameter": "lubrication_effectiveness", "threshold": 0.85, "direction": "less_than"},
         "system_notes": "Check oil pumps, filters, and distribution system"
     },
@@ -232,33 +232,33 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
     
     "pump_inspection": {
         # PRIMARY: Performance degradation from lubrication system
-        "efficiency_factor": [0.84, 0.83, 0.85, 0.82], # lubrication_system.pump_efficiency_factor
-        "flow_factor": [0.86, 0.85, 0.87, 0.84],       # lubrication_system.pump_flow_factor
-        "head_factor": [0.88, 0.87, 0.89, 0.86],       # lubrication_system.pump_head_factor
+        "efficiency_factor": [0.86, 0.87, 0.85, 0.86], # lubrication_system.pump_efficiency_factor (100-200 min timing)
+        "flow_factor": [0.97, 0.98, 0.96, 0.97],       # lubrication_system.pump_flow_factor (100-200 min timing)
+        "head_factor": [0.95, 0.96, 0.94, 0.95],       # lubrication_system.pump_head_factor (100-200 min timing)
         
         # SUPPORTING: Underlying causes of performance degradation
         "system_health_factor": [0.82, 0.81, 0.83, 0.80], # Overall system health
         "lubrication_effectiveness": [0.86, 0.85, 0.87, 0.84], # Lubrication quality
         
-        "description": "Performance factors below thresholds - inspection required",
+        "description": "Performance factors below thresholds - inspection required (100-200 min)",
         "threshold_info": {"parameter": "efficiency_factor", "threshold": 0.85, "direction": "less_than"},
         "architecture_notes": "All performance factors calculated by lubrication system"
     },
     
     "vibration_analysis": {
         # Vibration conditions requiring analysis
-        "vibration_increase": [2.0, 1.8, 2.2, 1.9],  # mm/s increase from baseline
+        "vibration_increase": [1.4, 1.3, 1.5, 1.2],  # mm/s increase from baseline (100-200 min timing)
         "motor_bearing_wear": [4.0, 3.8, 4.2, 3.9],  # Contributing to vibration
         "pump_bearing_wear": [3.5, 3.2, 3.8, 3.4],   # Contributing to vibration
         
-        "description": "Vibration levels requiring detailed analysis",
+        "description": "Vibration levels requiring detailed analysis (100-200 min)",
         "threshold_info": {"parameter": "vibration_increase", "threshold": 1.5, "direction": "greater_than"},
         "analysis_scope": "Bearing condition, alignment, and balance assessment"
     },
     
     "component_overhaul": {
         # PRIMARY: System health requiring major maintenance
-        "system_health_factor": [0.78, 0.76, 0.79, 0.77], # Below 0.80 threshold
+        "system_health_factor": [0.81, 0.82, 0.80, 0.81], # Below 0.80 threshold (100-200 min timing)
         
         # SUPPORTING: Multiple component wear issues
         "motor_bearing_wear": [12.0, 11.5, 12.5, 11.8],   # High wear levels
@@ -274,7 +274,7 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
         "efficiency_factor": [0.75, 0.73, 0.77, 0.74],  # Severely degraded
         "flow_factor": [0.78, 0.76, 0.80, 0.77],        # Severely degraded
         
-        "description": "Multiple systems degraded - comprehensive overhaul required",
+        "description": "Multiple systems degraded - comprehensive overhaul required (100-200 min)",
         "threshold_info": {"parameter": "system_health_factor", "threshold": 0.80, "direction": "less_than"},
         "comprehensive_scope": "Resets all wear, restores oil quality, rebuilds performance"
     },
@@ -288,7 +288,7 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
     
     "routine_maintenance": {
         # Routine maintenance indicators
-        "system_health_factor": [0.88, 0.87, 0.89, 0.86], # Good but declining
+        "system_health_factor": [0.91, 0.92, 0.90, 0.91], # Good but declining (100-200 min timing)
         "oil_contamination_level": 8.0,  # Moderate contamination
         "lubrication_effectiveness": [0.92, 0.91, 0.93, 0.90], # Good lubrication
         
@@ -296,7 +296,7 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
         "motor_bearing_wear": [2.0, 1.8, 2.2, 1.9],  # Low wear levels
         "pump_bearing_wear": [1.5, 1.3, 1.7, 1.4],   # Low wear levels
         
-        "description": "System in good condition - routine maintenance recommended",
+        "description": "System in good condition - routine maintenance recommended (100-200 min)",
         "threshold_info": {"parameter": "system_health_factor", "threshold": 0.90, "direction": "less_than"},
         "maintenance_scope": "Preventive maintenance to maintain optimal performance"
     },
