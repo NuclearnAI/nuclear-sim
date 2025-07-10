@@ -1,381 +1,439 @@
 """
-Feedwater System Initial Conditions - REFACTORED
+Physics-Based Pump 1 Initial Conditions for 100-200 Minute Maintenance Triggers
 
-This module defines initial conditions for triggering feedwater system
-maintenance actions through natural system degradation.
+Complete set of all scenarios from feedwater_conditions.py but with proper physics-based
+calculations using actual degradation rates from pump_lubrication.py.
 
-ARCHITECTURE COMPLIANCE:
-- Cavitation damage drives impeller replacement (pump.state.cavitation_damage)
-- Bearing wear drives bearing replacement (lubrication_system.component_wear)
-- Lubrication system is single source of truth for all mechanical parameters
-- All conditions map to actual state variables in the refactored system
+CRITICAL DISCOVERY - DRAMATICALLY FASTER DEGRADATION RATES:
+1. Impeller: 0.002%/hour (was 0.0006) - 3.3x faster
+2. Motor bearings: 0.0015%/hour (was 0.0005) - 3x faster  
+3. Pump bearings: 0.0025%/hour (was 0.0008) - 3x faster
+4. Thrust bearings: 0.003%/hour (was 0.001) - 3x faster
+5. Seals: 0.004%/hour (was 0.0012) - 3.3x faster
+6. Oil contamination: 0.001 ppm/hour (was 0.0002) - 5x faster
 
-PHYSICS-BASED RELATIONSHIPS:
-- Cavitation damages impellers → triggers impeller_replacement
-- Cavitation stresses bearings → tracked as pump_bearing_wear
-- Bearing wear triggers bearing_replacement (separate from impeller issues)
+PHYSICS-BASED STRATEGY:
+- Calculate actual degradation rates including load factors and coupling effects
+- Set initial conditions based on target time to threshold (100-200 minutes)
+- Only FWP-1 (index 0) has problematic conditions
+- FWP-2, FWP-3, FWP-4 have safe baseline conditions
 
-KEY CHANGES FROM ORIGINAL:
-1. Removed ~30 invalid state variable references
-2. Aligned with corrected maintenance thresholds from nuclear_plant_comprehensive_config.yaml
-3. Implemented DRY-compliant architecture with lubrication system as single source of truth
-4. Added cavitation-based impeller maintenance logic
-5. Separated bearing maintenance from impeller maintenance
+LOAD FACTOR CALCULATIONS:
+- Motor bearings: base × electrical_load^1.5 × speed^1.8
+- Pump bearings: base × hydraulic_load^2.0 × (1 + cavitation×2.0)
+- Thrust bearings: base × axial_load^2.2
+- Seals: base × pressure^1.8 × (1 + cavitation×5.0)
+- Oil contamination: base × load + wear_contamination + chemistry_effects
 """
 
 from typing import Dict, Any
 
-# Feedwater system initial conditions - TARGETED SCENARIOS FOR SINGLE ACTION TRIGGERING
+# Physics-based pump 1 conditions - ALL SCENARIOS WITH PROPER CALCULATIONS
 FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
     
     # === OIL CHANGE SCENARIO ===
-    # Triggers oil_change action only by setting oil contamination above threshold
-    
+    # Base rate: 0.001 ppm/hour + load acceleration + wear contamination
+    # With load_factor=1.0 + bearing wear contamination: ~0.005 ppm/hour
+    # Target: 120 minutes = 0.005 × 2.0 hours = 0.01 ppm distance needed
     "oil_change": {
-        # === PRIMARY TRIGGER ===
-        "pump_oil_contamination": 14.99,          # Very close to 15.0 threshold - should trigger within 100-200 min
+        "pump_oil_contamination": 14.99,                  # 15.0 - 0.01 = 14.99
         
-        # === KEEP ALL OTHER PARAMETERS SAFE (below thresholds) ===
-        "pump_oil_water_content": 0.06,          # <0.08 (safe)
-        "pump_oil_acid_number": 1.3,             # <1.6 (safe)
-        "oil_temperature": 54.0,                 # <55.0 (safe)
-        "motor_temperature": [70.0, 70.0, 70.0, 70.0],  # <85.0 (safe)
-        "bearing_temperatures": [60.0, 60.0, 60.0, 25.0],  # <70.0 (safe)
+        # Supporting accelerated conditions that increase contamination rate
+        "pump_oil_water_content": 0.075,                  # Elevated moisture accelerates contamination
+        "pump_oil_acid_number": 1.5,                      # Elevated acidity accelerates breakdown
+        "oil_temperature": 52.0,                          # Elevated temperature accelerates degradation
         
-        # === REALISTIC SUPPORTING VALUES ===
-        "pump_oil_levels": [90.0, 90.0, 90.0, 100.0],  # Higher levels
-        "motor_bearing_wear": [1.0, 1.0, 1.0, 1.0],    # Very low wear
-        "pump_bearing_wear": [1.0, 1.0, 1.0, 1.0],     # Very low wear
-        "thrust_bearing_wear": [0.5, 0.5, 0.5, 0.5],   # Very low wear
-        "seal_face_wear": [0.5, 0.5, 0.5, 0.5],        # Very low wear
-        "pump_vibrations": [5.0, 3.0, 3.0, 0.0],       # Lower vibration
-        "cavitation_intensity": [0.02, 0.02, 0.02, 0.02],  # Very low cavitation
-        "npsh_available": [20.0, 20.0, 20.0, 20.0],    # Excellent NPSH
+        # Safe values for FWP 2,3,4
+        "motor_temperature": [75.0, 30.0, 30.0, 25.0],   # Only FWP-1 elevated
+        "motor_bearing_wear": [2.0, 0.1, 0.1, 0.0],      # Only FWP-1 has wear
+        "pump_bearing_wear": [1.5, 0.1, 0.1, 0.0],       # Only FWP-1 has wear
+        "thrust_bearing_wear": [1.0, 0.1, 0.1, 0.0],     # Only FWP-1 has wear
+        "pump_oil_levels": [88.0, 98.0, 98.0, 100.0],    # Only FWP-1 lower
+        "pump_vibrations": [5.0, 1.0, 1.0, 0.0],         # Only FWP-1 elevated
+        "cavitation_intensity": [0.02, 0.01, 0.01, 0.01], # Very low cavitation
+        "npsh_available": [18.0, 20.0, 20.0, 20.0],      # Good NPSH for others
         
-        "description": "Pure oil contamination scenario - triggers oil_change only (100-200 min)",
+        "description": "Oil contamination with accelerated degradation - 120 min target",
         "expected_action": "oil_change",
-        "threshold_triggered": {"param": "pump_oil_contamination", "value": 14.9, "threshold": 15.0},
-        "competing_actions_prevented": ["motor_inspection", "bearing_inspection", "lubrication_system_check", "component_overhaul"]
+        "target_pump": "FWP-1",
+        "physics_calculation": "0.005 ppm/hour × 2.0 hours = 0.01 ppm distance"
     },
     
     # === OIL TOP-OFF SCENARIO ===
-    # Triggers oil_top_off action only by setting oil level below threshold
-    
+    # Seal leakage calculation: seal_wear × 0.002 L/min per % wear
+    # 12% seal wear → 0.024 L/min leakage × 180 minutes = 4.32 L lost
+    # 4.32 L / 150 L reservoir × 100% = 2.88% oil level loss
+    # Initial level needed: 60.0% + 2.88% = 62.88%
     "oil_top_off": {
-        # === PRIMARY TRIGGER ===
-        "pump_oil_levels": [60.5, 60.8, 61.0, 100.0],  # Very close to 60.0 threshold - should trigger within 100-200 min
-        "seal_face_wear": [0.008, 0.008, 0.008, 0.008],  # Low wear
-
+        "pump_oil_levels": [60.9, 98.0, 98.0, 100.0],    # 60.0 + 2.9 buffer for 180 min
+        "seal_face_wear": [12.0, 0.1, 0.1, 0.1],         # Moderate seal wear causing leakage
         
-        # === KEEP ALL OTHER PARAMETERS SAFE ===
-        """
-        "pump_oil_contamination": 10.0,          # <15.0 (safe)
-        "pump_oil_water_content": 0.06,          # <0.08 (safe)
-        "pump_oil_acid_number": 1.2,             # <1.6 (safe)
-        "motor_temperature": [70.0, 70.0, 70.0, 70.0],  # <85.0 (safe)
-        "bearing_temperatures": [60.0, 60.0, 60.0, 25.0],  # <70.0 (safe)
+        # Safe values for other parameters
+        "pump_oil_contamination": 8.0,                    # Safe system-wide
+        "motor_bearing_wear": [1.0, 0.1, 0.1, 0.0],      # Only FWP-1 has wear
+        "pump_bearing_wear": [1.0, 0.1, 0.1, 0.0],       # Only FWP-1 has wear
+        "thrust_bearing_wear": [0.5, 0.1, 0.1, 0.0],     # Only FWP-1 has wear
+        "motor_temperature": [70.0, 30.0, 30.0, 25.0],   # Only FWP-1 elevated
         
-        # === REALISTIC SUPPORTING VALUES ===
-        "bearing_wear": [0.015, 0.015, 0.015, 0.015],  # Low wear
-        "impeller_wear": [0.005, 0.005, 0.005, 0.005],  # Low wear
-        "pump_vibrations": [4.0, 4.0, 4.0, 0.0],       # Low vibration
-        "cavitation_intensity": [0.03, 0.03, 0.03, 0.03],  # Very low cavitation
-        "npsh_available": [16.0, 16.0, 16.0, 16.0],    # Excellent NPSH
-        """    
-        "description": "Pure oil level scenario - triggers oil_top_off only (100-200 min)",
+        "description": "Oil level drop from seal leakage - 180 min target",
         "expected_action": "oil_top_off",
-        "threshold_triggered": {"param": "pump_oil_levels", "value": 64.0, "threshold": 60.0},
-        "competing_actions_prevented": ["oil_change", "motor_inspection", "bearing_inspection"]
-    
+        "target_pump": "FWP-1",
+        "physics_calculation": "12% seal wear → 0.024 L/min × 180 min = 2.88% loss"
     },
     
     # === MOTOR INSPECTION SCENARIO ===
-    # Triggers motor_inspection action only by setting motor temperature above threshold
-    
+    # Motor temperature rise from electrical heating: ~0.5°C/hour at high electrical load
+    # Target: 100 minutes = 0.5 × 1.67 hours = 0.83°C distance needed
     "motor_inspection": {
-        # === PRIMARY TRIGGER ===
-        "motor_temperature": [83.0, 84.7, 83.5, 25.0],  # Very close to 85.0 threshold - should trigger within 100-200 min
+        "motor_temperature": [84.2, 30.0, 30.0, 25.0],   # 85.0 - 0.8 = 84.2
         
-        # === KEEP ALL OTHER PARAMETERS SAFE ===
-        #"pump_oil_contamination": 10.0,          # <15.0 (safe)
-        #"pump_oil_water_content": 0.05,          # <0.08 (safe)
-        #"pump_oil_acid_number": 1.0,             # <1.6 (safe)
-        #"oil_temperature": 50.0,                 # <55.0 (safe)
-        #"bearing_temperatures": [65.0, 65.0, 65.0, 25.0],  # <70.0 (safe)
-        #"pump_oil_levels": [90.0, 90.0, 90.0, 100.0],  # Good levels
+        # Supporting conditions that cause motor heating
+        "motor_bearing_wear": [6.0, 0.1, 0.1, 0.0],      # Bearing friction increases heat
+        "pump_vibrations": [12.0, 1.0, 1.0, 0.0],        # Motor vibration from electrical issues
         
-        # === REALISTIC SUPPORTING VALUES ===
-        #"bearing_wear": [0.01, 0.01, 0.01, 0.01],      # Very low wear
-        #"seal_face_wear": [0.005, 0.005, 0.005, 0.005],  # Very low wear
-        #"impeller_wear": [0.003, 0.003, 0.003, 0.003],  # Very low wear
-        #"pump_vibrations": [6.0, 6.0, 6.0, 0.0],       # Slightly elevated (motor issue)
-        #"cavitation_intensity": [0.02, 0.02, 0.02, 0.02],  # Very low cavitation
-        #"npsh_available": [18.0, 18.0, 18.0, 18.0],    # Excellent NPSH
+        # Safe values for other components
+        "pump_oil_contamination": 10.0,                   # Safe system-wide
+        "pump_bearing_wear": [1.0, 0.1, 0.1, 0.0],       # Only FWP-1 has wear
+        "thrust_bearing_wear": [0.5, 0.1, 0.1, 0.0],     # Only FWP-1 has wear
+        "pump_oil_levels": [90.0, 98.0, 98.0, 100.0],    # Only FWP-1 lower
         
-        "description": "Pure motor temperature scenario - triggers motor_inspection only (100-200 min)",
+        "description": "Motor temperature rise from electrical heating - 100 min target",
         "expected_action": "motor_inspection",
-        "threshold_triggered": {"param": "motor_temperature", "value": 83.0, "threshold": 85.0},
-        "competing_actions_prevented": ["oil_change", "oil_top_off", "bearing_inspection"]
+        "target_pump": "FWP-1",
+        "physics_calculation": "0.5°C/hour × 1.67 hours = 0.8°C distance"
     },
     
-    # === BEARING REPLACEMENT SCENARIO ===
-    # Triggers bearing_replacement action only by setting bearing wear above threshold
-    
-    # === INDIVIDUAL BEARING REPLACEMENT SCENARIOS ===
-    
+    # === MOTOR BEARING REPLACEMENT ===
+    # Base rate: 0.0015%/hour
+    # With electrical_load_factor^1.5 = 1.2^1.5 = 1.32x
+    # With speed_factor^1.8 = 1.05^1.8 = 1.09x
+    # Actual rate: 0.0015 × 1.32 × 1.09 = 0.0022%/hour
+    # Target: 100 minutes = 0.0022 × 1.67 hours = 0.004% distance needed
     "motor_bearing_replacement": {
-        # Only motor bearings need replacement
-        "motor_bearing_wear": [7.9, 7.8, 7.92, 0.0],  # Very close to 8.0% threshold - should trigger within 100-200 min
-        "pump_bearing_wear": [4.0, 4.2, 4.8, 0.0],    # <6.0% (safe)
-        "thrust_bearing_wear": [2.5, 2.2, 2.8, 0.0],  # <4.0% (safe)
+        "motor_bearing_wear": [7.996, 0.1, 0.1, 0.0],    # 8.0 - 0.004 = 7.996
         
-        "description": "Motor bearing wear scenario - triggers motor bearing replacement only (100-200 min)",
+        # Conditions that create electrical load acceleration
+        "motor_temperature": [82.0, 30.0, 30.0, 25.0],   # Elevated electrical load
+        "bearing_temperatures": [68.0, 30.0, 30.0, 25.0], # Heat from electrical losses
+        "pump_vibrations": [15.0, 1.0, 1.0, 0.0],        # Vibration from motor bearing wear
+        
+        # Safe values for other components
+        "pump_bearing_wear": [1.0, 0.1, 0.1, 0.0],       # Only FWP-1 has wear
+        "thrust_bearing_wear": [0.5, 0.1, 0.1, 0.0],     # Only FWP-1 has wear
+        "pump_oil_contamination": 10.0,                   # Safe system-wide
+        "pump_oil_levels": [90.0, 98.0, 98.0, 100.0],    # Only FWP-1 lower
+        
+        "description": "Motor bearing wear with electrical load acceleration - 100 min target",
         "expected_action": "bearing_replacement",
         "component_id": "motor_bearings",
-        "threshold_triggered": {"param": "motor_bearing_wear", "value": 7.8, "threshold": 8.0}
+        "target_pump": "FWP-1",
+        "physics_calculation": "0.0015 × 1.32 × 1.09 = 0.0022%/hour × 1.67h = 0.004% distance"
     },
-
+    
+    # === PUMP BEARING REPLACEMENT ===
+    # Base rate: 0.0025%/hour
+    # With hydraulic_load_factor^2.0 = 1.1^2.0 = 1.21x
+    # With cavitation factor = 1.0 + 0.1 × 2.0 = 1.2x
+    # Actual rate: 0.0025 × 1.21 × 1.2 = 0.0036%/hour
+    # Target: 80 minutes = 0.0036 × 1.33 hours = 0.005% distance needed
     "pump_bearing_replacement": {
-        # Only pump bearings need replacement
-        "motor_bearing_wear": [5.5, 5.2, 5.8, 0.0],   # <8.0% (safe)
-        "pump_bearing_wear": [5.9, 5.8, 5.95, 0.0],   # Very close to 6.0% threshold - should trigger within 100-200 min
-        "thrust_bearing_wear": [2.5, 2.2, 2.8, 0.0],  # <4.0% (safe)
+        "pump_bearing_wear": [5.995, 0.1, 0.1, 0.0],     # 6.0 - 0.005 = 5.995
         
-        "description": "Pump bearing wear scenario - triggers pump bearing replacement only (100-200 min)",
-        "expected_action": "bearing_replacement", 
-        "component_id": "pump_bearings",
-        "threshold_triggered": {"param": "pump_bearing_wear", "value": 5.8, "threshold": 6.0}
-    },
-
-    "thrust_bearing_replacement": {
-        # Only thrust bearings need replacement
-        "motor_bearing_wear": [6.5, 6.2, 6.8, 0.0],   # <8.0% (safe)
-        "pump_bearing_wear": [4.5, 4.2, 4.8, 0.0],    # <6.0% (safe)
-        "thrust_bearing_wear": [3.9, 3.8, 3.95, 0.0], # Very close to 4.0% threshold - should trigger within 100-200 min
+        # Conditions that create hydraulic load + cavitation acceleration
+        "cavitation_intensity": [0.1, 0.01, 0.01, 0.01], # Moderate cavitation for FWP-1
+        "npsh_available": [12.0, 18.0, 18.0, 20.0],      # Reduced NPSH for FWP-1 only
+        "pump_vibrations": [12.0, 1.0, 1.0, 0.0],        # Cavitation-induced vibration
         
-        "description": "Thrust bearing wear scenario - triggers thrust bearing replacement only (100-200 min)",
+        # Safe values for other components
+        "motor_bearing_wear": [1.5, 0.1, 0.1, 0.0],      # Only FWP-1 has wear
+        "thrust_bearing_wear": [0.8, 0.1, 0.1, 0.0],     # Only FWP-1 has wear
+        "motor_temperature": [70.0, 30.0, 30.0, 25.0],   # Only FWP-1 elevated
+        "pump_oil_contamination": 8.0,                    # Safe system-wide
+        
+        "description": "Pump bearing wear with cavitation acceleration - 80 min target",
         "expected_action": "bearing_replacement",
-        "component_id": "thrust_bearing", 
-        "threshold_triggered": {"param": "thrust_bearing_wear", "value": 3.8, "threshold": 4.0}
+        "component_id": "pump_bearings",
+        "target_pump": "FWP-1",
+        "physics_calculation": "0.0025 × 1.21 × 1.2 = 0.0036%/hour × 1.33h = 0.005% distance"
     },
-
-    "multiple_bearing_replacement": {
-        # Multiple bearing types need replacement
-        "motor_bearing_wear": [7.8, 7.7, 7.9, 7.6],  # >8.0% triggers motor bearing replacement (100-200 min timing)
-        "pump_bearing_wear": [5.8, 5.7, 5.9, 5.6],   # >6.0% triggers pump bearing replacement (100-200 min timing)
-        "thrust_bearing_wear": [3.8, 3.7, 3.9, 3.6], # >4.0% triggers thrust bearing replacement (100-200 min timing)
+    
+    # === THRUST BEARING REPLACEMENT ===
+    # Base rate: 0.003%/hour
+    # With axial_load_factor^2.2 = 1.15^2.2 = 1.35x (from high flow/head)
+    # Actual rate: 0.003 × 1.35 = 0.004%/hour
+    # Target: 60 minutes = 0.004 × 1.0 hours = 0.004% distance needed
+    "thrust_bearing_replacement": {
+        "thrust_bearing_wear": [3.996, 0.1, 0.1, 0.0],   # 4.0 - 0.004 = 3.996
         
-        "description": "Multiple bearing wear scenario - triggers multiple bearing replacements (100-200 min)",
+        # Conditions that create high axial loads
+        "pump_flows": [580.0, 500.0, 500.0, 0.0],        # High flow = high axial thrust for FWP-1
+        "pump_speeds": [3700.0, 3600.0, 3600.0, 0.0],    # Slightly overspeed for FWP-1
+        "bearing_temperatures": [65.0, 30.0, 30.0, 25.0], # Heat from high axial loads
+        
+        # Safe values for other components
+        "motor_bearing_wear": [1.0, 0.1, 0.1, 0.0],      # Only FWP-1 has wear
+        "pump_bearing_wear": [1.2, 0.1, 0.1, 0.0],       # Only FWP-1 has wear
+        "motor_temperature": [68.0, 30.0, 30.0, 25.0],   # Only FWP-1 elevated
+        "pump_oil_contamination": 8.0,                    # Safe system-wide
+        
+        "description": "Thrust bearing wear with axial load acceleration - 60 min target",
+        "expected_action": "bearing_replacement",
+        "component_id": "thrust_bearing",
+        "target_pump": "FWP-1",
+        "physics_calculation": "0.003 × 1.35 = 0.004%/hour × 1.0h = 0.004% distance"
+    },
+    
+    # === MULTIPLE BEARING REPLACEMENT ===
+    # All bearings approaching thresholds at different rates based on their physics
+    "multiple_bearing_replacement": {
+        "motor_bearing_wear": [7.994, 0.1, 0.1, 0.0],    # 100 min target (0.0022%/h × 1.67h = 0.004%)
+        "pump_bearing_wear": [5.992, 0.1, 0.1, 0.0],     # 80 min target (0.0036%/h × 1.33h = 0.005%)
+        "thrust_bearing_wear": [3.992, 0.1, 0.1, 0.0],   # 60 min target (0.004%/h × 1.0h = 0.004%)
+        
+        # Supporting conditions for multiple bearing issues
+        "vibration_increase": [2.0, 0.1, 0.1, 0.1],      # High vibration from multiple bearing wear
+        "oil_temperature": 52.0,                          # Elevated from multiple heat sources
+        "motor_temperature": [80.0, 30.0, 30.0, 25.0],   # Elevated electrical load
+        "bearing_temperatures": [66.0, 30.0, 30.0, 25.0], # Heat from multiple bearing friction
+        
+        "description": "Multiple bearing wear with staggered physics-based timing - 60-100 min targets",
         "expected_action": "bearing_replacement",
         "component_id": "all",
-        # Supporting vibration and temperature indicators
-        "vibration_increase": [1.5, 1.3, 1.7, 1.4],  # mm/s increase from wear
-        "oil_temperature": 52.0,  # °C, elevated but below threshold
-        
-        "description": "Bearing wear requiring inspection and cleaning",
-        "threshold_info": {"parameter": "motor_bearing_wear", "threshold": 6.0, "direction": "greater_than"},
-        "maintenance_effect": "10% wear reduction through cleaning and adjustment"
+        "target_pump": "FWP-1"
     },
     
+    # === SEAL REPLACEMENT ===
+    # Base rate: 0.004%/hour
+    # With pressure_factor^1.8 = 1.1^1.8 = 1.19x
+    # With cavitation factor = 1.0 + 0.15 × 5.0 = 1.75x (seals very sensitive to cavitation)
+    # Actual rate: 0.004 × 1.19 × 1.75 = 0.0083%/hour
+    # Target: 150 minutes = 0.0083 × 2.5 hours = 0.021% distance needed
     "seal_replacement": {
-        # PRIMARY: Seal wear and leakage (lubrication system tracking) - UPDATED for 15% threshold (100-200 min timing)
-        "seal_face_wear": [14.8, 14.7, 14.9, 14.6],         # lubrication_system.component_wear['mechanical_seals'] - Above 15% threshold
-        #"seal_leakage_rate": [0.16, 0.14, 0.18, 0.15], # lubrication_system.seal_leakage_rate (L/min) - Above 0.15 threshold
+        "seal_face_wear": [14.98, 0.1, 0.1, 0.1],        # 15.0 - 0.02 = 14.98
         
-        # SUPPORTING: Conditions that accelerate seal wear - realistic degraded conditions
-        #"pump_oil_contamination": 18.0,               # ppm - High contamination accelerates seal wear
-        #"pump_oil_water_content": 0.09,               # % - Above 0.08 threshold, moisture damages seals
-        #"pump_oil_acid_number": 1.8,                  # mg KOH/g - Above 1.6 threshold, acidity attacks seals
-        #"oil_temperature": 58.0,                      # °C - Above 55°C threshold, heat degrades seals
-        #"cavitation_intensity": [0.28, 0.25, 0.30, 0.27], # Above 0.25 threshold - cavitation damages seals
+        # Conditions that accelerate seal wear
+        "cavitation_intensity": [0.15, 0.01, 0.01, 0.01], # Moderate cavitation near seals
+        "pump_oil_contamination": 13.0,                   # Contamination damages seal faces
+        "pump_oil_water_content": 0.07,                   # Moisture damages seal materials
+        "oil_temperature": 53.0,                          # Heat degrades seal elastomers
         
-        # REALISTIC SUPPORTING VALUES for degraded system
-        #"pump_oil_levels": [85.0, 87.0, 83.0, 100.0], # Lower oil levels from leakage
-        #"bearing_temperatures": [75.0, 73.0, 77.0, 25.0], # Elevated bearing temps from poor lubrication
-        #"motor_temperature": [82.0, 80.0, 84.0, 78.0], # Elevated motor temps but below 85°C trip
-        #"pump_vibrations": [18.0, 16.0, 20.0, 0.0],   # High vibration from seal wear
-        #"npsh_available": [10.0, 9.5, 10.5, 10.2],    # Reduced NPSH from system degradation
+        # Safe values for other components
+        "motor_bearing_wear": [1.5, 0.1, 0.1, 0.0],      # Only FWP-1 has wear
+        "pump_bearing_wear": [1.8, 0.1, 0.1, 0.0],       # Only FWP-1 has wear
+        "thrust_bearing_wear": [1.2, 0.1, 0.1, 0.0],     # Only FWP-1 has wear
+        "pump_oil_levels": [85.0, 98.0, 98.0, 100.0],    # Only FWP-1 lower from leakage
+        "motor_temperature": [70.0, 30.0, 30.0, 25.0],   # Only FWP-1 elevated
         
-        "description": "Seal wear above 15% threshold with significant leakage - replacement required (100-200 min)",
-        "threshold_info": {"parameter": "seal_wear", "threshold": 15.0, "direction": "greater_than"},
-        "physics_notes": "High seal wear with cavitation and poor oil quality requires immediate replacement"
+        "description": "Seal wear with pressure + cavitation acceleration - 150 min target",
+        "expected_action": "seal_replacement",
+        "target_pump": "FWP-1",
+        "physics_calculation": "0.004 × 1.19 × 1.75 = 0.0083%/hour × 2.5h = 0.021% distance"
     },
     
-    # === LUBRICATION SYSTEM MAINTENANCE ===
-    # These conditions trigger lubrication maintenance (single source of truth)
-    
+    # === OIL ANALYSIS ===
+    # Multiple oil quality parameters approaching thresholds with realistic degradation
     "oil_analysis": {
-        # PRIMARY: Oil quality parameters from lubrication system
-        "oil_water_content": 0.078,      # lubrication_system.oil_moisture_content (%) - 100-200 min timing
-        "oil_acid_number": 1.58,         # lubrication_system.oil_acidity_number (mg KOH/g) - 100-200 min timing
-        "oil_contamination_level": 13.5, # lubrication_system.oil_contamination_level (ppm)
+        # Oil moisture increase: ~0.0015%/hour from system operation
+        # Target: 120 minutes = 0.0015 × 2.0 = 0.003% distance needed
+        "oil_water_content": 0.077,                       # 0.08 - 0.003 = 0.077
         
-        "description": "Oil quality parameters requiring analysis (100-200 min)",
-        "threshold_info": {"parameter": "oil_water_content", "threshold": 0.08, "direction": "greater_than"},
-        "maintenance_notes": "Analysis determines if oil change or treatment needed"
+        # Oil acidity increase: ~0.01 mg KOH/g per hour from oxidation
+        # Target: 120 minutes = 0.01 × 2.0 = 0.02 distance needed
+        "oil_acid_number": 1.58,                          # 1.6 - 0.02 = 1.58
+        
+        "oil_contamination_level": 13.5,                  # Moderate contamination
+        "pump_oil_contamination": 13.5,                   # System-wide parameter
+        
+        # Safe bearing wear levels
+        "motor_bearing_wear": [1.0, 0.1, 0.1, 0.0],      # Only FWP-1 has wear
+        "pump_bearing_wear": [1.0, 0.1, 0.1, 0.0],       # Only FWP-1 has wear
+        "thrust_bearing_wear": [0.5, 0.1, 0.1, 0.0],     # Only FWP-1 has wear
+        
+        "description": "Oil quality parameters requiring analysis - 120 min target",
+        "expected_action": "oil_analysis",
+        "physics_calculation": "Moisture: 0.0015%/h × 2h = 0.003%, Acidity: 0.01/h × 2h = 0.02"
     },
     
- 
+    # === LUBRICATION SYSTEM CHECK ===
+    # Lubrication effectiveness degradation from contamination and additive depletion
+    # Rate: ~0.002/hour from oil quality degradation
+    # Target: 150 minutes = 0.002 × 2.5 hours = 0.005 distance needed
     "lubrication_system_check": {
-        # Lubrication system performance requiring check
-        "lubrication_effectiveness": [0.86, 0.87, 0.85, 0.86], # Below 0.85 threshold (100-200 min timing)
-        "oil_pressure": [0.16, 0.17, 0.15, 0.16],  # MPa, near 0.15 threshold (100-200 min timing)
-        "oil_flow_rate": [0.91, 0.92, 0.90, 0.91], # Below 0.90 threshold (100-200 min timing)
+        "lubrication_effectiveness": [0.845, 0.95, 0.95, 0.95], # 0.85 - 0.005 = 0.845
         
-        "description": "Lubrication system performance requiring check (100-200 min)",
-        "threshold_info": {"parameter": "lubrication_effectiveness", "threshold": 0.85, "direction": "less_than"},
-        "system_notes": "Check oil pumps, filters, and distribution system"
+        # Supporting degraded lubrication conditions
+        "oil_pressure": [0.16, 0.25, 0.25, 0.25],        # Slightly low pressure for FWP-1
+        "oil_flow_rate": [0.89, 0.95, 0.95, 0.95],       # Slightly low flow for FWP-1
+        "pump_oil_contamination": 14.0,                   # High contamination affects effectiveness
+        "pump_oil_water_content": 0.075,                  # High moisture affects effectiveness
+        "oil_temperature": 54.0,                          # High temperature affects effectiveness
+        
+        # Safe bearing wear levels
+        "motor_bearing_wear": [1.0, 0.1, 0.1, 0.0],      # Only FWP-1 has wear
+        "pump_bearing_wear": [1.0, 0.1, 0.1, 0.0],       # Only FWP-1 has wear
+        "thrust_bearing_wear": [0.5, 0.1, 0.1, 0.0],     # Only FWP-1 has wear
+        
+        "description": "Lubrication effectiveness degradation - 150 min target",
+        "expected_action": "lubrication_system_check",
+        "target_pump": "FWP-1",
+        "physics_calculation": "0.002/hour × 2.5 hours = 0.005 effectiveness loss"
     },
     
-    
-    # === PERFORMANCE MONITORING CONDITIONS ===
-    # These trigger performance-based maintenance actions
-    
+    # === PUMP INSPECTION ===
+    # Performance factor degradation from accumulated wear and lubrication effects
     "pump_inspection": {
-        # PRIMARY: Performance degradation from lubrication system
-        "efficiency_factor": [0.86, 0.87, 0.85, 0.86], # lubrication_system.pump_efficiency_factor (100-200 min timing)
-        "flow_factor": [0.97, 0.98, 0.96, 0.97],       # lubrication_system.pump_flow_factor (100-200 min timing)
-        "head_factor": [0.95, 0.96, 0.94, 0.95],       # lubrication_system.pump_head_factor (100-200 min timing)
+        # Efficiency degradation from bearing wear and lubrication quality
+        "efficiency_factor": [0.845, 0.95, 0.95, 0.95],  # 0.85 - 0.005 = 0.845
+        "flow_factor": [0.965, 0.98, 0.98, 0.98],        # 0.97 - 0.005 = 0.965
+        "head_factor": [0.945, 0.96, 0.96, 0.96],        # 0.95 - 0.005 = 0.945
         
-        # SUPPORTING: Underlying causes of performance degradation
-        "system_health_factor": [0.82, 0.81, 0.83, 0.80], # Overall system health
-        "lubrication_effectiveness": [0.86, 0.85, 0.87, 0.84], # Lubrication quality
+        # Supporting system health indicators
+        "system_health_factor": [0.82, 0.90, 0.90, 0.90], # Overall health declining
+        "lubrication_effectiveness": [0.86, 0.92, 0.92, 0.92], # Lubrication quality declining
         
-        "description": "Performance factors below thresholds - inspection required (100-200 min)",
-        "threshold_info": {"parameter": "efficiency_factor", "threshold": 0.85, "direction": "less_than"},
-        "architecture_notes": "All performance factors calculated by lubrication system"
+        # Moderate wear levels causing performance degradation
+        "motor_bearing_wear": [3.0, 0.1, 0.1, 0.0],      # Moderate wear affecting efficiency
+        "pump_bearing_wear": [2.5, 0.1, 0.1, 0.0],       # Moderate wear affecting flow
+        "thrust_bearing_wear": [2.0, 0.1, 0.1, 0.0],     # Moderate wear affecting head
+        
+        "description": "Performance degradation requiring inspection - 120 min target",
+        "expected_action": "pump_inspection",
+        "target_pump": "FWP-1"
     },
     
+    # === VIBRATION ANALYSIS ===
+    # Vibration increase from bearing wear: ~0.1 mm/s per % bearing wear
+    # With 4% total bearing wear → 0.4 mm/s increase over time
     "vibration_analysis": {
-        # Vibration conditions requiring analysis
-        "vibration_increase": [1.4, 1.3, 1.5, 1.2],  # mm/s increase from baseline (100-200 min timing)
-        "motor_bearing_wear": [4.0, 3.8, 4.2, 3.9],  # Contributing to vibration
-        "pump_bearing_wear": [3.5, 3.2, 3.8, 3.4],   # Contributing to vibration
+        # Vibration approaching threshold with physics-based calculation
+        "pump_vibrations": [19.85, 1.0, 1.0, 0.0],       # 20.0 - 0.15 = 19.85
+        "vibration_increase": [1.45, 0.1, 0.1, 0.1],     # 1.5 - 0.05 = 1.45
         
-        "description": "Vibration levels requiring detailed analysis (100-200 min)",
-        "threshold_info": {"parameter": "vibration_increase", "threshold": 1.5, "direction": "greater_than"},
-        "analysis_scope": "Bearing condition, alignment, and balance assessment"
+        # Bearing wear levels that contribute to vibration
+        "motor_bearing_wear": [4.0, 0.1, 0.1, 0.0],      # 4% wear → 0.4 mm/s vibration
+        "pump_bearing_wear": [3.5, 0.1, 0.1, 0.0],       # 3.5% wear → 0.35 mm/s vibration
+        "thrust_bearing_wear": [2.5, 0.1, 0.1, 0.0],     # 2.5% wear → 0.25 mm/s vibration
+        
+        # Supporting temperature indicators
+        "motor_temperature": [75.0, 30.0, 30.0, 25.0],   # Elevated from bearing friction
+        "bearing_temperatures": [65.0, 30.0, 30.0, 25.0], # Heat from bearing wear
+        
+        "description": "Vibration increase from bearing wear - 90 min target",
+        "expected_action": "vibration_analysis",
+        "target_pump": "FWP-1",
+        "physics_calculation": "Total bearing wear → vibration increase over 90 minutes"
     },
     
+    # === COMPONENT OVERHAUL ===
+    # System health degradation from multiple accumulated factors
     "component_overhaul": {
-        # PRIMARY: System health requiring major maintenance
-        "system_health_factor": [0.81, 0.82, 0.80, 0.81], # Below 0.80 threshold (100-200 min timing)
+        # System health below threshold from multiple degraded components
+        "system_health_factor": [0.795, 0.85, 0.85, 0.85], # 0.80 - 0.005 = 0.795
         
-        # SUPPORTING: Multiple component wear issues
-        "motor_bearing_wear": [12.0, 11.5, 12.5, 11.8],   # High wear levels
-        "pump_bearing_wear": [8.5, 8.2, 8.8, 8.3],        # High wear levels  
-        "thrust_bearing_wear": [6.0, 5.8, 6.2, 5.9],      # High wear levels
-        "seal_wear": [7.0, 6.8, 7.2, 6.9],                # High wear levels
+        # High wear levels across multiple components
+        "motor_bearing_wear": [12.0, 0.1, 0.1, 0.0],     # High motor bearing wear
+        "pump_bearing_wear": [8.5, 0.1, 0.1, 0.0],       # High pump bearing wear
+        "thrust_bearing_wear": [6.0, 0.1, 0.1, 0.0],     # High thrust bearing wear
+        "seal_wear": [7.0, 0.1, 0.1, 0.1],               # High seal wear
         
-        # Oil system degradation
-        "oil_contamination_level": 25.0,  # Severely degraded
-        "lubrication_effectiveness": [0.70, 0.68, 0.72, 0.69], # Poor lubrication
+        # Severely degraded oil system
+        "oil_contamination_level": 25.0,                  # Severely contaminated oil
+        "pump_oil_contamination": 25.0,                   # System-wide contamination
+        "lubrication_effectiveness": [0.70, 0.85, 0.85, 0.85], # Poor lubrication
         
-        # Performance degradation
-        "efficiency_factor": [0.75, 0.73, 0.77, 0.74],  # Severely degraded
-        "flow_factor": [0.78, 0.76, 0.80, 0.77],        # Severely degraded
+        # Severely degraded performance
+        "efficiency_factor": [0.75, 0.90, 0.90, 0.90],   # Severely degraded efficiency
+        "flow_factor": [0.78, 0.92, 0.92, 0.92],         # Severely degraded flow
         
-        "description": "Multiple systems degraded - comprehensive overhaul required (100-200 min)",
-        "threshold_info": {"parameter": "system_health_factor", "threshold": 0.80, "direction": "less_than"},
-        "comprehensive_scope": "Resets all wear, restores oil quality, rebuilds performance"
+        "description": "Multiple system degradation requiring overhaul - 120 min target",
+        "expected_action": "component_overhaul",
+        "target_pump": "FWP-1"
     },
     
-    # === SYSTEM CHECK CONDITIONS ===
-    # These trigger system-level checks and maintenance
-    
-    
-    # === ROUTINE MAINTENANCE CONDITIONS ===
-    # These trigger routine maintenance activities
-    
+    # === ROUTINE MAINTENANCE ===
+    # Gradual system health decline requiring preventive maintenance
     "routine_maintenance": {
-        # Routine maintenance indicators
-        "system_health_factor": [0.91, 0.92, 0.90, 0.91], # Good but declining (100-200 min timing)
-        "oil_contamination_level": 8.0,  # Moderate contamination
-        "lubrication_effectiveness": [0.92, 0.91, 0.93, 0.90], # Good lubrication
+        # System health approaching routine maintenance threshold
+        "system_health_factor": [0.895, 0.95, 0.95, 0.95], # 0.90 - 0.005 = 0.895
         
-        # Minor wear accumulation
-        "motor_bearing_wear": [2.0, 1.8, 2.2, 1.9],  # Low wear levels
-        "pump_bearing_wear": [1.5, 1.3, 1.7, 1.4],   # Low wear levels
+        # Moderate oil quality degradation
+        "oil_contamination_level": 8.0,                   # Moderate contamination
+        "pump_oil_contamination": 8.0,                    # System-wide parameter
+        "lubrication_effectiveness": [0.915, 0.95, 0.95, 0.95], # Good but declining
         
-        "description": "System in good condition - routine maintenance recommended (100-200 min)",
-        "threshold_info": {"parameter": "system_health_factor", "threshold": 0.90, "direction": "less_than"},
-        "maintenance_scope": "Preventive maintenance to maintain optimal performance"
+        # Low wear levels but accumulating
+        "motor_bearing_wear": [2.0, 0.1, 0.1, 0.0],      # Low but measurable wear
+        "pump_bearing_wear": [1.5, 0.1, 0.1, 0.0],       # Low but measurable wear
+        "thrust_bearing_wear": [1.0, 0.1, 0.1, 0.0],     # Low but measurable wear
+        
+        "description": "Gradual system decline - routine maintenance - 180 min target",
+        "expected_action": "routine_maintenance",
+        "target_pump": "FWP-1"
     },
+    
+    # === GRADUAL DEGRADATION ===
+    # Multiple actions triggered at different time intervals based on different degradation rates
     "gradual_degradation": {
-        # === IMMEDIATE ACTIONS (Week 1-2) ===
-        "pump_oil_contamination": 15.2,           # Just above 15.0 → oil_change (Month 1)
-        "pump_oil_levels": [62.0, 58.0, 90.0, 100.0],  # Pump 2 below 60% → oil_top_off (Week 1)
-        "seal_face_wear": [12, 8, 11, 9.5],
-    
-        # === MEDIUM-TERM ACTIONS (Month 2-3) ===
-        "motor_bearing_wear": [7.8, 6.1, 7.2, 0.0],    # Pump 3 approaching 8.0% → bearing_replacement (Month 2)
-        "pump_bearing_wear": [5., 4.5, 4.0, 0.3],     # Pump 1 approaching 6.0% → bearing_replacement (Month 3)
-        "thrust_bearing_wear": [2., 3.5, 3.0, 0.3],     # Pump 1 approaching 6.0% → bearing_replacement (Month 3)
-    
-        # === LONG-TERM ACTIONS (Month 4-6) ===
-        "motor_temperature": [82.0, 70.0, 78.0, 25.0], # Elevated but below 85°C threshold
-    
-        # === KEEP EVERYTHING ELSE SAFE ===
-        "oil_temperature": 52.0,                        # Below 55°C
-        "bearing_temperatures": [65.0, 60.0, 68.0, 25.0], # Below 70°C# - Different components hitting thresholds at different times
+        # Immediate action (Week 1)
+        "pump_oil_contamination": 15.2,                   # Already above 15.0 → immediate oil_change
+        "pump_oil_levels": [62.0, 58.0, 90.0, 100.0],    # FWP-2 below 60% → immediate oil_top_off
+        
+        # Medium-term actions (Month 2-3)
+        "seal_face_wear": [12.0, 8.0, 11.0, 9.5],        # Moderate seal wear
+        "motor_bearing_wear": [7.8, 6.1, 7.2, 0.0],      # FWP-1,3 approaching 8.0% threshold
+        "pump_bearing_wear": [5.0, 4.5, 4.0, 0.3],       # FWP-1 approaching 6.0% threshold
+        "thrust_bearing_wear": [2.0, 3.5, 3.0, 0.3],     # Various levels approaching thresholds
+        
+        # Long-term indicators
+        "motor_temperature": [82.0, 70.0, 78.0, 25.0],   # Elevated but below 85°C threshold
+        "oil_temperature": 52.0,                          # Elevated but below 55°C threshold
+        "bearing_temperatures": [65.0, 60.0, 68.0, 25.0], # Elevated but below 70°C threshold
+        
+        "description": "Staggered degradation timeline - multiple actions over different timeframes",
+        "target_pump": "Multiple pumps at different times"
     },
     
-"dynamic_cavitation_coupling_test": {
-    # === NPSH CONDITIONS (Arrays for 4 pumps) ===
-    "npsh_available": [17.0, 18.5, 19.5, 20.0],           # 4 pumps - BELOW threshold for cavitation
-    
-    # === SYSTEM CONDITIONS (Single values) ===
-    "suction_pressure": 0.35,                             # Single value - MUCH lower suction
-    "feedwater_temperature": 240.0,                       # Single value - HIGHER temp (more vapor pressure)
-    "oil_temperature": 54.0,                              # Single value - elevated
-    
-    # === INITIAL WEAR (Arrays for 4 pumps) ===
-    "impeller_wear": [2.0, 2.5, 1.5, 0.0],               # 4 pumps - small initial wear
-    "motor_bearing_wear": [1.5, 2.0, 1.0, 0.0],          # 4 pumps - small initial wear
-    "pump_bearing_wear": [1.0, 1.5, 0.8, 0.0],           # 4 pumps - small initial wear  
-    "thrust_bearing_wear": [0.5, 0.8, 0.3, 0.0],         # 4 pumps - small initial wear
-    
-    # === LUBRICATION CONDITIONS (Single values) ===
-    "pump_oil_contamination": 12.0,                       # Single value - moderate contamination
-    "pump_oil_water_content": 0.07,                       # Single value - elevated moisture
-    "pump_oil_acid_number": 1.4,                          # Single value - elevated acidity
-    
-    # === LUBRICATION EFFECTIVENESS (Arrays for 4 pumps) ===
-    "lubrication_effectiveness": [0.88, 0.85, 0.90, 0.95], # 4 pumps - declining effectiveness
-    
-    # === PUMP CONDITIONS (Arrays for 4 pumps) ===
-    "motor_temperature": [82.0, 84.0, 80.0, 25.0],       # 4 pumps - elevated temps
-    "pump_oil_levels": [88.0, 85.0, 90.0, 100.0],        # 4 pumps - lower levels
-    "pump_vibrations": [8.0, 9.0, 7.0, 0.0],             # 4 pumps - elevated vibration
-    
-    # === OPERATIONAL CONDITIONS ===
-    # Note: pump_load_factor might not be a direct config parameter
-    # Instead use flow/speed conditions that create high load
-    "pump_flows": [520.0, 530.0, 510.0, 0.0],            # 4 pumps - above rated (500.0)
-    "pump_speeds": [3700.0, 3750.0, 3650.0, 0.0],        # 4 pumps - above rated (3600.0)
-    
-    "description": "Dynamic cavitation coupling test with correct data types - conditions drive cavitation calculation",
-    "data_type_notes": [
-        "Arrays [a,b,c,d] for 4-pump parameters",
-        "Single values for system-wide parameters", 
-        "Pump 4 (index 3) is spare pump (0.0 values)",
-        "Physics will calculate cavitation_intensity dynamically"
-    ],
-    "expected_physics": [
-        "1. Reduced NPSH margin triggers cavitation calculation",
-        "2. Above-rated flow increases cavitation intensity", 
-        "3. Initial wear increases NPSH requirements",
-        "4. Cavitation accelerates wear through coupling",
-        "5. Positive feedback loop develops"
-    ]
-}
-
-
+    # === DYNAMIC CAVITATION COUPLING TEST ===
+    # Conditions that drive cavitation calculation dynamically with proper physics
+    "dynamic_cavitation_coupling_test": {
+        # NPSH conditions that promote cavitation
+        "npsh_available": [17.0, 18.5, 19.5, 20.0],      # FWP-1 has reduced NPSH margin
+        "suction_pressure": 0.35,                         # Low suction pressure system-wide
+        "feedwater_temperature": 240.0,                   # High temperature increases vapor pressure
+        "oil_temperature": 54.0,                          # Elevated oil temperature
+        
+        # Initial wear levels that will couple with cavitation
+        "impeller_wear": [2.0, 2.5, 1.5, 0.0],          # Small initial impeller wear
+        "motor_bearing_wear": [1.5, 2.0, 1.0, 0.0],     # Small initial motor bearing wear
+        "pump_bearing_wear": [1.0, 1.5, 0.8, 0.0],      # Small initial pump bearing wear
+        "thrust_bearing_wear": [0.5, 0.8, 0.3, 0.0],    # Small initial thrust bearing wear
+        
+        # Lubrication conditions
+        "pump_oil_contamination": 12.0,                  # Moderate contamination
+        "pump_oil_water_content": 0.07,                  # Elevated moisture
+        "pump_oil_acid_number": 1.4,                     # Elevated acidity
+        "lubrication_effectiveness": [0.88, 0.85, 0.90, 0.95], # Declining effectiveness
+        
+        # Operational conditions that create high loads
+        "motor_temperature": [82.0, 84.0, 80.0, 25.0],  # Elevated motor temperatures
+        "pump_oil_levels": [88.0, 85.0, 90.0, 100.0],   # Lower oil levels
+        "pump_vibrations": [8.0, 9.0, 7.0, 0.0],        # Elevated vibration
+        "pump_flows": [520.0, 530.0, 510.0, 0.0],       # Above rated flow
+        "pump_speeds": [3700.0, 3750.0, 3650.0, 0.0],   # Above rated speed
+        
+        "description": "Dynamic cavitation coupling test with physics-based progression",
+        "physics_notes": [
+            "Reduced NPSH margin triggers cavitation calculation",
+            "Above-rated flow increases cavitation intensity", 
+            "Initial wear increases NPSH requirements",
+            "Cavitation accelerates wear through coupling",
+            "Positive feedback loop develops over time"
+        ]
+    }
 }
 
 # === ARCHITECTURE VALIDATION ===
-# This section documents the state variable mappings for validation
-
+# State variable mappings for validation (same as feedwater_conditions.py)
 STATE_VARIABLE_MAPPINGS = {
     # Pump System State Variables (pump.state.*)
     "pump_hydraulic_variables": {
@@ -416,36 +474,6 @@ STATE_VARIABLE_MAPPINGS = {
     }
 }
 
-# === REMOVED INVALID CONDITIONS ===
-# The following conditions have been REMOVED because they reference non-existent state variables:
-REMOVED_INVALID_CONDITIONS = [
-    "impeller_wear",  # → Replaced by cavitation_damage tracking
-    "bearing_wear",  # → Replaced by component-specific wear in lubrication system  
-    "seal_face_wear",  # → Replaced by seal_wear in lubrication system
-    "impeller_cavitation_damage",  # → Replaced by cavitation_damage in pump state
-    "oil_viscosity",  # → Not tracked in current lubrication system
-    "oil_filter_pressure_drop",  # → Not implemented in current system
-    "oil_filter_contamination",  # → Not implemented in current system
-    "oil_system_debris_count",  # → Consolidated into oil_contamination_level
-    "bearing_temperatures",  # → Calculated from oil_temperature + wear effects
-    "pump_vibrations",  # → Replaced by vibration_increase from lubrication system
-    "impeller_vibration",  # → Consolidated into overall vibration tracking
-    "seal_temperature",  # → Calculated from system conditions
-    "seal_pressure_drop",  # → Not implemented in current system
-    "cavitation_inception",  # → Replaced by npsh_available and cavitation_intensity
-    "noise_level",  # → Not implemented in current system
-    "suction_strainer_dp",  # → Simplified to suction_line_pressure_drop
-    "suction_line_air_content",  # → Simplified system parameter
-    "discharge_valve_position",  # → Simplified system parameter
-    "discharge_line_vibration",  # → Simplified system parameter
-    "oil_pressure",  # → Simplified to lubrication_system checks
-    "oil_flow_rate",  # → Simplified to lubrication_system checks
-    "oil_cooler_effectiveness",  # → Simplified to cooling_system checks
-    "cooling_water_temperature",  # → Simplified system parameter
-    "cooling_water_flow",  # → Simplified system parameter
-    "heat_exchanger_fouling",  # → Simplified system parameter
-]
-
 # === MAINTENANCE THRESHOLD ALIGNMENT ===
 # These thresholds match the corrected values in nuclear_plant_comprehensive_config.yaml
 MAINTENANCE_THRESHOLD_ALIGNMENT = {
@@ -455,8 +483,8 @@ MAINTENANCE_THRESHOLD_ALIGNMENT = {
     "motor_bearing_wear": 8.0,  # ✅ Matches config threshold
     "pump_bearing_wear": 6.0,  # ✅ Matches config threshold
     "thrust_bearing_wear": 4.0,  # ✅ Matches config threshold
-    "seal_wear": 25.0,  # ✅ Matches config threshold - FIXED: Updated from 4.0% to realistic 25%
-    "oil_level": 75.0,  # ✅ Matches config threshold (less_than)
+    "seal_wear": 15.0,  # ✅ Matches config threshold - Updated to realistic 15%
+    "oil_level": 60.0,  # ✅ Matches config threshold (less_than)
     "oil_water_content": 0.08,  # ✅ Matches config threshold
     "oil_acid_number": 1.6,  # ✅ Matches config threshold
     "oil_temperature": 55.0,  # ✅ Matches config threshold
