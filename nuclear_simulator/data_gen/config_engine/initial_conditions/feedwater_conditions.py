@@ -38,7 +38,7 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
         # === KEEP ALL OTHER PARAMETERS SAFE (below thresholds) ===
         "pump_oil_water_content": 0.06,          # <0.08 (safe)
         "pump_oil_acid_number": 1.3,             # <1.6 (safe)
-        "oil_temperature": 52.0,                 # <55.0 (safe)
+        "oil_temperature": 54.0,                 # <55.0 (safe)
         "motor_temperature": [70.0, 70.0, 70.0, 70.0],  # <85.0 (safe)
         "bearing_temperatures": [60.0, 60.0, 60.0, 25.0],  # <70.0 (safe)
         
@@ -48,7 +48,7 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
         "pump_bearing_wear": [1.0, 1.0, 1.0, 1.0],     # Very low wear
         "thrust_bearing_wear": [0.5, 0.5, 0.5, 0.5],   # Very low wear
         "seal_face_wear": [0.5, 0.5, 0.5, 0.5],        # Very low wear
-        "pump_vibrations": [3.0, 3.0, 3.0, 0.0],       # Lower vibration
+        "pump_vibrations": [5.0, 3.0, 3.0, 0.0],       # Lower vibration
         "cavitation_intensity": [0.02, 0.02, 0.02, 0.02],  # Very low cavitation
         "npsh_available": [20.0, 20.0, 20.0, 20.0],    # Excellent NPSH
         
@@ -72,7 +72,6 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
         "pump_oil_contamination": 10.0,          # <15.0 (safe)
         "pump_oil_water_content": 0.06,          # <0.08 (safe)
         "pump_oil_acid_number": 1.2,             # <1.6 (safe)
-        "oil_temperature": 50.0,                 # <55.0 (safe)
         "motor_temperature": [70.0, 70.0, 70.0, 70.0],  # <85.0 (safe)
         "bearing_temperatures": [60.0, 60.0, 60.0, 25.0],  # <70.0 (safe)
         
