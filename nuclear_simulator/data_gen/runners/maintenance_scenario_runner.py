@@ -58,15 +58,17 @@ class MaintenanceScenarioRunner:
     configurations and test maintenance action triggering.
     """
     
-    def __init__(self, config: Union[Dict[str, Any], str, Path], verbose: bool = True):
+    def __init__(self, config: Union[Dict[str, Any], str, Path], verbose: bool = True, enable_plotting: bool = True):
         """
         Initialize the maintenance scenario runner
         
         Args:
             config: Configuration dictionary from ComprehensiveComposer OR path to YAML file
             verbose: Enable verbose output
+            enable_plotting: Enable plot creation and display
         """
         self.verbose = verbose
+        self.enable_plotting = enable_plotting
         self.simulator = None
         self.maintenance_system = None
         
@@ -961,6 +963,11 @@ class MaintenanceScenarioRunner:
     
     def create_plots(self, save_plots: bool = True) -> None:
         """Create visualization plots"""
+        if not self.enable_plotting:
+            if self.verbose:
+                print("📊 Plotting disabled - skipping plot creation")
+            return
+            
         if not self.simulation_data:
             print("No simulation data available for plotting")
             return

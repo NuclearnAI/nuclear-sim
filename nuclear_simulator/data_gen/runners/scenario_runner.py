@@ -46,15 +46,17 @@ class ScenarioRunner:
     Unified scenario generation and execution system
     """
     
-    def __init__(self, output_dir: Optional[str] = None, verbose: bool = True):
+    def __init__(self, output_dir: Optional[str] = None, verbose: bool = True, enable_plotting: bool = True):
         """
         Initialize the scenario runner
         
         Args:
             output_dir: Directory for output files (default: simulation_runs)
             verbose: Enable verbose output
+            enable_plotting: Enable plot creation and display
         """
         self.verbose = verbose
+        self.enable_plotting = enable_plotting
         self.output_dir = Path(output_dir) if output_dir else Path("simulation_runs")
         self.output_dir.mkdir(exist_ok=True)
         
@@ -189,7 +191,7 @@ class ScenarioRunner:
                 os.chdir(run_dir)
                 
                 # Create our custom simulation runner
-                simulation = MaintenanceScenarioRunner(config, verbose=self.verbose)
+                simulation = MaintenanceScenarioRunner(config, verbose=self.verbose, enable_plotting=self.enable_plotting)
                 
                 # Run simulation
                 start_time = time.time()
@@ -847,6 +849,9 @@ Examples:
   # Run all actions except specific ones
   python scenario_runner.py --run-all-actions --exclude-actions "oil_top_off,bearing_inspection"
   
+  # Disable plotting for faster batch runs
+  python scenario_runner.py --run-all-actions --no-plots --duration 1.0
+  
   # YAML-FIRST EXAMPLES (NEW):
   # Run scenario from YAML file
   python scenario_runner.py --yaml-file my_scenario.yaml
@@ -883,6 +888,7 @@ Examples:
     parser.add_argument('--output-dir', type=str, help='Output directory (default: simulation_runs)')
     parser.add_argument('--verbose', action='store_true', default=True, help='Enable verbose output')
     parser.add_argument('--quiet', action='store_true', help='Disable verbose output')
+    parser.add_argument('--no-plots', action='store_true', help='Disable plot creation and display')
     
     # Maintenance-specific parameters
     parser.add_argument('--actions', type=str, help='Comma-separated list of actions for batch mode')
@@ -1013,8 +1019,11 @@ def main():
     # Handle verbose/quiet
     verbose = args.verbose and not args.quiet
     
+    # Handle plotting flag
+    enable_plotting = not args.no_plots
+    
     # Initialize runner
-    runner = ScenarioRunner(output_dir=args.output_dir, verbose=verbose)
+    runner = ScenarioRunner(output_dir=args.output_dir, verbose=verbose, enable_plotting=enable_plotting)
     
     try:
         if args.list_actions:
