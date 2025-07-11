@@ -238,19 +238,19 @@ class ThreeElementControl:
                 compensated_target_level = target_level + swell_correction
                 level_error = compensated_target_level - level
             
-            # PID control for level - FIXED: Much more reasonable gains
-            # Proportional term - reduced from 50.0 to 10.0 kg/s per meter error
+            # PID control for level - NUCLEAR PLANT CONSERVATIVE GAINS
+            # Proportional term - very conservative for nuclear plant operation
             level_control_gain = getattr(self.config, 'level_control_gain', 1.0)
-            proportional_correction = level_control_gain * level_error * 10.0  # kg/s per meter error
+            proportional_correction = level_control_gain * level_error * 2.0  # kg/s per meter error (reduced from 10.0)
             
-            # Integral term (simplified) - reduced gain
+            # Integral term (simplified) - very conservative gain
             self.level_integral_errors[i] += level_error * dt
-            integral_correction = self.level_integral_errors[i] * 0.02 * 5.0  # kg/s
+            integral_correction = self.level_integral_errors[i] * 0.005 * 2.0  # kg/s (reduced from 0.02 * 5.0)
             
-            # Derivative term - reduced gain
+            # Derivative term - very conservative gain
             if i < len(self.previous_level_errors):
                 level_error_rate = (level_error - self.previous_level_errors[i]) / dt
-                derivative_correction = level_error_rate * 0.01 * 5.0  # kg/s
+                derivative_correction = level_error_rate * 0.002 * 2.0  # kg/s (reduced from 0.01 * 5.0)
             else:
                 derivative_correction = 0.0
             
@@ -275,7 +275,7 @@ class ThreeElementControl:
             
             # Now that feedforward_demand is defined, limit level correction
             level_correction = proportional_correction + integral_correction + derivative_correction
-            max_level_correction = feedforward_demand * 0.2  # Max 20% of feedforward demand
+            max_level_correction = feedforward_demand * 0.05  # Max 5% of feedforward demand (reduced from 20%)
             level_correction = np.clip(level_correction, -max_level_correction, max_level_correction)
             
             # === ELEMENT 3: FEEDWATER FLOW FEEDBACK ===

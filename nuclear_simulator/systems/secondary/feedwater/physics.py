@@ -402,6 +402,25 @@ class EnhancedFeedwaterPhysics(HeatFlowProvider, ChemistryFlowProvider):
                 avg_seal_wear = sum(ic.seal_face_wear) / len(ic.seal_face_wear)
                 self.diagnostics.wear_tracking.seal_wear = avg_seal_wear * 100.0  # Convert to percentage
         
+        # === CRITICAL FIX: INITIALIZE PUMPS WITH ACTUAL SG CONDITIONS ===
+        # Pass SG conditions to pump system for proper initialization
+        sg_conditions = {
+            'sg_steam_flows': self.sg_steam_flows,
+            'sg_levels': self.sg_levels,
+            'sg_pressures': self.sg_pressures,
+            'sg_steam_qualities': self.sg_steam_qualities
+        }
+        
+        print(f"FEEDWATER: Passing SG conditions to pump initialization:")
+        print(f"  SG steam flows: {self.sg_steam_flows}")
+        print(f"  SG levels: {self.sg_levels}")
+        print(f"  Total steam flow: {sum(self.sg_steam_flows):.1f} kg/s")
+        
+        # Re-initialize pumps with actual conditions (this will override the default initialization)
+        if hasattr(self.pump_system, '_initialize_pumps'):
+            self.pump_system._initialize_pumps(sg_conditions)
+            print(f"FEEDWATER: Pumps re-initialized with actual SG conditions")
+        
         print(f"FEEDWATER: Initial conditions applied successfully")
         print(f"  Applied parameters to pump states, lubrication systems, and diagnostics")
         

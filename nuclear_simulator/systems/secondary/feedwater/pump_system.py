@@ -419,15 +419,29 @@ class FeedwaterPump(BasePump):
         return max(base_npsh, total_npsh_required)  # Never go below baseline
 
     def set_flow_demand(self, flow_demand: float):
-        """Set flow demand from level control system"""
+        """Set flow demand from level control system with improved speed calculation"""
         self.flow_demand = np.clip(flow_demand, 0.0, self.config.rated_flow * 1.2)
         
-        # Convert flow demand to speed setpoint (simplified)
+        # Convert flow demand to speed setpoint with degradation consideration
         if flow_demand > 0:
-            # Approximate speed needed for desired flow
-            flow_ratio = flow_demand / self.config.rated_flow
-            speed_setpoint = np.sqrt(flow_ratio) * 100.0  # Approximate relationship
-            self.state.speed_setpoint = np.clip(speed_setpoint, 0.0, self.max_speed)
+            # Account for pump condition when calculating required speed
+            flow_factor = 1.0
+            if hasattr(self, 'lubrication_system'):
+                flow_factor = self.lubrication_system.pump_flow_factor
+            
+            # Effective pump capacity accounting for degradation
+            effective_capacity = self.config.rated_flow * flow_factor
+            
+            # Calculate required speed
+            if effective_capacity > 0:
+                flow_ratio = flow_demand / effective_capacity
+                speed_setpoint = np.sqrt(flow_ratio) * 100.0
+            else:
+                speed_setpoint = 100.0
+            
+            # Cap at 100% for normal operation (110% reserved for emergencies only)
+            max_normal_speed = 100.0
+            self.state.speed_setpoint = np.clip(speed_setpoint, 0.0, max_normal_speed)
         else:
             self.state.speed_setpoint = 0.0
     
@@ -1159,8 +1173,8 @@ class FeedwaterPumpSystem(ChemistryFlowProvider):
         # Initialize pumps to proper operating state
         self._initialize_pumps()
     
-    def _initialize_pumps(self):
-        """Initialize pumps to proper operating state"""
+    def _initialize_pumps(self, sg_conditions=None):
+        """Initialize pumps to proper operating state based on actual conditions"""
         pump_ids = list(self.pumps.keys())
         
         # Configure all pumps for auto-start
@@ -1170,18 +1184,36 @@ class FeedwaterPumpSystem(ChemistryFlowProvider):
             pump.state.auto_control = True
             pump.state.available = True
         
+        # Calculate actual flow requirements from SG conditions
+        if sg_conditions:
+            total_steam_flow = sum(sg_conditions.get('sg_steam_flows', [555.0] * 3))
+            required_total_flow = total_steam_flow * 1.02  # Small margin for level control
+            print(f"PUMP SYSTEM: Calculated flow demand from SG conditions: {required_total_flow:.1f} kg/s total")
+        else:
+            # Fallback to conservative estimate (80% of design)
+            required_total_flow = self.total_design_flow * 0.8
+            print(f"PUMP SYSTEM: Using fallback flow demand: {required_total_flow:.1f} kg/s total")
+        
+        # Account for pump degradation
+        degradation_factor = self._calculate_system_degradation_factor()
+        flow_per_pump = (required_total_flow / self.minimum_pumps_required) / degradation_factor
+        
+        print(f"PUMP SYSTEM: System degradation factor: {degradation_factor:.3f}")
+        print(f"PUMP SYSTEM: Flow per pump: {flow_per_pump:.1f} kg/s")
+        
         # Start the required number of pumps with proper startup sequence
         for i in range(self.minimum_pumps_required):
             if i < len(pump_ids):
                 pump_id = pump_ids[i]
                 pump = self.pumps[pump_id]
                 
-                # CRITICAL FIX: Set proper flow demand and let set_flow_demand calculate speed
-                design_flow_per_pump = pump.config.rated_flow  # Use rated flow (533.3 kg/s)
-                pump.set_flow_demand(design_flow_per_pump)     # This calculates speed setpoint automatically
+                # Set realistic flow demand based on actual conditions
+                pump.set_flow_demand(flow_per_pump)
                 
-                # Set actual speed to match the calculated setpoint for steady state
-                pump.state.speed_percent = pump.state.speed_setpoint
+                # Calculate safe speed (cap at 100% for normal operation)
+                target_speed = self._calculate_safe_speed(pump, flow_per_pump)
+                pump.state.speed_percent = target_speed
+                pump.state.speed_setpoint = target_speed
                 
                 # Start the pump and immediately transition to RUNNING for steady state
                 if pump.state.status == PumpStatus.STOPPED:
@@ -1310,6 +1342,47 @@ class FeedwaterPumpSystem(ChemistryFlowProvider):
                 distribution[f'sg_{i+1}_flow'] = 0.0
         
         return distribution
+    
+    def _calculate_safe_speed(self, pump, flow_demand):
+        """Calculate safe operating speed for given flow demand"""
+        # Get pump condition factors
+        flow_factor = 1.0
+        if hasattr(pump, 'lubrication_system'):
+            flow_factor = pump.lubrication_system.pump_flow_factor
+        
+        # Effective pump capacity accounting for degradation
+        effective_capacity = pump.config.rated_flow * flow_factor
+        
+        # Required speed calculation
+        if effective_capacity > 0:
+            flow_ratio = flow_demand / effective_capacity
+            required_speed = np.sqrt(flow_ratio) * 100.0
+        else:
+            required_speed = 100.0
+        
+        # Cap at 100% for normal operation (110% reserved for emergencies only)
+        max_normal_speed = 100.0
+        safe_speed = min(max_normal_speed, max(30.0, required_speed))
+        
+        return safe_speed
+    
+    def _calculate_system_degradation_factor(self):
+        """Calculate average pump degradation factor across all pumps"""
+        total_factor = 0.0
+        count = 0
+        
+        for pump in self.pumps.values():
+            if hasattr(pump, 'lubrication_system'):
+                # Use flow factor as primary degradation indicator
+                factor = pump.lubrication_system.pump_flow_factor
+                total_factor += factor
+                count += 1
+        
+        if count > 0:
+            average_factor = total_factor / count
+            return max(0.5, average_factor)  # Minimum 50% capacity
+        else:
+            return 1.0  # No degradation data available
     
     def start_pump(self, pump_id: str) -> bool:
         """Start a specific pump"""
