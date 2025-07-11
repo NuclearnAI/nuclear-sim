@@ -34,9 +34,9 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
     # === OIL CHANGE SCENARIO ===
     # Base rate: 0.002 ppm/hour + load acceleration + wear contamination
     # With load_factor=1.1 + bearing wear contamination: ~0.008 ppm/hour
-    # Target: 120 minutes = 0.008 × 2.0 hours = 0.016 ppm distance needed
+    # Target: 60 minutes = 0.008 × 1.0 hours = 0.008 ppm distance needed
     "oil_change": {
-        "pump_oil_contamination": 15.1,                  # 15.2 - 0.1 = 15.1 (aggressive)
+        "pump_oil_contamination": 15.19,                 # 15.2 - 0.01 = 15.19 (very aggressive)
         
         # Supporting accelerated conditions that increase contamination rate
         "pump_oil_water_content": 0.075,                  # Elevated moisture accelerates contamination
@@ -110,7 +110,7 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
     # Actual rate: 0.004 × 1.20 × 1.10 = 0.0053%/hour
     # Target: 60 minutes = 0.0053 × 1.0 hours = 0.005% distance needed
     "motor_bearing_replacement": {
-        "motor_bearing_wear": [8.2, 0.1, 0.1, 0.0],      # 8.5 - 0.3 = 8.2 (aggressive)
+        "motor_bearing_wear": [8.49, 0.1, 0.1, 0.0],     # 8.5 - 0.01 = 8.49 (very aggressive)
         
         # Conditions that create electrical load acceleration
         "motor_temperature": [82.0, 30.0, 30.0, 25.0],   # Elevated electrical load
@@ -137,7 +137,7 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
     # Actual rate: 0.006 × 1.23 × 1.2 = 0.0088%/hour
     # Target: 45 minutes = 0.0088 × 0.75 hours = 0.0066% distance needed
     "pump_bearing_replacement": {
-        "pump_bearing_wear": [6.2, 0.1, 0.1, 0.0],      # 6.5 - 0.3 = 6.2 (aggressive)
+        "pump_bearing_wear": [6.49, 0.1, 0.1, 0.0],     # 6.5 - 0.01 = 6.49 (very aggressive)
         
         # Conditions that create hydraulic load + cavitation acceleration
         "cavitation_intensity": [0.1, 0.01, 0.01, 0.01], # Moderate cavitation for FWP-1
@@ -163,7 +163,7 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
     # Actual rate: 0.008 × 1.38 = 0.011%/hour
     # Target: 30 minutes = 0.011 × 0.5 hours = 0.0055% distance needed
     "thrust_bearing_replacement": {
-        "thrust_bearing_wear": [4.2, 0.1, 0.1, 0.0],     # 4.5 - 0.3 = 4.2 (aggressive)
+        "thrust_bearing_wear": [4.49, 0.1, 0.1, 0.0],    # 4.5 - 0.01 = 4.49 (very aggressive)
         
         # Conditions that create high axial loads
         "pump_flows": [580.0, 500.0, 500.0, 0.0],        # High flow = high axial thrust for FWP-1
