@@ -696,14 +696,14 @@ maintenance_system:
         # === LUBRICATION SYSTEM MAINTENANCE (HIGHEST PRIORITY) ===
         # Oil contamination checked FIRST to ensure oil_change gets priority
         oil_contamination_level:
-          threshold: 16.0              # ppm - Increased from 15.0 to ensure 60+ minute delay (more reasonable)
+          threshold: 15.2              # ppm - Small increase from 15.0 to ensure 60+ minute delay
           comparison: "greater_than"
           action: "oil_change"
           cooldown_hours: 720.0        # Monthly cooldown
           priority: "MEDIUM"
         
         oil_level:
-          threshold: 50.0              # Oil level - Reduced from 60.0% to ensure 60+ minute delay
+          threshold: 58.0              # Oil level - Small decrease from 60.0% to ensure 60+ minute delay
           comparison: "less_than"
           action: "oil_top_off"
           cooldown_hours: 168.0        # Weekly cooldown
@@ -759,7 +759,7 @@ maintenance_system:
         # === BEARING-BASED MECHANICAL MAINTENANCE ===
         # Bearing issues trigger bearing maintenance, not impeller maintenance
         motor_bearing_wear:
-          threshold: 12.0              # Increased from 8.0 to ensure 60+ minute delay
+          threshold: 8.5               # Small increase from 8.0 to ensure 60+ minute delay
           comparison: "greater_than"
           action: "bearing_replacement"
           component_id: "motor_bearings"  # NEW: Specify which bearing
@@ -767,7 +767,7 @@ maintenance_system:
           priority: "HIGH"
         
         pump_bearing_wear:
-          threshold: 10.0              # Increased from 6.0 to ensure 60+ minute delay
+          threshold: 6.5               # Small increase from 6.0 to ensure 60+ minute delay
           comparison: "greater_than" 
           action: "bearing_replacement"
           component_id: "pump_bearings"   # NEW: Specify which bearing
@@ -775,7 +775,7 @@ maintenance_system:
           priority: "HIGH"
         
         thrust_bearing_wear:
-          threshold: 8.0               # Increased from 4.0 to ensure 60+ minute delay
+          threshold: 4.5               # Small increase from 4.0 to ensure 60+ minute delay
           comparison: "greater_than"
           action: "bearing_replacement"
           component_id: "thrust_bearing"  # NEW: Specify which bearing
@@ -783,7 +783,7 @@ maintenance_system:
           priority: "CRITICAL"
         
         seal_wear:
-          threshold: 20.0              # Increased from 15.0 to ensure 60+ minute delay
+          threshold: 16.0              # Small increase from 15.0 to ensure 60+ minute delay
           comparison: "greater_than"
           action: "seal_replacement"
           cooldown_hours: 2190.0       # Quarterly cooldown
