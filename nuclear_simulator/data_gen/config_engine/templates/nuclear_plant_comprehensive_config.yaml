@@ -14,7 +14,7 @@ simulation_config:
   # Primary simulation parameters
   duration_hours: 24.0
   scenario: "load_following_with_maintenance"
-  time_step_minutes: 1.0
+  time_step_minutes: 20.0
   
   # Environment settings
   enable_noise: true
@@ -38,13 +38,13 @@ load_profiles:
       type: "sinusoidal_combined"
       base_power_percent: 90.0
       daily_variation_percent: 15.0
-      hourly_variation_percent: 5.0
+      hourly_variation_percent: .0
       description: "Realistic load following with maintenance opportunities"
     
     steady_state_high_power:
       type: "steady_with_noise"
       base_power_percent: 98.0
-      noise_std_percent: 2.0
+      noise_std_percent: .2
       description: "High power steady state operation"
     
     power_cycling:
@@ -421,9 +421,7 @@ secondary_system:
       sg_steam_flows: [500.0, 500.0, 500.0]  # kg/s steam flows
       sg_steam_qualities: [0.99, 0.99, 0.99] # Steam qualities
       
-      # Pump conditions
-      pump_speeds: [3600.0, 3600.0, 3600.0, 0.0]  # RPM pump speeds
-      pump_flows: [500.0, 500.0, 500.0, 0.0]      # kg/s pump flows
+      # Pump conditions - speeds and flows calculated dynamically during initialization
       pump_heads: [800.0, 800.0, 800.0, 0.0]      # m pump heads
       pump_efficiencies: [0.85, 0.85, 0.85, 0.0]  # Pump efficiencies
       running_pumps: [true, true, true, false]     # Pump running status
