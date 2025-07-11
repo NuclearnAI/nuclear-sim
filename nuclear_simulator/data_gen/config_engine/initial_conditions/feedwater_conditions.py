@@ -32,11 +32,11 @@ from typing import Dict, Any
 FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
     
     # === OIL CHANGE SCENARIO ===
-    # Base rate: 0.001 ppm/hour + load acceleration + wear contamination
-    # With load_factor=1.0 + bearing wear contamination: ~0.005 ppm/hour
-    # Target: 120 minutes = 0.005 × 2.0 hours = 0.01 ppm distance needed
+    # Base rate: 0.002 ppm/hour + load acceleration + wear contamination
+    # With load_factor=1.1 + bearing wear contamination: ~0.008 ppm/hour
+    # Target: 120 minutes = 0.008 × 2.0 hours = 0.016 ppm distance needed
     "oil_change": {
-        "pump_oil_contamination": 14.99,                  # 15.0 - 0.01 = 14.99
+        "pump_oil_contamination": 15.1,                  # 15.2 - 0.1 = 15.1 (aggressive)
         
         # Supporting accelerated conditions that increase contamination rate
         "pump_oil_water_content": 0.075,                  # Elevated moisture accelerates contamination
@@ -104,13 +104,13 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
     },
     
     # === MOTOR BEARING REPLACEMENT ===
-    # Base rate: 0.0015%/hour
-    # With electrical_load_factor^1.5 = 1.2^1.5 = 1.32x
-    # With speed_factor^1.8 = 1.05^1.8 = 1.09x
-    # Actual rate: 0.0015 × 1.32 × 1.09 = 0.0022%/hour
-    # Target: 100 minutes = 0.0022 × 1.67 hours = 0.004% distance needed
+    # Base rate: 0.004%/hour (from code analysis)
+    # With electrical_load_factor^1.8 = 1.1^1.8 = 1.20x
+    # With speed_factor^2.0 = 1.05^2.0 = 1.10x
+    # Actual rate: 0.004 × 1.20 × 1.10 = 0.0053%/hour
+    # Target: 60 minutes = 0.0053 × 1.0 hours = 0.005% distance needed
     "motor_bearing_replacement": {
-        "motor_bearing_wear": [7.996, 0.1, 0.1, 0.0],    # 8.0 - 0.004 = 7.996
+        "motor_bearing_wear": [8.2, 0.1, 0.1, 0.0],      # 8.5 - 0.3 = 8.2 (aggressive)
         
         # Conditions that create electrical load acceleration
         "motor_temperature": [82.0, 30.0, 30.0, 25.0],   # Elevated electrical load
@@ -131,13 +131,13 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
     },
     
     # === PUMP BEARING REPLACEMENT ===
-    # Base rate: 0.0025%/hour
-    # With hydraulic_load_factor^2.0 = 1.1^2.0 = 1.21x
+    # Base rate: 0.006%/hour (from code analysis)
+    # With hydraulic_load_factor^2.2 = 1.1^2.2 = 1.23x
     # With cavitation factor = 1.0 + 0.1 × 2.0 = 1.2x
-    # Actual rate: 0.0025 × 1.21 × 1.2 = 0.0036%/hour
-    # Target: 80 minutes = 0.0036 × 1.33 hours = 0.005% distance needed
+    # Actual rate: 0.006 × 1.23 × 1.2 = 0.0088%/hour
+    # Target: 45 minutes = 0.0088 × 0.75 hours = 0.0066% distance needed
     "pump_bearing_replacement": {
-        "pump_bearing_wear": [5.85, 0.1, 0.1, 0.0],     # 6.0 - 0.005 = 5.995
+        "pump_bearing_wear": [6.2, 0.1, 0.1, 0.0],      # 6.5 - 0.3 = 6.2 (aggressive)
         
         # Conditions that create hydraulic load + cavitation acceleration
         "cavitation_intensity": [0.1, 0.01, 0.01, 0.01], # Moderate cavitation for FWP-1
@@ -158,12 +158,12 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
     },
     
     # === THRUST BEARING REPLACEMENT ===
-    # Base rate: 0.003%/hour
-    # With axial_load_factor^2.2 = 1.15^2.2 = 1.35x (from high flow/head)
-    # Actual rate: 0.003 × 1.35 = 0.004%/hour
-    # Target: 60 minutes = 0.004 × 1.0 hours = 0.004% distance needed
+    # Base rate: 0.008%/hour (from code analysis)
+    # With axial_load_factor^2.4 = 1.15^2.4 = 1.38x (from high flow/head)
+    # Actual rate: 0.008 × 1.38 = 0.011%/hour
+    # Target: 30 minutes = 0.011 × 0.5 hours = 0.0055% distance needed
     "thrust_bearing_replacement": {
-        "thrust_bearing_wear": [3.996, 0.1, 0.1, 0.0],   # 4.0 - 0.004 = 3.996
+        "thrust_bearing_wear": [4.2, 0.1, 0.1, 0.0],     # 4.5 - 0.3 = 4.2 (aggressive)
         
         # Conditions that create high axial loads
         "pump_flows": [580.0, 500.0, 500.0, 0.0],        # High flow = high axial thrust for FWP-1
@@ -204,13 +204,13 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
     #},
     
     # === SEAL REPLACEMENT ===
-    # Base rate: 0.004%/hour
-    # With pressure_factor^1.8 = 1.1^1.8 = 1.19x
+    # Base rate: 0.01%/hour (from code analysis)
+    # With pressure_factor^2.0 = 1.1^2.0 = 1.21x
     # With cavitation factor = 1.0 + 0.15 × 5.0 = 1.75x (seals very sensitive to cavitation)
-    # Actual rate: 0.004 × 1.19 × 1.75 = 0.0083%/hour
-    # Target: 150 minutes = 0.0083 × 2.5 hours = 0.021% distance needed
+    # Actual rate: 0.01 × 1.21 × 1.75 = 0.021%/hour
+    # Target: 90 minutes = 0.021 × 1.5 hours = 0.032% distance needed
     "seal_replacement": {
-        "seal_face_wear": [14.98, 0.1, 0.1, 0.1],        # 15.0 - 0.02 = 14.98
+        "seal_face_wear": [15.7, 0.1, 0.1, 0.1],         # 16.0 - 0.3 = 15.7 (aggressive)
         
         # Conditions that accelerate seal wear
         "cavitation_intensity": [0.15, 0.01, 0.01, 0.01], # Moderate cavitation near seals
