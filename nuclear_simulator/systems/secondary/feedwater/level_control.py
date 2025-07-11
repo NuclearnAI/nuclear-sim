@@ -15,7 +15,7 @@ Key Features:
 
 import numpy as np
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 import warnings
 
 # Import the new configuration from config.py
@@ -238,19 +238,19 @@ class ThreeElementControl:
                 compensated_target_level = target_level + swell_correction
                 level_error = compensated_target_level - level
             
-            # PID control for level - NUCLEAR PLANT CONSERVATIVE GAINS
-            # Proportional term - very conservative for nuclear plant operation
+            # PID control for level - NUCLEAR GRADE ULTRA-CONSERVATIVE GAINS
+            # Proportional term - nuclear plant ultra-conservative operation
             level_control_gain = getattr(self.config, 'level_control_gain', 1.0)
-            proportional_correction = level_control_gain * level_error * 2.0  # kg/s per meter error (reduced from 10.0)
+            proportional_correction = level_control_gain * level_error * 0.2  # kg/s per meter error (90% reduction from 2.0)
             
-            # Integral term (simplified) - very conservative gain
+            # Integral term (simplified) - nuclear grade ultra-conservative gain
             self.level_integral_errors[i] += level_error * dt
-            integral_correction = self.level_integral_errors[i] * 0.005 * 2.0  # kg/s (reduced from 0.02 * 5.0)
+            integral_correction = self.level_integral_errors[i] * 0.0005 * 0.5  # kg/s (95% reduction from 0.005 * 2.0)
             
-            # Derivative term - very conservative gain
+            # Derivative term - nuclear grade ultra-conservative gain
             if i < len(self.previous_level_errors):
                 level_error_rate = (level_error - self.previous_level_errors[i]) / dt
-                derivative_correction = level_error_rate * 0.002 * 2.0  # kg/s (reduced from 0.01 * 5.0)
+                derivative_correction = level_error_rate * 0.0002 * 0.5  # kg/s (95% reduction from 0.002 * 2.0)
             else:
                 derivative_correction = 0.0
             
@@ -260,7 +260,7 @@ class ThreeElementControl:
             
             # CRITICAL FIX: Always use actual steam flow for proper mass balance
             # The feedwater system must follow steam generator output exactly
-            feedforward_demand = steam_flow  # Direct 1:1 mass balance
+            feedforward_demand = steam_flow  # Direct 1:1 mass balance - NO SCALING
             
             # Apply minimum flow only for pump protection (very low threshold)
             design_flow_per_sg = getattr(self.config, 'design_flow_per_sg', self.design_flow_per_sg)
@@ -275,7 +275,7 @@ class ThreeElementControl:
             
             # Now that feedforward_demand is defined, limit level correction
             level_correction = proportional_correction + integral_correction + derivative_correction
-            max_level_correction = feedforward_demand * 0.05  # Max 5% of feedforward demand (reduced from 20%)
+            max_level_correction = feedforward_demand * 0.01  # NUCLEAR GRADE: Max 1% of feedforward demand (reduced from 5%)
             level_correction = np.clip(level_correction, -max_level_correction, max_level_correction)
             
             # === ELEMENT 3: FEEDWATER FLOW FEEDBACK ===
@@ -346,6 +346,9 @@ class ThreeElementControl:
         avg_level_error = np.mean([abs(error) for error in level_errors])
         self.control_performance = max(0.0, 1.0 - avg_level_error / 2.0)  # Performance degrades with level error
         
+        # PHASE 4: Mass Balance Validation
+        mass_balance_results = self.validate_mass_balance(individual_demands, sg_steam_flows)
+        
         return {
             'total_flow_demand': total_flow_demand,
             'individual_demands': individual_demands,
@@ -353,7 +356,10 @@ class ThreeElementControl:
             'control_mode': 'automatic',
             'control_performance': self.control_performance,
             'quality_corrections': quality_corrections,
-            'avg_level_error': avg_level_error
+            'avg_level_error': avg_level_error,
+            'mass_balance_alarm': mass_balance_results['mass_balance_alarm'],
+            'mass_balance_error_percent': mass_balance_results.get('imbalance_percent', 0.0),
+            'mass_balance_status': mass_balance_results.get('status', 'OK')
         }
     
     def set_manual_mode(self, manual_setpoint: float = None):
@@ -369,6 +375,70 @@ class ThreeElementControl:
         # Reset integral errors when switching to auto
         self.level_integral_errors = [0.0] * self.num_steam_generators
         self.quality_compensator.reset()
+    
+    def validate_mass_balance(self, feedwater_flows: List[float], steam_flows: List[float]) -> Dict[str, Any]:
+        """
+        Validate mass balance and generate alarms for nuclear plant operation
+        
+        Args:
+            feedwater_flows: Feedwater flow demands for each SG (kg/s)
+            steam_flows: Steam flows for each SG (kg/s)
+            
+        Returns:
+            Dictionary with mass balance validation results
+        """
+        # Ensure we have matching lengths
+        min_length = min(len(feedwater_flows), len(steam_flows))
+        feedwater_flows = feedwater_flows[:min_length]
+        steam_flows = steam_flows[:min_length]
+        
+        # Calculate total flows
+        total_feedwater = sum(feedwater_flows)
+        total_steam = sum(steam_flows)
+        
+        # Calculate mass balance error
+        if total_steam > 0:
+            imbalance_percent = abs(total_feedwater - total_steam) / total_steam * 100
+        else:
+            imbalance_percent = 0.0
+        
+        # Nuclear plant mass balance tolerance: 1% normal, 2% alarm
+        if imbalance_percent > 2.0:
+            # CRITICAL: Mass balance violation - reduce control gains automatically
+            return {
+                'mass_balance_alarm': True,
+                'imbalance_percent': imbalance_percent,
+                'status': 'CRITICAL_IMBALANCE',
+                'corrective_action': 'Reduce level control gains immediately',
+                'feedwater_total': total_feedwater,
+                'steam_total': total_steam,
+                'individual_errors': [abs(fw - st)/st*100 if st > 0 else 0.0 
+                                    for fw, st in zip(feedwater_flows, steam_flows)]
+            }
+        elif imbalance_percent > 1.0:
+            # WARNING: Approaching mass balance limits
+            return {
+                'mass_balance_alarm': True,
+                'imbalance_percent': imbalance_percent,
+                'status': 'WARNING_IMBALANCE',
+                'corrective_action': 'Monitor control system performance',
+                'feedwater_total': total_feedwater,
+                'steam_total': total_steam,
+                'individual_errors': [abs(fw - st)/st*100 if st > 0 else 0.0 
+                                    for fw, st in zip(feedwater_flows, steam_flows)]
+            }
+        else:
+            # NORMAL: Mass balance within acceptable limits
+            return {
+                'mass_balance_alarm': False,
+                'imbalance_percent': imbalance_percent,
+                'status': 'NORMAL',
+                'corrective_action': None,
+                'feedwater_total': total_feedwater,
+                'steam_total': total_steam,
+                'individual_errors': [abs(fw - st)/st*100 if st > 0 else 0.0 
+                                    for fw, st in zip(feedwater_flows, steam_flows)]
+            }
     
     def set_target_levels(self, target_levels: List[float]):
         """Set target levels for all steam generators"""

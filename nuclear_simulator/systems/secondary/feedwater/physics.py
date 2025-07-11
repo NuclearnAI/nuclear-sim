@@ -154,22 +154,24 @@ class EnhancedFeedwaterPhysics(HeatFlowProvider, ChemistryFlowProvider):
         self.diagnostics = PerformanceDiagnostics(compatible_diagnostics_config)
         self.protection_system = FeedwaterProtectionSystem(protection_config)
         
-        # CRITICAL: Apply initial conditions after creating components
-        self._apply_initial_conditions()
-        
-        print(f"FEEDWATER: Applied initial conditions from config")
-        
         # Enhanced feedwater state
         self.total_flow_rate = 0.0                       # kg/s total system flow
         self.total_power_consumption = 0.0               # MW total power consumption
         self.system_efficiency = 0.0                     # Overall system efficiency
         self.system_availability = True                  # System availability status
         
-        # Steam generator conditions
-        self.sg_levels = [12.5] * self.config.num_steam_generators      # m SG levels
-        self.sg_pressures = [6.895] * self.config.num_steam_generators  # MPa SG pressures
-        self.sg_steam_flows = [555.0] * self.config.num_steam_generators # kg/s steam flows
-        self.sg_steam_qualities = [0.99] * self.config.num_steam_generators # Steam qualities
+        # Steam generator conditions - USE ACTUAL CONFIG VALUES, NOT HARDCODED
+        # CRITICAL FIX: Read actual SG conditions from config instead of hardcoding
+        ic = self.config.initial_conditions
+        self.sg_levels = ic.sg_levels.copy() if hasattr(ic, 'sg_levels') else [12.5] * self.config.num_steam_generators
+        self.sg_pressures = ic.sg_pressures.copy() if hasattr(ic, 'sg_pressures') else [6.895] * self.config.num_steam_generators
+        self.sg_steam_flows = ic.sg_steam_flows.copy() if hasattr(ic, 'sg_steam_flows') else [500.0] * self.config.num_steam_generators
+        self.sg_steam_qualities = ic.sg_steam_qualities.copy() if hasattr(ic, 'sg_steam_qualities') else [0.99] * self.config.num_steam_generators
+        
+        # CRITICAL: Apply initial conditions after creating components AND initializing SG attributes
+        self._apply_initial_conditions()
+        
+        print(f"FEEDWATER: Applied initial conditions from config")
         
         # Performance tracking
         self.performance_factor = 1.0                    # Overall performance factor
@@ -201,12 +203,19 @@ class EnhancedFeedwaterPhysics(HeatFlowProvider, ChemistryFlowProvider):
         print(f"  Running pumps: {ic.running_pumps}")
 
         # Apply system-level initial conditions
-        self.total_flow_rate = ic.total_flow_rate
+        # CRITICAL FIX: Calculate total flow rate from actual SG steam flows
+        actual_total_steam_flow = sum(self.sg_steam_flows)
+        self.total_flow_rate = actual_total_steam_flow  # Match actual SG demand, not hardcoded value
         self.system_efficiency = ic.system_efficiency
         self.sg_levels = ic.sg_levels.copy()
         self.sg_pressures = ic.sg_pressures.copy()
         self.sg_steam_flows = ic.sg_steam_flows.copy()
         self.sg_steam_qualities = ic.sg_steam_qualities.copy()
+        
+        print(f"FEEDWATER: Calculated total flow rate from SG conditions:")
+        print(f"  Individual SG flows: {self.sg_steam_flows}")
+        print(f"  Total flow rate: {self.total_flow_rate:.1f} kg/s (calculated from SG flows)")
+        print(f"  Config total flow rate: {ic.total_flow_rate:.1f} kg/s (for comparison)")
         
         # Apply initial conditions to pump system
         if hasattr(self.pump_system, 'pumps'):

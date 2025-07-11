@@ -141,7 +141,8 @@ class ScenarioRunner:
         action: str,
         duration_hours: float = 2.0,
         aggressive_mode: bool = True,
-        save_config: bool = True
+        save_config: bool = True,
+        tracking_start_hours: float = 0.0
     ) -> Dict[str, Any]:
         """
         Generate and run a maintenance-targeted scenario
@@ -151,6 +152,7 @@ class ScenarioRunner:
             duration_hours: Simulation duration in hours
             aggressive_mode: Use aggressive thresholds
             save_config: Save the generated configuration
+            tracking_start_hours: Start time for CSV data tracking (hours). Data before this time will not be saved to CSVs.
             
         Returns:
             Simulation results
@@ -192,6 +194,9 @@ class ScenarioRunner:
                 
                 # Create our custom simulation runner
                 simulation = MaintenanceScenarioRunner(config, verbose=self.verbose, enable_plotting=self.enable_plotting)
+                
+                # Set tracking start time for CSV filtering
+                simulation.tracking_start_hours = tracking_start_hours
                 
                 # Run simulation
                 start_time = time.time()
@@ -894,6 +899,7 @@ Examples:
     parser.add_argument('--actions', type=str, help='Comma-separated list of actions for batch mode')
     parser.add_argument('--count', type=int, default=1, help='Number of runs per action in batch mode')
     parser.add_argument('--aggressive', action='store_true', help='Use aggressive thresholds (default: conservative)')
+    parser.add_argument('--tracking-start', type=float, default=0.0, help='Start time for CSV data tracking in hours. Data before this time will not be saved to CSVs (default: 0.0)')
     
     # Run-all-actions specific parameters
     parser.add_argument('--subsystem', type=str, choices=['steam_generator', 'turbine', 'feedwater', 'condenser'], 
@@ -1078,7 +1084,8 @@ def main():
             runner.run_maintenance_scenario(
                 action=action,
                 duration_hours=args.duration,
-                aggressive_mode=aggressive_mode
+                aggressive_mode=aggressive_mode,
+                tracking_start_hours=args.tracking_start
             )
         
         elif args.scenario:

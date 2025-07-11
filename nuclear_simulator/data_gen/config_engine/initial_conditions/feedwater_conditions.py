@@ -372,6 +372,64 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
         "target_pump": "FWP-1"
     },
     
+    # === NORMAL OPERATION ===
+    # Normal operational conditions with minor wear - no maintenance required
+    "normal_operation": {
+        # FIXED: Update SG flows to match actual simulation data
+        "sg_steam_flows": [450.0, 450.0, 450.0],         # Match actual simulation data (not 500.0)
+        "total_flow_rate": 1350.0,                        # Sum of SG flows (450×3=1350)
+        
+        # Minor bearing wear - well below maintenance thresholds
+        "motor_bearing_wear": [2.5, 0.1, 0.1, 0.0],      # 2.5% wear (threshold: 8.0%)
+        "pump_bearing_wear": [1.8, 0.1, 0.1, 0.0],       # 1.8% wear (threshold: 6.0%)
+        "thrust_bearing_wear": [1.2, 0.1, 0.1, 0.0],     # 1.2% wear (threshold: 4.0%)
+        
+        # Good oil quality with minor operational degradation
+        "pump_oil_contamination": 8.0,                    # 8.0 ppm (threshold: 15.0 ppm)
+        "pump_oil_water_content": 0.04,                   # 0.04% (threshold: 0.08%)
+        "pump_oil_acid_number": 1.2,                      # 1.2 mg KOH/g (threshold: 1.6)
+        "oil_temperature": 48.0,                          # 48°C (threshold: 55.0°C)
+        
+        # Good performance with minor efficiency loss
+        "lubrication_effectiveness": [0.92, 0.95, 0.95, 0.95], # 92% effectiveness (threshold: 85%)
+        "system_health_factor": [0.88, 0.92, 0.92, 0.92], # 88% health (threshold: 80%)
+        
+        # Normal operational temperatures and vibrations
+        "motor_temperature": [65.0, 45.0, 45.0, 25.0],   # 65°C FWP-1 (threshold: 85.0°C)
+        "bearing_temperatures": [60.0, 40.0, 40.0, 25.0], # Normal bearing temps
+        "pump_vibrations": [8.0, 3.0, 3.0, 0.0],         # 8.0 mm/s FWP-1 (threshold: 20.0 mm/s)
+        
+        # Good NPSH conditions
+        "npsh_available": [19.5, 20.0, 20.0, 20.0],      # 19.5m FWP-1 (threshold: 18.0m)
+        "cavitation_intensity": [0.08, 0.02, 0.02, 0.02], # Low cavitation (threshold: 0.25)
+        
+        # Minor seal and impeller wear
+        "seal_face_wear": [3.0, 0.5, 0.5, 0.5],          # 3.0% wear (threshold: 15.0%)
+        "impeller_wear": [1.5, 0.3, 0.3, 0.3],           # 1.5% wear (threshold: 8.0%)
+        "impeller_cavitation_damage": [0.8, 0.1, 0.1, 0.1], # Minor damage (threshold: 8.0)
+        
+        # Good oil levels and pressures
+        "pump_oil_levels": [95.0, 98.0, 98.0, 100.0],    # Good oil levels (threshold: 60.0%)
+        "oil_pressure": [0.22, 0.25, 0.25, 0.25],        # Good pressure (threshold: 0.15 MPa)
+        "oil_flow_rate": [0.95, 1.0, 1.0, 1.0],          # Good flow (threshold: 0.90)
+        
+        # Normal system pressures
+        "suction_pressure": 0.45,                         # Good suction pressure
+        "discharge_pressure": 7.8,                        # Normal discharge pressure
+        
+        "description": "Normal operational conditions after several months of service - minor wear but no maintenance required",
+        "expected_action": "none",
+        "target_pump": "All pumps operating normally",
+        "physics_notes": [
+            "Represents typical operational wear after 3-6 months of service",
+            "All parameters comfortably below maintenance thresholds",
+            "Minor efficiency loss from normal wear patterns",
+            "Oil quality showing expected operational degradation",
+            "No maintenance actions triggered - normal operations",
+            "FIXED: SG flows updated to match actual simulation data (450 kg/s per SG)"
+        ]
+    },
+    
     # === GRADUAL DEGRADATION ===
     # Multiple actions triggered at different time intervals based on different degradation rates
     #"gradual_degradation": {

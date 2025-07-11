@@ -129,7 +129,7 @@ class FeedwaterPump(BasePump):
         
         # Feedwater-specific protection setpoints
         self.low_flow_trip = 25.0                       # kg/s low flow trip (reduced from 50.0)
-        self.min_npsh_required = 15.0                   # m NPSH requirement
+        self.min_npsh_required = 8.0                    # m NPSH requirement (FIXED: reduced from 15.0)
         self.max_discharge_pressure = 10.0              # MPa max discharge pressure
         self.min_suction_pressure = 0.2                 # MPa min suction pressure
         

@@ -288,7 +288,7 @@ class FeedwaterInitialConditions:
     pump_power: List[float] = field(default_factory=lambda: [1.0, 1.0, 1.0, 1.0])  # Fraction of design power per pump
     
     # NPSH and cavitation parameters
-    npsh_available: List[float] = field(default_factory=lambda: [12.0, 12.0, 12.0, 12.0])  # m NPSH available per pump
+    npsh_available: List[float] = field(default_factory=lambda: [20.0, 20.0, 20.0, 20.0])  # m NPSH available per pump (FIXED: adequate margin)
     cavitation_inception: List[float] = field(default_factory=lambda: [1.0, 1.0, 1.0, 1.0])  # Fraction of design flow for cavitation per pump
     cavitation_intensity: List[float] = field(default_factory=lambda: [0.05, 0.05, 0.05, 0.05])  # Cavitation intensity index per pump
     noise_level: List[float] = field(default_factory=lambda: [75.0, 75.0, 75.0, 75.0])  # dB noise level per pump

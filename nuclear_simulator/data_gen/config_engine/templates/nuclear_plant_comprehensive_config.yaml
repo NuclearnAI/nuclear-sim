@@ -14,7 +14,7 @@ simulation_config:
   # Primary simulation parameters
   duration_hours: 24.0
   scenario: "load_following_with_maintenance"
-  time_step_minutes: 20.0
+  time_step_minutes: 5.
   
   # Environment settings
   enable_noise: true
@@ -168,8 +168,8 @@ secondary_system:
       sg_pressures: [6.9, 6.9, 6.9]                    # → secondary_pressure
       sg_temperatures: [285.8, 285.8, 285.8]           # → secondary_temperature
       sg_steam_qualities: [0.99, 0.99, 0.99]           # → steam_quality
-      sg_steam_flows: [500.0, 500.0, 500.0]            # → steam_flow_rate
-      sg_feedwater_flows: [500.0, 500.0, 500.0]        # → feedwater_flow_rate
+      sg_steam_flows: [450.0, 450.0, 450.0]            # → steam_flow_rate (FIXED: match simulation data)
+      sg_feedwater_flows: [450.0, 450.0, 450.0]        # → feedwater_flow_rate (FIXED: match steam flows)
       primary_inlet_temps: [327.0, 327.0, 327.0]       # → primary_inlet_temp
       primary_outlet_temps: [293.0, 293.0, 293.0]      # → primary_outlet_temp
       primary_flow_rates: [5700.0, 5700.0, 5700.0]     # → primary flow parameter
@@ -411,20 +411,22 @@ secondary_system:
     # Initial conditions for 3 steam generators and 4 feedwater pumps
     initial_conditions:
       # System flow conditions
-      total_flow_rate: 1500.0                 # kg/s total system flow rate
+      total_flow_rate: 1350.0                 # kg/s total system flow rate (FIXED: 450×3=1350)
       total_power_consumption: 15.0           # MW total power consumption
       system_efficiency: 0.85                 # System efficiency
       
       # Steam generator conditions
       sg_levels: [12.5, 12.5, 12.5]          # m SG levels
       sg_pressures: [6.9, 6.9, 6.9]          # MPa SG pressures
-      sg_steam_flows: [500.0, 500.0, 500.0]  # kg/s steam flows
+      sg_steam_flows: [450.0, 450.0, 450.0]  # kg/s steam flows (FIXED: match SG section)
       sg_steam_qualities: [0.99, 0.99, 0.99] # Steam qualities
       
-      # Pump conditions - speeds and flows calculated dynamically during initialization
-      pump_heads: [800.0, 800.0, 800.0, 0.0]      # m pump heads
-      pump_efficiencies: [0.85, 0.85, 0.85, 0.0]  # Pump efficiencies
-      running_pumps: [true, true, true, false]     # Pump running status
+      # Pump conditions - REMOVED hardcoded values to allow physics-based initialization
+      # pump_heads: REMOVED - calculated from actual system conditions
+      # pump_efficiencies: REMOVED - calculated from degradation state
+      # pump_flows: REMOVED - calculated from steam generator demand
+      # pump_speeds: REMOVED - calculated from flow requirements
+      running_pumps: [true, true, true, false]     # Pump running status (operational only)
       
       # System pressures and temperatures
       suction_pressure: 0.5                   # MPa suction pressure
@@ -502,7 +504,7 @@ secondary_system:
       pump_power: [1.0, 1.0, 1.0, 1.0]       # Fraction of design power per pump
       
       # NPSH and cavitation parameters
-      npsh_available: [22.0, 42.0, 42.0, 42.0]  # m NPSH available per pump
+      npsh_available: [20.0, 20.0, 20.0, 20.0]  # m NPSH available per pump (FIXED: adequate margin above 8.0m requirement)
       cavitation_inception: [1.0, 1.0, 1.0, 1.0]  # Fraction of design flow for cavitation per pump
       cavitation_intensity: [0.05, 0.05, 0.05, 0.05]  # Cavitation intensity index per pump
       noise_level: [75.0, 75.0, 75.0, 75.0]  # dB noise level per pump
@@ -694,14 +696,14 @@ maintenance_system:
         # === LUBRICATION SYSTEM MAINTENANCE (HIGHEST PRIORITY) ===
         # Oil contamination checked FIRST to ensure oil_change gets priority
         oil_contamination_level:
-          threshold: 15.0              # ppm - Typical change-out level
+          threshold: 16.0              # ppm - Increased from 15.0 to ensure 60+ minute delay (more reasonable)
           comparison: "greater_than"
           action: "oil_change"
           cooldown_hours: 720.0        # Monthly cooldown
           priority: "MEDIUM"
         
         oil_level:
-          threshold: 60.0              # Oil level (lubrication_system.oil_level) - FIXED: Reduced from 75.0% to realistic 60%
+          threshold: 50.0              # Oil level - Reduced from 60.0% to ensure 60+ minute delay
           comparison: "less_than"
           action: "oil_top_off"
           cooldown_hours: 168.0        # Weekly cooldown
@@ -757,7 +759,7 @@ maintenance_system:
         # === BEARING-BASED MECHANICAL MAINTENANCE ===
         # Bearing issues trigger bearing maintenance, not impeller maintenance
         motor_bearing_wear:
-          threshold: 8.0
+          threshold: 12.0              # Increased from 8.0 to ensure 60+ minute delay
           comparison: "greater_than"
           action: "bearing_replacement"
           component_id: "motor_bearings"  # NEW: Specify which bearing
@@ -765,7 +767,7 @@ maintenance_system:
           priority: "HIGH"
         
         pump_bearing_wear:
-          threshold: 6.0
+          threshold: 10.0              # Increased from 6.0 to ensure 60+ minute delay
           comparison: "greater_than" 
           action: "bearing_replacement"
           component_id: "pump_bearings"   # NEW: Specify which bearing
@@ -773,7 +775,7 @@ maintenance_system:
           priority: "HIGH"
         
         thrust_bearing_wear:
-          threshold: 4.0
+          threshold: 8.0               # Increased from 4.0 to ensure 60+ minute delay
           comparison: "greater_than"
           action: "bearing_replacement"
           component_id: "thrust_bearing"  # NEW: Specify which bearing
@@ -781,7 +783,7 @@ maintenance_system:
           priority: "CRITICAL"
         
         seal_wear:
-          threshold: 15.0              # Seal wear (lubrication_system.component_wear['mechanical_seals']) - FIXED: Increased from 4.0% to realistic 25%
+          threshold: 20.0              # Increased from 15.0 to ensure 60+ minute delay
           comparison: "greater_than"
           action: "seal_replacement"
           cooldown_hours: 2190.0       # Quarterly cooldown
@@ -841,7 +843,7 @@ maintenance_system:
         # === PUMP STATE MONITORING THRESHOLDS ===
         # Only include thresholds that map to actual pump state variables
         motor_temperature:
-          threshold: 85.0              # °C motor temperature (pump.state.motor_temperature)
+          threshold: 90.0              # °C motor temperature - Increased from 85.0 to ensure 60+ minute delay
           comparison: "greater_than"
           action: "motor_inspection"
           cooldown_hours: 168.0        # Weekly cooldown

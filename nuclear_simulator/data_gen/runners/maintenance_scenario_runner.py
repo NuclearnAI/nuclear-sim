@@ -78,6 +78,9 @@ class MaintenanceScenarioRunner:
         self.work_order_events = []
         self.component_health_data = []
         
+        # CSV tracking configuration
+        self.tracking_start_hours = 0.0  # Default: track from beginning
+        
         # No longer use maintenance catalog - rely on conditions files only
         self.maintenance_catalog = None
         
@@ -1044,10 +1047,24 @@ class MaintenanceScenarioRunner:
         
         exported_files = []
         
-        # Export simulation data using state manager
+        # Calculate time range for filtering based on tracking start time
+        time_range = None
+        if self.tracking_start_hours > 0.0:
+            # Convert tracking start time to the format expected by state manager
+            # State manager uses datetime objects, so we need to calculate the start datetime
+            start_datetime = self.simulator.state_manager.start_datetime
+            from datetime import timedelta
+            tracking_start_datetime = start_datetime + timedelta(hours=self.tracking_start_hours)
+            # Use tracking start time to end of simulation
+            time_range = (tracking_start_datetime, self.simulator.state_manager.current_datetime)
+            
+            if self.verbose:
+                print(f"📊 Applying time range filter: data from {self.tracking_start_hours} hours onwards")
+        
+        # Export simulation data using state manager with time range filtering
         filename = f"{filename_prefix}_simulation_data"
-        self.simulator.state_manager.export_by_category('secondary',  f"{filename}.csv")
-        self.simulator.state_manager.export_by_subcategory('secondary', 'feedwater_FWP-1', f"fwp.csv")
+        self.simulator.state_manager.export_by_category('secondary', f"{filename}.csv", time_range=time_range)
+        self.simulator.state_manager.export_by_subcategory('secondary', 'feedwater_FWP-1', f"fwp.csv", time_range=time_range)
         exported_files.append(filename)
         if self.verbose:
             print(f"📄 Simulation data exported to {filename}")
@@ -1076,6 +1093,10 @@ class MaintenanceScenarioRunner:
         maintenance_data = []
         
         for event in self.maintenance_events:
+            # Apply tracking start time filter
+            if self.tracking_start_hours > 0.0 and event['time_hours'] < self.tracking_start_hours:
+                continue  # Skip events before tracking start time
+            
             row = {
                 # Timing
                 'timestamp_hours': event['time_hours'],
@@ -1098,10 +1119,19 @@ class MaintenanceScenarioRunner:
             }
             maintenance_data.append(row)
         
+        # Check if any data remains after filtering
+        if not maintenance_data:
+            if self.verbose:
+                print(f"📊 No maintenance actions after {self.tracking_start_hours}h - skipping CSV export")
+            return None
+        
         # Export to CSV
         filename = f"{filename_prefix}_maintenance_actions.csv"
         df = pd.DataFrame(maintenance_data)
         df.to_csv(filename, index=False)
+        
+        if self.verbose and self.tracking_start_hours > 0.0:
+            print(f"📊 Filtered maintenance actions: {len(maintenance_data)} events from {self.tracking_start_hours}h onwards")
         
         return filename
 
@@ -1116,6 +1146,10 @@ class MaintenanceScenarioRunner:
             # FIXED: Use consistent time fields - minutes as primary, hours as derived
             time_minutes = event.get('time_minutes', event.get('time_hours', 0) * 60)
             time_hours = time_minutes / 60.0
+            
+            # Apply tracking start time filter
+            if self.tracking_start_hours > 0.0 and time_hours < self.tracking_start_hours:
+                continue  # Skip events before tracking start time
             
             row = {
                 # FIXED: Timing - minutes as primary, hours as derived
@@ -1151,10 +1185,19 @@ class MaintenanceScenarioRunner:
             }
             work_order_data.append(row)
         
+        # Check if any data remains after filtering
+        if not work_order_data:
+            if self.verbose:
+                print(f"📊 No work order events after {self.tracking_start_hours}h - skipping CSV export")
+            return None
+        
         # Export to CSV
         filename = f"{filename_prefix}_work_orders.csv"
         df = pd.DataFrame(work_order_data)
         df.to_csv(filename, index=False)
+        
+        if self.verbose and self.tracking_start_hours > 0.0:
+            print(f"📊 Filtered work orders: {len(work_order_data)} events from {self.tracking_start_hours}h onwards")
         
         return filename
 
