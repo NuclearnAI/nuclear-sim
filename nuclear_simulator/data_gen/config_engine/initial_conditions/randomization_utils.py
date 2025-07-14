@@ -272,8 +272,8 @@ ACTION_SCENARIOS = {
             "probability": 0.5,
             "description": "Very high wear with high stress - almost certain 12hr trigger (targets 8.5 threshold)",
             "parameters": {
-                "motor_bearing_wear": {"range": [8.45, 8.49], "distribution": "uniform"},
-                "motor_temperature": {"range": [100, 115], "distribution": "normal"},
+                "motor_bearing_wear": {"range": [8.45, 8.49], "distribution": "uniform", "array_handling": "first_element_only"},
+                "motor_temperature": {"range": [100, 115], "distribution": "normal", "array_handling": "first_element_only"},
                 "pump_oil_contamination": {"range": [15.0, 15.15], "distribution": "uniform"},
                 "oil_temperature": {"range": [58, 65], "distribution": "normal"}
             }
@@ -283,8 +283,8 @@ ACTION_SCENARIOS = {
             "probability": 0.35,
             "description": "High wear with very high stress conditions (targets 8.5 threshold)",
             "parameters": {
-                "motor_bearing_wear": {"range": [8.3, 8.4], "distribution": "uniform"},
-                "motor_temperature": {"range": [105, 120], "distribution": "normal"},
+                "motor_bearing_wear": {"range": [8.3, 8.4], "distribution": "uniform", "array_handling": "first_element_only"},
+                "motor_temperature": {"range": [105, 120], "distribution": "normal", "array_handling": "first_element_only"},
                 "pump_oil_contamination": {"range": [15.1, 15.18], "distribution": "uniform"},
                 "oil_temperature": {"range": [60, 68], "distribution": "normal"}
             }
@@ -294,8 +294,8 @@ ACTION_SCENARIOS = {
             "probability": 0.15,
             "description": "Moderate wear with elevated conditions - possible trigger (targets 8.5 threshold)",
             "parameters": {
-                "motor_bearing_wear": {"range": [8.0, 8.2], "distribution": "uniform"},
-                "motor_temperature": {"range": [90, 100], "distribution": "normal"},
+                "motor_bearing_wear": {"range": [8.0, 8.2], "distribution": "uniform", "array_handling": "first_element_only"},
+                "motor_temperature": {"range": [90, 100], "distribution": "normal", "array_handling": "first_element_only"},
                 "pump_oil_contamination": {"range": [14.8, 15.0], "distribution": "uniform"},
                 "oil_temperature": {"range": [55, 60], "distribution": "normal"}
             }
@@ -308,13 +308,13 @@ ACTION_SCENARIOS = {
             "probability": 0.5,
             "description": "Physics-driven high cavitation with compound acceleration - 11hr trigger via physics",
             "parameters": {
-                "pump_bearing_wear": {"range": [6.2, 6.3], "distribution": "uniform"},  # Start 0.2-0.3% below threshold
-                "cavitation_intensity": {"range": [0.25, 0.35], "distribution": "uniform"},  # 2.5-2.7x acceleration
-                "impeller_wear": {"range": [3.0, 5.0], "distribution": "uniform"},  # 1.12-1.2x coupling acceleration
-                "npsh_available": {"range": [16.0, 17.5], "distribution": "uniform"},  # SAFE: above 15.0m trip
+                "pump_bearing_wear": {"range": [6.2, 6.3], "distribution": "uniform", "array_handling": "first_element_only"},  # Start 0.2-0.3% below threshold
+                "cavitation_intensity": {"range": [0.25, 0.35], "distribution": "uniform", "array_handling": "first_element_only"},  # 2.5-2.7x acceleration
+                "impeller_wear": {"range": [3.0, 5.0], "distribution": "uniform", "array_handling": "first_element_only"},  # 1.12-1.2x coupling acceleration
+                "npsh_available": {"range": [16.0, 17.5], "distribution": "uniform", "array_handling": "first_element_only"},  # SAFE: above 15.0m trip
                 "oil_temperature": {"range": [60, 70], "distribution": "normal"},  # 1.3-1.7x temperature acceleration
-                "motor_temperature": {"range": [80, 90], "distribution": "normal"},  # Supporting elevated conditions
-                "pump_vibrations": {"range": [12.0, 18.0], "distribution": "normal"}  # Higher hydraulic loads
+                "motor_temperature": {"range": [80, 90], "distribution": "normal", "array_handling": "first_element_only"},  # Supporting elevated conditions
+                "pump_vibrations": {"range": [12.0, 18.0], "distribution": "normal", "array_handling": "first_element_only"}  # Higher hydraulic loads
             }
         },
         {
@@ -322,13 +322,13 @@ ACTION_SCENARIOS = {
             "probability": 0.35,
             "description": "Physics-driven moderate cavitation with coupling effects - 8hr trigger via physics",
             "parameters": {
-                "pump_bearing_wear": {"range": [6.25, 6.35], "distribution": "uniform"},  # Start 0.15-0.25% below threshold
-                "cavitation_intensity": {"range": [0.18, 0.28], "distribution": "uniform"},  # 2.18-2.28x acceleration
-                "impeller_wear": {"range": [2.0, 4.0], "distribution": "uniform"},  # 1.08-1.16x coupling acceleration
-                "npsh_available": {"range": [16.5, 18.0], "distribution": "uniform"},  # SAFE: above 15.0m trip
+                "pump_bearing_wear": {"range": [6.25, 6.35], "distribution": "uniform", "array_handling": "first_element_only"},  # Start 0.15-0.25% below threshold
+                "cavitation_intensity": {"range": [0.18, 0.28], "distribution": "uniform", "array_handling": "first_element_only"},  # 2.18-2.28x acceleration
+                "impeller_wear": {"range": [2.0, 4.0], "distribution": "uniform", "array_handling": "first_element_only"},  # 1.08-1.16x coupling acceleration
+                "npsh_available": {"range": [16.5, 18.0], "distribution": "uniform", "array_handling": "first_element_only"},  # SAFE: above 15.0m trip
                 "oil_temperature": {"range": [55, 65], "distribution": "normal"},  # 1.17-1.5x temperature acceleration
-                "motor_temperature": {"range": [75, 85], "distribution": "normal"},  # Supporting elevated conditions
-                "pump_vibrations": {"range": [10.0, 15.0], "distribution": "normal"}  # Moderate hydraulic loads
+                "motor_temperature": {"range": [75, 85], "distribution": "normal", "array_handling": "first_element_only"},  # Supporting elevated conditions
+                "pump_vibrations": {"range": [10.0, 15.0], "distribution": "normal", "array_handling": "first_element_only"}  # Moderate hydraulic loads
             }
         },
         {
@@ -336,13 +336,13 @@ ACTION_SCENARIOS = {
             "probability": 0.15,
             "description": "Physics-driven low cavitation with temperature effects - 6hr trigger via physics",
             "parameters": {
-                "pump_bearing_wear": {"range": [6.3, 6.4], "distribution": "uniform"},  # Start 0.1-0.2% below threshold
-                "cavitation_intensity": {"range": [0.12, 0.18], "distribution": "uniform"},  # 2.12-2.18x acceleration
-                "impeller_wear": {"range": [1.0, 3.0], "distribution": "uniform"},  # 1.04-1.12x coupling acceleration
-                "npsh_available": {"range": [17.0, 18.5], "distribution": "uniform"},  # SAFE: above 15.0m trip
+                "pump_bearing_wear": {"range": [6.3, 6.4], "distribution": "uniform", "array_handling": "first_element_only"},  # Start 0.1-0.2% below threshold
+                "cavitation_intensity": {"range": [0.12, 0.18], "distribution": "uniform", "array_handling": "first_element_only"},  # 2.12-2.18x acceleration
+                "impeller_wear": {"range": [1.0, 3.0], "distribution": "uniform", "array_handling": "first_element_only"},  # 1.04-1.12x coupling acceleration
+                "npsh_available": {"range": [17.0, 18.5], "distribution": "uniform", "array_handling": "first_element_only"},  # SAFE: above 15.0m trip
                 "oil_temperature": {"range": [50, 60], "distribution": "normal"},  # 1.0-1.33x temperature acceleration
-                "motor_temperature": {"range": [70, 80], "distribution": "normal"},  # Supporting elevated conditions
-                "pump_vibrations": {"range": [8.0, 12.0], "distribution": "normal"}  # Lower hydraulic loads
+                "motor_temperature": {"range": [70, 80], "distribution": "normal", "array_handling": "first_element_only"},  # Supporting elevated conditions
+                "pump_vibrations": {"range": [8.0, 12.0], "distribution": "normal", "array_handling": "first_element_only"}  # Lower hydraulic loads
             }
         }
     ],
@@ -389,9 +389,9 @@ ACTION_SCENARIOS = {
             "probability": 0.6,
             "description": "Very high axial load - almost certain 12hr trigger (targets 4.5 threshold)",
             "parameters": {
-                "thrust_bearing_wear": {"range": [4.45, 4.49], "distribution": "uniform"},
-                "pump_vibrations": {"range": [18.0, 22.0], "distribution": "normal"},
-                "cavitation_intensity": {"range": [0.18, 0.25], "distribution": "uniform"}
+                "thrust_bearing_wear": {"range": [4.45, 4.49], "distribution": "uniform", "array_handling": "first_element_only"},
+                "pump_vibrations": {"range": [18.0, 22.0], "distribution": "normal", "array_handling": "first_element_only"},
+                "cavitation_intensity": {"range": [0.18, 0.25], "distribution": "uniform", "array_handling": "first_element_only"}
             }
         },
         {
@@ -399,9 +399,9 @@ ACTION_SCENARIOS = {
             "probability": 0.25,
             "description": "High wear with very high axial stress (targets 4.5 threshold)",
             "parameters": {
-                "thrust_bearing_wear": {"range": [4.4, 4.45], "distribution": "uniform"},
-                "pump_vibrations": {"range": [15.0, 20.0], "distribution": "normal"},
-                "cavitation_intensity": {"range": [0.15, 0.2], "distribution": "uniform"}
+                "thrust_bearing_wear": {"range": [4.4, 4.45], "distribution": "uniform", "array_handling": "first_element_only"},
+                "pump_vibrations": {"range": [15.0, 20.0], "distribution": "normal", "array_handling": "first_element_only"},
+                "cavitation_intensity": {"range": [0.15, 0.2], "distribution": "uniform", "array_handling": "first_element_only"}
             }
         },
         {
@@ -409,54 +409,54 @@ ACTION_SCENARIOS = {
             "probability": 0.15,
             "description": "Elevated thrust conditions - possible trigger (targets 4.5 threshold)",
             "parameters": {
-                "thrust_bearing_wear": {"range": [4.3, 4.4], "distribution": "uniform"},
-                "pump_vibrations": {"range": [12.0, 16.0], "distribution": "normal"},
-                "cavitation_intensity": {"range": [0.1, 0.15], "distribution": "uniform"}
+                "thrust_bearing_wear": {"range": [4.3, 4.4], "distribution": "uniform", "array_handling": "first_element_only"},
+                "pump_vibrations": {"range": [12.0, 16.0], "distribution": "normal", "array_handling": "first_element_only"},
+                "cavitation_intensity": {"range": [0.1, 0.15], "distribution": "uniform", "array_handling": "first_element_only"}
             }
         }
     ],
     
     "seal_replacement": [
         {
-            "name": "critical_seal_physics",
-            "probability": 0.5,
-            "description": "Physics-driven critical seal wear with cavitation acceleration - 6hr trigger via physics",
-            "parameters": {
-                "seal_face_wear": {"range": [15.7, 15.9], "distribution": "uniform"},  # Start 0.1-0.3% below 16.0% threshold
-                "cavitation_intensity": {"range": [0.15, 0.25], "distribution": "uniform"},  # 5x seal acceleration from cavitation
-                "oil_temperature": {"range": [60, 70], "distribution": "normal"},  # Heat degrades seal materials
-                "pump_oil_contamination": {"range": [13.0, 14.0], "distribution": "uniform"},  # Contamination damages seal faces
-                "pump_oil_water_content": {"range": [0.07, 0.075], "distribution": "uniform"},  # Moisture damages seals
-                "motor_temperature": {"range": [75, 85], "distribution": "normal"},  # Supporting elevated conditions
-                "pump_vibrations": {"range": [10.0, 15.0], "distribution": "normal"}  # Vibration affects seal alignment
-            }
-        },
-        {
             "name": "moderate_seal_physics",
-            "probability": 0.35,
-            "description": "Physics-driven moderate seal wear with pressure effects - 8hr trigger via physics",
+            "probability": 0.5,
+            "description": "Physics-driven moderate seal wear with conservative acceleration - 8hr trigger via physics",
             "parameters": {
-                "seal_face_wear": {"range": [15.5, 15.7], "distribution": "uniform"},  # Start 0.3-0.5% below 16.0% threshold
-                "cavitation_intensity": {"range": [0.10, 0.20], "distribution": "uniform"},  # 4x seal acceleration from cavitation
-                "oil_temperature": {"range": [55, 65], "distribution": "normal"},  # Moderate heat effects
-                "pump_oil_contamination": {"range": [12.0, 13.5], "distribution": "uniform"},  # Moderate contamination
-                "pump_oil_water_content": {"range": [0.06, 0.07], "distribution": "uniform"},  # Moderate moisture
-                "motor_temperature": {"range": [70, 80], "distribution": "normal"},  # Supporting elevated conditions
-                "pump_vibrations": {"range": [8.0, 12.0], "distribution": "normal"}  # Moderate vibration
+                "seal_face_wear": {"range": [15.0, 15.3], "distribution": "uniform", "array_handling": "first_element_only"},  # FIXED: Array parameter for FWP-1 only
+                "cavitation_intensity": {"range": [0.08, 0.15], "distribution": "uniform", "array_handling": "first_element_only"},  # REDUCED: 2.5x seal acceleration (was 5x)
+                "oil_temperature": {"range": [50, 60], "distribution": "normal"},  # REDUCED: Moderate heat effects
+                "pump_oil_contamination": {"range": [10.0, 12.0], "distribution": "uniform"},  # REDUCED: Lower contamination
+                "pump_oil_water_content": {"range": [0.055, 0.065], "distribution": "uniform"},  # REDUCED: Lower moisture
+                "motor_temperature": {"range": [65, 75], "distribution": "normal", "array_handling": "first_element_only"},  # REDUCED: Lower motor temperature
+                "pump_vibrations": {"range": [6.0, 10.0], "distribution": "normal", "array_handling": "first_element_only"}  # REDUCED: Lower vibration
             }
         },
         {
-            "name": "low_seal_physics",
-            "probability": 0.15,
-            "description": "Physics-driven low seal wear with chemistry effects - 10hr trigger via physics",
+            "name": "gradual_seal_physics",
+            "probability": 0.35,
+            "description": "Physics-driven gradual seal wear with minimal acceleration - 10hr trigger via physics",
             "parameters": {
-                "seal_face_wear": {"range": [15.3, 15.5], "distribution": "uniform"},  # Start 0.5-0.7% below 16.0% threshold
-                "cavitation_intensity": {"range": [0.05, 0.15], "distribution": "uniform"},  # 3x seal acceleration from cavitation
-                "oil_temperature": {"range": [50, 60], "distribution": "normal"},  # Lower heat effects
-                "pump_oil_contamination": {"range": [11.0, 12.5], "distribution": "uniform"},  # Lower contamination
-                "pump_oil_water_content": {"range": [0.055, 0.065], "distribution": "uniform"},  # Lower moisture
-                "motor_temperature": {"range": [65, 75], "distribution": "normal"},  # Supporting elevated conditions
-                "pump_vibrations": {"range": [6.0, 10.0], "distribution": "normal"}  # Lower vibration
+                "seal_face_wear": {"range": [14.5, 15.0], "distribution": "uniform", "array_handling": "first_element_only"},  # FIXED: Array parameter for FWP-1 only
+                "cavitation_intensity": {"range": [0.05, 0.12], "distribution": "uniform", "array_handling": "first_element_only"},  # REDUCED: 2x seal acceleration (was 4x)
+                "oil_temperature": {"range": [48, 55], "distribution": "normal"},  # REDUCED: Lower heat effects
+                "pump_oil_contamination": {"range": [9.0, 11.0], "distribution": "uniform"},  # REDUCED: Lower contamination
+                "pump_oil_water_content": {"range": [0.05, 0.06], "distribution": "uniform"},  # REDUCED: Lower moisture
+                "motor_temperature": {"range": [60, 70], "distribution": "normal", "array_handling": "first_element_only"},  # REDUCED: Lower motor temperature
+                "pump_vibrations": {"range": [5.0, 8.0], "distribution": "normal", "array_handling": "first_element_only"}  # REDUCED: Lower vibration
+            }
+        },
+        {
+            "name": "slow_seal_physics",
+            "probability": 0.15,
+            "description": "Physics-driven slow seal wear with chemistry effects - 12hr trigger via physics",
+            "parameters": {
+                "seal_face_wear": {"range": [14.0, 14.5], "distribution": "uniform", "array_handling": "first_element_only"},  # FIXED: Array parameter for FWP-1 only
+                "cavitation_intensity": {"range": [0.03, 0.08], "distribution": "uniform", "array_handling": "first_element_only"},  # REDUCED: 1.5x seal acceleration (was 3x)
+                "oil_temperature": {"range": [45, 52], "distribution": "normal"},  # REDUCED: Minimal heat effects
+                "pump_oil_contamination": {"range": [8.0, 10.0], "distribution": "uniform"},  # REDUCED: Minimal contamination
+                "pump_oil_water_content": {"range": [0.045, 0.055], "distribution": "uniform"},  # REDUCED: Minimal moisture
+                "motor_temperature": {"range": [55, 65], "distribution": "normal", "array_handling": "first_element_only"},  # REDUCED: Lower motor temperature
+                "pump_vibrations": {"range": [4.0, 6.0], "distribution": "normal", "array_handling": "first_element_only"}  # REDUCED: Minimal vibration
             }
         }
     ],
@@ -520,7 +520,17 @@ def get_scenario_based_conditions(action: str, base_conditions: Dict, seed: Opti
     
     for param_name, param_config in scenario["parameters"].items():
         if param_name in randomized_conditions:
-            randomized_conditions[param_name] = generate_scenario_value(param_config)
+            # Generate scenario value
+            scenario_value = generate_scenario_value(param_config)
+            
+            # Handle array parameters properly
+            if isinstance(randomized_conditions[param_name], list):
+                array_handling = param_config.get("array_handling", "preserve_pattern")
+                randomized_conditions[param_name] = apply_scenario_to_array_parameter(
+                    randomized_conditions[param_name], scenario_value, array_handling
+                )
+            else:
+                randomized_conditions[param_name] = scenario_value
     
     return randomized_conditions
 
@@ -598,3 +608,118 @@ def apply_scenario_to_array_parameter(base_array: List[float], scenario_value: f
     else:
         # Default: modify all elements to scenario value
         return [scenario_value] * len(base_array)
+
+
+# === FEEDWATER CONDITIONS INTEGRATION ===
+
+# Import feedwater conditions for type compatibility
+try:
+    from .feedwater_conditions import FEEDWATER_CONDITIONS
+except ImportError:
+    # Fallback if feedwater_conditions not available
+    FEEDWATER_CONDITIONS = {}
+
+
+def get_randomized_feedwater_conditions(
+    action: str,
+    seed: Optional[int] = None,
+    scaling_factor: float = 0.1
+) -> Dict[str, Any]:
+    """
+    Get randomized conditions for a specific feedwater action using scenario-based approach
+    
+    This function is called by the initial conditions catalog to provide
+    randomized variants that interface with ComprehensiveComposer.
+    
+    Args:
+        action: Feedwater action name
+        seed: Random seed for reproducibility
+        scaling_factor: Scaling factor for randomization (used for fallback only)
+    
+    Returns:
+        Randomized conditions dictionary with physics-consistent parameters
+    """
+    if action not in FEEDWATER_CONDITIONS:
+        raise ValueError(f"Unknown feedwater action: {action}")
+    
+    base_conditions = FEEDWATER_CONDITIONS[action]
+    
+    # Use scenario-based randomization for supported actions
+    randomized = get_scenario_based_conditions(action, base_conditions, seed)
+    
+    # Handle array parameters that need special processing based on feedwater_conditions.py structure
+    array_parameters = {
+        "pump_oil_levels": ("preserve_pattern", [100.0, 100.0, 100.0, 100.0]),
+        "motor_bearing_wear": ("first_element_only", [0.0, 0.1, 0.1, 0.0]),
+        "pump_bearing_wear": ("first_element_only", [0.0, 0.1, 0.1, 0.0]),
+        "thrust_bearing_wear": ("first_element_only", [0.0, 0.1, 0.1, 0.0]),
+        "motor_temperature": ("first_element_only", [70.0, 30.0, 30.0, 25.0]),
+        "pump_vibrations": ("first_element_only", [5.0, 1.0, 1.0, 0.0]),
+        "npsh_available": ("first_element_only", [20.0, 20.0, 20.0, 20.0]),
+        "cavitation_intensity": ("first_element_only", [0.05, 0.01, 0.01, 0.01]),
+        "seal_face_wear": ("first_element_only", [0.0, 0.1, 0.1, 0.1]),
+        "impeller_wear": ("first_element_only", [0.0, 0.1, 0.1, 0.1]),
+        "bearing_temperatures": ("first_element_only", [50.0, 30.0, 30.0, 25.0])
+    }
+    
+    for param_name, (handling, default_array) in array_parameters.items():
+        if param_name in randomized and isinstance(randomized[param_name], (int, float)):
+            # Convert single scenario value to array with specified handling
+            original_array = base_conditions.get(param_name, default_array)
+            randomized[param_name] = apply_scenario_to_array_parameter(
+                original_array, randomized[param_name], handling
+            )
+    
+    # Feedwater-specific safety validation rules
+    feedwater_safety_rules = {
+        "motor_temperature": {
+            "safety_limit": 130.0,
+            "threshold_type": "safety",
+            "safety_direction": "greater_than"
+        },
+        "npsh_available": {
+            "safety_limit": 12.0,
+            "threshold_type": "safety",
+            "safety_direction": "less_than"
+        },
+        "pump_vibrations": {
+            "safety_limit": 25.0,
+            "threshold_type": "safety",
+            "safety_direction": "greater_than"
+        },
+        "bearing_temperatures": {
+            "safety_limit": 120.0,
+            "threshold_type": "safety",
+            "safety_direction": "greater_than"
+        }
+    }
+    
+    # Validate safety
+    violations = validate_safety_limits(randomized, feedwater_safety_rules)
+    if violations["errors"]:
+        raise ValueError(f"Safety violations in randomized conditions: {violations['errors']}")
+    
+    return randomized
+
+
+# Convenience functions for common scenarios
+def create_randomized_feedwater_scenario(action: str, num_variants: int = 5, base_seed: int = 42):
+    """Create multiple randomized variants of a feedwater scenario"""
+    variants = {}
+    for i in range(num_variants):
+        seed = base_seed + i
+        randomized = get_randomized_feedwater_conditions(action, seed)
+        variants[f"{action}_variant_{i+1}"] = randomized
+    return variants
+
+def get_randomized_oil_change_conditions(seed: int = None):
+    """Get randomized oil change scenario"""
+    return get_randomized_feedwater_conditions("oil_change", seed)
+
+def get_randomized_bearing_replacement_conditions(seed: int = None):
+    """Get randomized bearing replacement scenario"""
+    return get_randomized_feedwater_conditions("motor_bearing_replacement", seed)
+
+def get_randomized_oil_top_off_conditions(seed: int = None):
+    """Get randomized oil top-off scenario"""
+    return get_randomized_feedwater_conditions("oil_top_off", seed)
