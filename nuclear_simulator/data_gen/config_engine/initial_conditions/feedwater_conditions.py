@@ -163,7 +163,7 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
     # Actual rate: 0.008 × 1.38 = 0.011%/hour
     # Target: 30 minutes = 0.011 × 0.5 hours = 0.0055% distance needed
     "thrust_bearing_replacement": {
-        "thrust_bearing_wear": [4.49, 0.1, 0.1, 0.0],    # 4.5 - 0.01 = 4.49 (very aggressive)
+        "thrust_bearing_wear": [4.47, 0.1, 0.1, 0.0],    # 4.5 - 0.01 = 4.49 (very aggressive)
         
         # Conditions that create high axial loads
         "pump_flows": [580.0, 500.0, 500.0, 0.0],        # High flow = high axial thrust for FWP-1
