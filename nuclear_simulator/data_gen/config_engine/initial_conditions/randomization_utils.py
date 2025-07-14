@@ -418,45 +418,48 @@ ACTION_SCENARIOS = {
     
     "seal_replacement": [
         {
-            "name": "moderate_seal_physics",
-            "probability": 0.5,
-            "description": "Physics-driven moderate seal wear with conservative acceleration - 8hr trigger via physics",
+            "name": "critical_seal_physics",
+            "probability": 0.4,
+            "description": "Physics-driven critical seal wear targeting 16.0% threshold - 4hr trigger via aggressive cavitation",
             "parameters": {
-                "seal_face_wear": {"range": [15.0, 15.3], "distribution": "uniform", "array_handling": "first_element_only"},  # FIXED: Array parameter for FWP-1 only
-                "cavitation_intensity": {"range": [0.08, 0.15], "distribution": "uniform", "array_handling": "first_element_only"},  # REDUCED: 2.5x seal acceleration (was 5x)
-                "oil_temperature": {"range": [50, 60], "distribution": "normal"},  # REDUCED: Moderate heat effects
-                "pump_oil_contamination": {"range": [10.0, 12.0], "distribution": "uniform"},  # REDUCED: Lower contamination
-                "pump_oil_water_content": {"range": [0.055, 0.065], "distribution": "uniform"},  # REDUCED: Lower moisture
-                "motor_temperature": {"range": [65, 75], "distribution": "normal", "array_handling": "first_element_only"},  # REDUCED: Lower motor temperature
-                "pump_vibrations": {"range": [6.0, 10.0], "distribution": "normal", "array_handling": "first_element_only"}  # REDUCED: Lower vibration
+                "seal_face_wear": {"range": [15.3, 15.4], "distribution": "uniform", "array_handling": "first_element_only"},  # Close to 16.0% threshold
+                "cavitation_intensity": {"range": [0.40, 0.50], "distribution": "uniform", "array_handling": "first_element_only"},  # AGGRESSIVE: 7.0-7.5x seal acceleration
+                "oil_temperature": {"range": [65, 75], "distribution": "normal"},  # Below protection limits
+                "pump_oil_contamination": {"range": [12.0, 15.0], "distribution": "uniform"},  # Below 15.2 maintenance threshold
+                "pump_oil_water_content": {"range": [0.06, 0.08], "distribution": "uniform"},  # Moderate moisture
+                "motor_temperature": {"range": [85, 95], "distribution": "normal", "array_handling": "first_element_only"},  # Well below 130°C protection
+                "pump_bearing_wear": {"range": [5.0, 6.0], "distribution": "uniform", "array_handling": "first_element_only"},  # Below 6.5% maintenance threshold
+                "impeller_wear": {"range": [6.0, 7.5], "distribution": "uniform", "array_handling": "first_element_only"}  # Below 8.0% maintenance threshold
             }
         },
         {
-            "name": "gradual_seal_physics",
+            "name": "aggressive_seal_physics",
             "probability": 0.35,
-            "description": "Physics-driven gradual seal wear with minimal acceleration - 10hr trigger via physics",
+            "description": "Physics-driven aggressive seal wear targeting 16.0% threshold - 6hr trigger via high cavitation",
             "parameters": {
-                "seal_face_wear": {"range": [14.5, 15.0], "distribution": "uniform", "array_handling": "first_element_only"},  # FIXED: Array parameter for FWP-1 only
-                "cavitation_intensity": {"range": [0.05, 0.12], "distribution": "uniform", "array_handling": "first_element_only"},  # REDUCED: 2x seal acceleration (was 4x)
-                "oil_temperature": {"range": [48, 55], "distribution": "normal"},  # REDUCED: Lower heat effects
-                "pump_oil_contamination": {"range": [9.0, 11.0], "distribution": "uniform"},  # REDUCED: Lower contamination
-                "pump_oil_water_content": {"range": [0.05, 0.06], "distribution": "uniform"},  # REDUCED: Lower moisture
-                "motor_temperature": {"range": [60, 70], "distribution": "normal", "array_handling": "first_element_only"},  # REDUCED: Lower motor temperature
-                "pump_vibrations": {"range": [5.0, 8.0], "distribution": "normal", "array_handling": "first_element_only"}  # REDUCED: Lower vibration
+                "seal_face_wear": {"range": [15.2, 15.3], "distribution": "uniform", "array_handling": "first_element_only"},  # Close to 16.0% threshold
+                "cavitation_intensity": {"range": [0.30, 0.40], "distribution": "uniform", "array_handling": "first_element_only"},  # AGGRESSIVE: 6.5-7.0x seal acceleration
+                "oil_temperature": {"range": [60, 70], "distribution": "normal"},  # Below protection limits
+                "pump_oil_contamination": {"range": [10.0, 14.0], "distribution": "uniform"},  # Below 15.2 maintenance threshold
+                "pump_oil_water_content": {"range": [0.05, 0.07], "distribution": "uniform"},  # Moderate moisture
+                "motor_temperature": {"range": [80, 90], "distribution": "normal", "array_handling": "first_element_only"},  # Well below 130°C protection
+                "pump_bearing_wear": {"range": [4.0, 5.5], "distribution": "uniform", "array_handling": "first_element_only"},  # Below 6.5% maintenance threshold
+                "impeller_wear": {"range": [5.0, 6.5], "distribution": "uniform", "array_handling": "first_element_only"}  # Below 8.0% maintenance threshold
             }
         },
         {
-            "name": "slow_seal_physics",
-            "probability": 0.15,
-            "description": "Physics-driven slow seal wear with chemistry effects - 12hr trigger via physics",
+            "name": "moderate_seal_physics",
+            "probability": 0.25,
+            "description": "Physics-driven moderate seal wear targeting 16.0% threshold - 8hr trigger via moderate cavitation",
             "parameters": {
-                "seal_face_wear": {"range": [14.0, 14.5], "distribution": "uniform", "array_handling": "first_element_only"},  # FIXED: Array parameter for FWP-1 only
-                "cavitation_intensity": {"range": [0.03, 0.08], "distribution": "uniform", "array_handling": "first_element_only"},  # REDUCED: 1.5x seal acceleration (was 3x)
-                "oil_temperature": {"range": [45, 52], "distribution": "normal"},  # REDUCED: Minimal heat effects
-                "pump_oil_contamination": {"range": [8.0, 10.0], "distribution": "uniform"},  # REDUCED: Minimal contamination
-                "pump_oil_water_content": {"range": [0.045, 0.055], "distribution": "uniform"},  # REDUCED: Minimal moisture
-                "motor_temperature": {"range": [55, 65], "distribution": "normal", "array_handling": "first_element_only"},  # REDUCED: Lower motor temperature
-                "pump_vibrations": {"range": [4.0, 6.0], "distribution": "normal", "array_handling": "first_element_only"}  # REDUCED: Minimal vibration
+                "seal_face_wear": {"range": [15.1, 15.2], "distribution": "uniform", "array_handling": "first_element_only"},  # Close to 16.0% threshold
+                "cavitation_intensity": {"range": [0.20, 0.30], "distribution": "uniform", "array_handling": "first_element_only"},  # MODERATE: 6.0-6.5x seal acceleration
+                "oil_temperature": {"range": [55, 65], "distribution": "normal"},  # Below protection limits
+                "pump_oil_contamination": {"range": [8.0, 12.0], "distribution": "uniform"},  # Well below 15.2 maintenance threshold
+                "pump_oil_water_content": {"range": [0.04, 0.06], "distribution": "uniform"},  # Moderate moisture
+                "motor_temperature": {"range": [75, 85], "distribution": "normal", "array_handling": "first_element_only"},  # Well below 130°C protection
+                "pump_bearing_wear": {"range": [3.0, 5.0], "distribution": "uniform", "array_handling": "first_element_only"},  # Well below 6.5% maintenance threshold
+                "impeller_wear": {"range": [4.0, 6.0], "distribution": "uniform", "array_handling": "first_element_only"}  # Well below 8.0% maintenance threshold
             }
         }
     ],
