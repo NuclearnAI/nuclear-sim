@@ -7,7 +7,7 @@ parameter scaling that distinguishes between safety trips and maintenance thresh
 
 import random
 import numpy as np
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Union
 import copy
 
 def add_randomness_to_conditions(
@@ -260,3 +260,287 @@ def validate_safety_limits(conditions: Dict[str, Any],
     
     check_recursive(conditions)
     return violations
+
+
+# === SCENARIO-BASED RANDOMIZATION SYSTEM ===
+
+# Scenario definitions for physics-aware randomization
+ACTION_SCENARIOS = {
+    "motor_bearing_replacement": [
+        {
+            "name": "critical_wear",
+            "probability": 0.3,
+            "description": "High wear with moderate stress - almost certain trigger",
+            "parameters": {
+                "motor_bearing_wear": {"range": [7.7, 7.9], "distribution": "uniform"},
+                "motor_temperature": {"range": [85, 95], "distribution": "normal"},
+                "pump_oil_contamination": {"range": [14.8, 15.1], "distribution": "uniform"},
+                "oil_temperature": {"range": [50, 55], "distribution": "normal"}
+            }
+        },
+        {
+            "name": "high_stress",
+            "probability": 0.4,
+            "description": "Medium wear with high stress conditions",
+            "parameters": {
+                "motor_bearing_wear": {"range": [7.3, 7.6], "distribution": "uniform"},
+                "motor_temperature": {"range": [95, 105], "distribution": "normal"},
+                "pump_oil_contamination": {"range": [15.0, 15.15], "distribution": "uniform"},
+                "oil_temperature": {"range": [55, 60], "distribution": "normal"}
+            }
+        },
+        {
+            "name": "stable_operation",
+            "probability": 0.3,
+            "description": "Lower wear with normal conditions - unlikely trigger",
+            "parameters": {
+                "motor_bearing_wear": {"range": [6.8, 7.2], "distribution": "uniform"},
+                "motor_temperature": {"range": [75, 85], "distribution": "normal"},
+                "pump_oil_contamination": {"range": [14.5, 14.8], "distribution": "uniform"},
+                "oil_temperature": {"range": [48, 52], "distribution": "normal"}
+            }
+        }
+    ],
+    
+    "pump_bearing_replacement": [
+        {
+            "name": "high_cavitation",
+            "probability": 0.3,
+            "description": "High cavitation with elevated wear - likely trigger",
+            "parameters": {
+                "pump_bearing_wear": {"range": [5.6, 5.8], "distribution": "uniform"},
+                "cavitation_intensity": {"range": [0.15, 0.25], "distribution": "uniform"},
+                "pump_vibrations": {"range": [8.0, 12.0], "distribution": "normal"},
+                "npsh_available": {"range": [15.0, 17.0], "distribution": "normal"}
+            }
+        },
+        {
+            "name": "moderate_wear_high_load",
+            "probability": 0.4,
+            "description": "Moderate wear with high hydraulic load",
+            "parameters": {
+                "pump_bearing_wear": {"range": [5.2, 5.5], "distribution": "uniform"},
+                "cavitation_intensity": {"range": [0.08, 0.15], "distribution": "uniform"},
+                "pump_vibrations": {"range": [6.0, 9.0], "distribution": "normal"},
+                "npsh_available": {"range": [16.0, 18.0], "distribution": "normal"}
+            }
+        },
+        {
+            "name": "normal_operation",
+            "probability": 0.3,
+            "description": "Normal operation - unlikely trigger",
+            "parameters": {
+                "pump_bearing_wear": {"range": [4.5, 5.1], "distribution": "uniform"},
+                "cavitation_intensity": {"range": [0.02, 0.08], "distribution": "uniform"},
+                "pump_vibrations": {"range": [3.0, 6.0], "distribution": "normal"},
+                "npsh_available": {"range": [18.0, 20.0], "distribution": "normal"}
+            }
+        }
+    ],
+    
+    "oil_change": [
+        {
+            "name": "critical_contamination",
+            "probability": 0.3,
+            "description": "Critical contamination - almost certain trigger",
+            "parameters": {
+                "pump_oil_contamination": {"range": [15.15, 15.19], "distribution": "uniform"},
+                "oil_temperature": {"range": [58, 62], "distribution": "normal"},
+                "pump_oil_water_content": {"range": [0.08, 0.09], "distribution": "uniform"},
+                "pump_oil_acid_number": {"range": [1.4, 1.5], "distribution": "normal"}
+            }
+        },
+        {
+            "name": "accelerated_degradation",
+            "probability": 0.4,
+            "description": "Accelerated oil degradation conditions",
+            "parameters": {
+                "pump_oil_contamination": {"range": [14.9, 15.1], "distribution": "uniform"},
+                "oil_temperature": {"range": [55, 58], "distribution": "normal"},
+                "pump_oil_water_content": {"range": [0.075, 0.085], "distribution": "uniform"},
+                "pump_oil_acid_number": {"range": [1.3, 1.4], "distribution": "normal"}
+            }
+        },
+        {
+            "name": "good_oil_condition",
+            "probability": 0.3,
+            "description": "Good oil condition - unlikely trigger",
+            "parameters": {
+                "pump_oil_contamination": {"range": [14.5, 14.8], "distribution": "uniform"},
+                "oil_temperature": {"range": [50, 54], "distribution": "normal"},
+                "pump_oil_water_content": {"range": [0.06, 0.075], "distribution": "uniform"},
+                "pump_oil_acid_number": {"range": [1.0, 1.3], "distribution": "normal"}
+            }
+        }
+    ],
+    
+    "thrust_bearing_replacement": [
+        {
+            "name": "high_axial_load",
+            "probability": 0.3,
+            "description": "High axial load conditions - likely trigger",
+            "parameters": {
+                "thrust_bearing_wear": {"range": [4.35, 4.45], "distribution": "uniform"},
+                "pump_vibrations": {"range": [8.0, 12.0], "distribution": "normal"},
+                "cavitation_intensity": {"range": [0.12, 0.18], "distribution": "uniform"}
+            }
+        },
+        {
+            "name": "medium_load_high_speed",
+            "probability": 0.4,
+            "description": "Medium load with high speed operation",
+            "parameters": {
+                "thrust_bearing_wear": {"range": [4.1, 4.3], "distribution": "uniform"},
+                "pump_vibrations": {"range": [6.0, 9.0], "distribution": "normal"},
+                "cavitation_intensity": {"range": [0.08, 0.12], "distribution": "uniform"}
+            }
+        },
+        {
+            "name": "normal_thrust_conditions",
+            "probability": 0.3,
+            "description": "Normal thrust conditions - unlikely trigger",
+            "parameters": {
+                "thrust_bearing_wear": {"range": [3.8, 4.0], "distribution": "uniform"},
+                "pump_vibrations": {"range": [3.0, 6.0], "distribution": "normal"},
+                "cavitation_intensity": {"range": [0.02, 0.08], "distribution": "uniform"}
+            }
+        }
+    ],
+    
+    "oil_top_off": [
+        {
+            "name": "low_oil_level",
+            "probability": 0.25,
+            "description": "Low oil level - high trigger probability",
+            "parameters": {
+                "pump_oil_levels": {"range": [59.0, 59.8], "distribution": "uniform", "array_handling": "preserve_pattern"}
+            }
+        },
+        {
+            "name": "moderate_oil_loss",
+            "probability": 0.45,
+            "description": "Moderate oil loss rate",
+            "parameters": {
+                "pump_oil_levels": {"range": [60.5, 61.5], "distribution": "uniform", "array_handling": "preserve_pattern"}
+            }
+        },
+        {
+            "name": "stable_oil_level",
+            "probability": 0.3,
+            "description": "Stable oil level - unlikely trigger",
+            "parameters": {
+                "pump_oil_levels": {"range": [62.0, 64.0], "distribution": "uniform", "array_handling": "preserve_pattern"}
+            }
+        }
+    ]
+}
+
+
+def get_scenario_based_conditions(action: str, base_conditions: Dict, seed: Optional[int] = None) -> Dict:
+    """
+    Generate randomized conditions using scenario-based approach
+    
+    Args:
+        action: Action name to generate scenario for
+        base_conditions: Base conditions dictionary
+        seed: Random seed for reproducibility
+    
+    Returns:
+        Randomized conditions dictionary with physics-consistent parameters
+    """
+    if seed is not None:
+        random.seed(seed)
+        np.random.seed(seed)
+    
+    # Get scenarios for this action
+    scenarios = ACTION_SCENARIOS.get(action, [])
+    if not scenarios:
+        # Fallback to original randomization if no scenarios defined
+        return add_randomness_to_conditions(base_conditions, seed=seed)
+    
+    # Select scenario based on probabilities
+    scenario = select_weighted_scenario(scenarios)
+    
+    # Generate randomized values within scenario ranges
+    randomized_conditions = copy.deepcopy(base_conditions)
+    
+    for param_name, param_config in scenario["parameters"].items():
+        if param_name in randomized_conditions:
+            randomized_conditions[param_name] = generate_scenario_value(param_config)
+    
+    return randomized_conditions
+
+
+def select_weighted_scenario(scenarios: List[Dict]) -> Dict:
+    """Select scenario based on probability weights"""
+    if not scenarios:
+        raise ValueError("No scenarios provided")
+    
+    # Extract probabilities
+    probabilities = [scenario.get("probability", 1.0) for scenario in scenarios]
+    total_prob = sum(probabilities)
+    
+    # Normalize probabilities
+    normalized_probs = [p / total_prob for p in probabilities]
+    
+    # Select scenario using weighted random choice
+    rand_val = random.random()
+    cumulative_prob = 0.0
+    
+    for i, prob in enumerate(normalized_probs):
+        cumulative_prob += prob
+        if rand_val <= cumulative_prob:
+            return scenarios[i]
+    
+    # Fallback to last scenario
+    return scenarios[-1]
+
+
+def generate_scenario_value(param_config: Dict) -> Union[float, List[float]]:
+    """Generate value within scenario range using specified distribution"""
+    range_min, range_max = param_config["range"]
+    distribution = param_config.get("distribution", "uniform")
+    array_handling = param_config.get("array_handling", None)
+    
+    if distribution == "uniform":
+        value = random.uniform(range_min, range_max)
+    elif distribution == "normal":
+        # Use range as mean ± 2*std (95% within range)
+        mean = (range_min + range_max) / 2
+        std = (range_max - range_min) / 4  # 2*std = range
+        value = np.random.normal(mean, std)
+        # Clamp to range
+        value = max(range_min, min(range_max, value))
+    else:
+        # Default to uniform
+        value = random.uniform(range_min, range_max)
+    
+    # Handle array parameters
+    if array_handling == "preserve_pattern":
+        # For arrays like pump_oil_levels, apply same scaling to all elements
+        # This will be handled by the calling code that knows the original array structure
+        return value
+    
+    return value
+
+
+def apply_scenario_to_array_parameter(base_array: List[float], scenario_value: float, 
+                                    array_handling: str = "preserve_pattern") -> List[float]:
+    """Apply scenario value to array parameter with specified handling"""
+    if not base_array:
+        return base_array
+    
+    if array_handling == "preserve_pattern":
+        # Scale all elements proportionally
+        if base_array[0] != 0:
+            scale_factor = scenario_value / base_array[0]
+            return [val * scale_factor for val in base_array]
+        else:
+            # If first element is zero, set all to scenario value
+            return [scenario_value] + base_array[1:]
+    elif array_handling == "first_element_only":
+        # Only modify first element
+        return [scenario_value] + base_array[1:]
+    else:
+        # Default: modify all elements to scenario value
+        return [scenario_value] * len(base_array)

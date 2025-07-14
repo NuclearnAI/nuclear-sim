@@ -558,7 +558,12 @@ MAINTENANCE_THRESHOLD_ALIGNMENT = {
 # === RANDOMIZATION SUPPORT ===
 
 from typing import Optional
-from .randomization_utils import add_randomness_to_conditions, validate_safety_limits
+from .randomization_utils import (
+    add_randomness_to_conditions, 
+    validate_safety_limits,
+    get_scenario_based_conditions,
+    apply_scenario_to_array_parameter
+)
 
 def get_randomized_feedwater_conditions(
     action: str,
@@ -566,7 +571,7 @@ def get_randomized_feedwater_conditions(
     scaling_factor: float = 0.1
 ) -> Dict[str, Any]:
     """
-    Get randomized conditions for a specific feedwater action
+    Get randomized conditions for a specific feedwater action using scenario-based approach
     
     This function is called by the initial conditions catalog to provide
     randomized variants that interface with ComprehensiveComposer.
@@ -574,104 +579,102 @@ def get_randomized_feedwater_conditions(
     Args:
         action: Feedwater action name
         seed: Random seed for reproducibility
-        scaling_factor: Scaling factor for randomization
+        scaling_factor: Scaling factor for randomization (used for fallback only)
     
     Returns:
-        Randomized conditions dictionary
+        Randomized conditions dictionary with physics-consistent parameters
     """
     if action not in FEEDWATER_CONDITIONS:
         raise ValueError(f"Unknown feedwater action: {action}")
     
     base_conditions = FEEDWATER_CONDITIONS[action]
     
-    # Feedwater-specific safety-aware rules
-    feedwater_rules = {
-        # MAINTENANCE TARGETS (we want to hit these)
-        "pump_oil_contamination": {
-            "scale_factor": 0.05,
-            "min_value": 12.0,
-            "max_value": 18.0,
-            "target_threshold": 15.2,
-            "threshold_type": "maintenance"
-        },
-        "pump_oil_levels": {
-            "scale_factor": 0.08,
-            "min_value": 55.0,
-            "max_value": 75.0,
-            "target_threshold": 60.0,
-            "threshold_type": "maintenance",
-            "array_handling": "preserve_pattern"
-        },
-        "motor_bearing_wear": {
-            "scale_factor": 0.06,
-            "min_value": 6.0,
-            "max_value": 9.5,
-            "target_threshold": 8.5,
-            "threshold_type": "maintenance",
-            "array_handling": "preserve_pattern"
-        },
-        "pump_bearing_wear": {
-            "scale_factor": 0.06,
-            "min_value": 4.5,
-            "max_value": 7.0,
-            "target_threshold": 6.5,
-            "threshold_type": "maintenance",
-            "array_handling": "preserve_pattern"
-        },
-        "thrust_bearing_wear": {
-            "scale_factor": 0.06,
-            "min_value": 3.0,
-            "max_value": 5.0,
-            "target_threshold": 4.5,
-            "threshold_type": "maintenance",
-            "array_handling": "preserve_pattern"
-        },
-        
-        # SAFETY LIMITS (never exceed)
+    # Use scenario-based randomization for supported actions
+    randomized = get_scenario_based_conditions(action, base_conditions, seed)
+    
+    # Handle array parameters that need special processing
+    if "pump_oil_levels" in randomized and isinstance(randomized["pump_oil_levels"], (int, float)):
+        # Convert single scenario value to array with preserved pattern
+        original_array = base_conditions.get("pump_oil_levels", [100.0, 100.0, 100.0, 100.0])
+        randomized["pump_oil_levels"] = apply_scenario_to_array_parameter(
+            original_array, randomized["pump_oil_levels"], "preserve_pattern"
+        )
+    
+    # Handle motor_bearing_wear array
+    if "motor_bearing_wear" in randomized and isinstance(randomized["motor_bearing_wear"], (int, float)):
+        original_array = base_conditions.get("motor_bearing_wear", [0.0, 0.1, 0.1, 0.0])
+        randomized["motor_bearing_wear"] = apply_scenario_to_array_parameter(
+            original_array, randomized["motor_bearing_wear"], "first_element_only"
+        )
+    
+    # Handle pump_bearing_wear array
+    if "pump_bearing_wear" in randomized and isinstance(randomized["pump_bearing_wear"], (int, float)):
+        original_array = base_conditions.get("pump_bearing_wear", [0.0, 0.1, 0.1, 0.0])
+        randomized["pump_bearing_wear"] = apply_scenario_to_array_parameter(
+            original_array, randomized["pump_bearing_wear"], "first_element_only"
+        )
+    
+    # Handle thrust_bearing_wear array
+    if "thrust_bearing_wear" in randomized and isinstance(randomized["thrust_bearing_wear"], (int, float)):
+        original_array = base_conditions.get("thrust_bearing_wear", [0.0, 0.1, 0.1, 0.0])
+        randomized["thrust_bearing_wear"] = apply_scenario_to_array_parameter(
+            original_array, randomized["thrust_bearing_wear"], "first_element_only"
+        )
+    
+    # Handle motor_temperature array
+    if "motor_temperature" in randomized and isinstance(randomized["motor_temperature"], (int, float)):
+        original_array = base_conditions.get("motor_temperature", [70.0, 30.0, 30.0, 25.0])
+        randomized["motor_temperature"] = apply_scenario_to_array_parameter(
+            original_array, randomized["motor_temperature"], "first_element_only"
+        )
+    
+    # Handle pump_vibrations array
+    if "pump_vibrations" in randomized and isinstance(randomized["pump_vibrations"], (int, float)):
+        original_array = base_conditions.get("pump_vibrations", [5.0, 1.0, 1.0, 0.0])
+        randomized["pump_vibrations"] = apply_scenario_to_array_parameter(
+            original_array, randomized["pump_vibrations"], "first_element_only"
+        )
+    
+    # Handle npsh_available array
+    if "npsh_available" in randomized and isinstance(randomized["npsh_available"], (int, float)):
+        original_array = base_conditions.get("npsh_available", [20.0, 20.0, 20.0, 20.0])
+        randomized["npsh_available"] = apply_scenario_to_array_parameter(
+            original_array, randomized["npsh_available"], "first_element_only"
+        )
+    
+    # Handle cavitation_intensity array
+    if "cavitation_intensity" in randomized and isinstance(randomized["cavitation_intensity"], (int, float)):
+        original_array = base_conditions.get("cavitation_intensity", [0.05, 0.01, 0.01, 0.01])
+        randomized["cavitation_intensity"] = apply_scenario_to_array_parameter(
+            original_array, randomized["cavitation_intensity"], "first_element_only"
+        )
+    
+    # Feedwater-specific safety validation rules
+    feedwater_safety_rules = {
         "motor_temperature": {
-            "scale_factor": 0.08,
-            "min_value": 60.0,
-            "max_value": 115.0,  # 15°C safety margin below 130°C TRIP
             "safety_limit": 130.0,
             "threshold_type": "safety",
-            "array_handling": "preserve_pattern"
+            "safety_direction": "greater_than"
         },
         "npsh_available": {
-            "scale_factor": 0.05,
-            "min_value": 13.0,  # 1m above 12m CRITICAL TRIP
-            "max_value": 25.0,
             "safety_limit": 12.0,
             "threshold_type": "safety",
-            "safety_direction": "less_than",  # NPSH below 12m is dangerous
-            "array_handling": "individual"
+            "safety_direction": "less_than"
         },
         "pump_vibrations": {
-            "scale_factor": 0.10,
-            "min_value": 0.0,
-            "max_value": 22.0,  # 3 mm/s safety margin below 25 TRIP
             "safety_limit": 25.0,
             "threshold_type": "safety",
-            "array_handling": "preserve_pattern"
+            "safety_direction": "greater_than"
         },
         "bearing_temperatures": {
-            "scale_factor": 0.10,
-            "min_value": 40.0,
-            "max_value": 110.0,  # 10°C safety margin below 120°C TRIP
             "safety_limit": 120.0,
             "threshold_type": "safety",
-            "array_handling": "preserve_pattern"
+            "safety_direction": "greater_than"
         }
     }
     
-    randomized = add_randomness_to_conditions(
-        base_conditions,
-        feedwater_rules,
-        scaling_factor,
-        seed
-    )
-    
     # Validate safety
-    violations = validate_safety_limits(randomized, feedwater_rules)
+    violations = validate_safety_limits(randomized, feedwater_safety_rules)
     if violations["errors"]:
         raise ValueError(f"Safety violations in randomized conditions: {violations['errors']}")
     
