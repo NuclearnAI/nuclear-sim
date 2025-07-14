@@ -304,36 +304,45 @@ ACTION_SCENARIOS = {
     
     "pump_bearing_replacement": [
         {
-            "name": "high_cavitation",
+            "name": "high_cavitation_physics",
             "probability": 0.5,
-            "description": "Very high cavitation with high wear - almost certain 12hr trigger (targets 6.5 threshold)",
+            "description": "Physics-driven high cavitation with compound acceleration - 11hr trigger via physics",
             "parameters": {
-                "pump_bearing_wear": {"range": [6.45, 6.49], "distribution": "uniform"},
-                "cavitation_intensity": {"range": [0.25, 0.35], "distribution": "uniform"},
-                "pump_vibrations": {"range": [15.0, 20.0], "distribution": "normal"},
-                "npsh_available": {"range": [13.0, 15.0], "distribution": "normal"}
+                "pump_bearing_wear": {"range": [6.2, 6.3], "distribution": "uniform"},  # Start 0.2-0.3% below threshold
+                "cavitation_intensity": {"range": [0.25, 0.35], "distribution": "uniform"},  # 2.5-2.7x acceleration
+                "impeller_wear": {"range": [3.0, 5.0], "distribution": "uniform"},  # 1.12-1.2x coupling acceleration
+                "npsh_available": {"range": [16.0, 17.5], "distribution": "uniform"},  # SAFE: above 15.0m trip
+                "oil_temperature": {"range": [60, 70], "distribution": "normal"},  # 1.3-1.7x temperature acceleration
+                "motor_temperature": {"range": [80, 90], "distribution": "normal"},  # Supporting elevated conditions
+                "pump_vibrations": {"range": [12.0, 18.0], "distribution": "normal"}  # Higher hydraulic loads
             }
         },
         {
-            "name": "moderate_wear_high_load",
+            "name": "moderate_cavitation_physics",
             "probability": 0.35,
-            "description": "High wear with very high hydraulic load (targets 6.5 threshold)",
+            "description": "Physics-driven moderate cavitation with coupling effects - 8hr trigger via physics",
             "parameters": {
-                "pump_bearing_wear": {"range": [6.3, 6.4], "distribution": "uniform"},
-                "cavitation_intensity": {"range": [0.18, 0.28], "distribution": "uniform"},
-                "pump_vibrations": {"range": [12.0, 18.0], "distribution": "normal"},
-                "npsh_available": {"range": [14.0, 16.0], "distribution": "normal"}
+                "pump_bearing_wear": {"range": [6.25, 6.35], "distribution": "uniform"},  # Start 0.15-0.25% below threshold
+                "cavitation_intensity": {"range": [0.18, 0.28], "distribution": "uniform"},  # 2.18-2.28x acceleration
+                "impeller_wear": {"range": [2.0, 4.0], "distribution": "uniform"},  # 1.08-1.16x coupling acceleration
+                "npsh_available": {"range": [16.5, 18.0], "distribution": "uniform"},  # SAFE: above 15.0m trip
+                "oil_temperature": {"range": [55, 65], "distribution": "normal"},  # 1.17-1.5x temperature acceleration
+                "motor_temperature": {"range": [75, 85], "distribution": "normal"},  # Supporting elevated conditions
+                "pump_vibrations": {"range": [10.0, 15.0], "distribution": "normal"}  # Moderate hydraulic loads
             }
         },
         {
-            "name": "normal_operation",
+            "name": "low_cavitation_physics",
             "probability": 0.15,
-            "description": "Elevated wear with moderate stress - possible trigger (targets 6.5 threshold)",
+            "description": "Physics-driven low cavitation with temperature effects - 6hr trigger via physics",
             "parameters": {
-                "pump_bearing_wear": {"range": [6.0, 6.2], "distribution": "uniform"},
-                "cavitation_intensity": {"range": [0.12, 0.18], "distribution": "uniform"},
-                "pump_vibrations": {"range": [8.0, 12.0], "distribution": "normal"},
-                "npsh_available": {"range": [16.0, 18.0], "distribution": "normal"}
+                "pump_bearing_wear": {"range": [6.3, 6.4], "distribution": "uniform"},  # Start 0.1-0.2% below threshold
+                "cavitation_intensity": {"range": [0.12, 0.18], "distribution": "uniform"},  # 2.12-2.18x acceleration
+                "impeller_wear": {"range": [1.0, 3.0], "distribution": "uniform"},  # 1.04-1.12x coupling acceleration
+                "npsh_available": {"range": [17.0, 18.5], "distribution": "uniform"},  # SAFE: above 15.0m trip
+                "oil_temperature": {"range": [50, 60], "distribution": "normal"},  # 1.0-1.33x temperature acceleration
+                "motor_temperature": {"range": [70, 80], "distribution": "normal"},  # Supporting elevated conditions
+                "pump_vibrations": {"range": [8.0, 12.0], "distribution": "normal"}  # Lower hydraulic loads
             }
         }
     ],
@@ -403,6 +412,51 @@ ACTION_SCENARIOS = {
                 "thrust_bearing_wear": {"range": [4.3, 4.4], "distribution": "uniform"},
                 "pump_vibrations": {"range": [12.0, 16.0], "distribution": "normal"},
                 "cavitation_intensity": {"range": [0.1, 0.15], "distribution": "uniform"}
+            }
+        }
+    ],
+    
+    "seal_replacement": [
+        {
+            "name": "critical_seal_physics",
+            "probability": 0.5,
+            "description": "Physics-driven critical seal wear with cavitation acceleration - 6hr trigger via physics",
+            "parameters": {
+                "seal_face_wear": {"range": [15.7, 15.9], "distribution": "uniform"},  # Start 0.1-0.3% below 16.0% threshold
+                "cavitation_intensity": {"range": [0.15, 0.25], "distribution": "uniform"},  # 5x seal acceleration from cavitation
+                "oil_temperature": {"range": [60, 70], "distribution": "normal"},  # Heat degrades seal materials
+                "pump_oil_contamination": {"range": [13.0, 14.0], "distribution": "uniform"},  # Contamination damages seal faces
+                "pump_oil_water_content": {"range": [0.07, 0.075], "distribution": "uniform"},  # Moisture damages seals
+                "motor_temperature": {"range": [75, 85], "distribution": "normal"},  # Supporting elevated conditions
+                "pump_vibrations": {"range": [10.0, 15.0], "distribution": "normal"}  # Vibration affects seal alignment
+            }
+        },
+        {
+            "name": "moderate_seal_physics",
+            "probability": 0.35,
+            "description": "Physics-driven moderate seal wear with pressure effects - 8hr trigger via physics",
+            "parameters": {
+                "seal_face_wear": {"range": [15.5, 15.7], "distribution": "uniform"},  # Start 0.3-0.5% below 16.0% threshold
+                "cavitation_intensity": {"range": [0.10, 0.20], "distribution": "uniform"},  # 4x seal acceleration from cavitation
+                "oil_temperature": {"range": [55, 65], "distribution": "normal"},  # Moderate heat effects
+                "pump_oil_contamination": {"range": [12.0, 13.5], "distribution": "uniform"},  # Moderate contamination
+                "pump_oil_water_content": {"range": [0.06, 0.07], "distribution": "uniform"},  # Moderate moisture
+                "motor_temperature": {"range": [70, 80], "distribution": "normal"},  # Supporting elevated conditions
+                "pump_vibrations": {"range": [8.0, 12.0], "distribution": "normal"}  # Moderate vibration
+            }
+        },
+        {
+            "name": "low_seal_physics",
+            "probability": 0.15,
+            "description": "Physics-driven low seal wear with chemistry effects - 10hr trigger via physics",
+            "parameters": {
+                "seal_face_wear": {"range": [15.3, 15.5], "distribution": "uniform"},  # Start 0.5-0.7% below 16.0% threshold
+                "cavitation_intensity": {"range": [0.05, 0.15], "distribution": "uniform"},  # 3x seal acceleration from cavitation
+                "oil_temperature": {"range": [50, 60], "distribution": "normal"},  # Lower heat effects
+                "pump_oil_contamination": {"range": [11.0, 12.5], "distribution": "uniform"},  # Lower contamination
+                "pump_oil_water_content": {"range": [0.055, 0.065], "distribution": "uniform"},  # Lower moisture
+                "motor_temperature": {"range": [65, 75], "distribution": "normal"},  # Supporting elevated conditions
+                "pump_vibrations": {"range": [6.0, 10.0], "distribution": "normal"}  # Lower vibration
             }
         }
     ],
