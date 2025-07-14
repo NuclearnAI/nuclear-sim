@@ -428,28 +428,57 @@ class MaintenanceScenarioRunner:
                 print(f"   🎯 Auto maintenance actual: {actual_work_orders_created}")
                 print(f"   ✅ Auto maintenance executed: {actual_work_orders_executed}")
         
-        # Generate results using actual counts from AutoMaintenanceSystem
+        # CRITICAL FIX: Filter maintenance events and work orders by tracking start time
+        filtered_maintenance_events = [
+            event for event in self.maintenance_events 
+            if event.get('time_hours', 0) >= self.tracking_start_hours
+        ]
+        
+        filtered_work_order_events = [
+            event for event in self.work_order_events 
+            if event.get('time_hours', event.get('time_minutes', 0) / 60.0) >= self.tracking_start_hours
+        ]
+        
+        # Count work orders created after tracking start time
+        filtered_work_orders_created = len([
+            event for event in filtered_work_order_events 
+            if event.get('event_type') == 'work_order_created'
+        ])
+        
+        # Use filtered counts for results, but keep actual counts for debugging
+        filtered_success = len(filtered_maintenance_events) > 0 or filtered_work_orders_created > 0
+        
+        # Generate results using filtered counts based on tracking start time
         results = {
-            'success': maintenance_triggered or actual_work_orders_created > 0,  # Success if either tracking method shows work orders
+            'success': filtered_success,  # Success based on filtered events only
             'target_action': self.target_action,
             'target_subsystem': self.target_subsystem,
             'duration_hours': self.duration_hours,
             'execution_time_seconds': execution_time,
-            'work_orders_created': actual_work_orders_created,  # Use actual count from AutoMaintenanceSystem
-            'work_orders_executed': actual_work_orders_executed,  # Add executed count
+            'work_orders_created': filtered_work_orders_created,  # Use filtered count
+            'work_orders_executed': actual_work_orders_executed,  # Keep actual executed count
             'scenario_tracked_work_orders': work_orders_created,  # Keep original for debugging
-            'maintenance_events': len(self.maintenance_events),
+            'maintenance_events': len(filtered_maintenance_events),  # Use filtered count
             'simulation_data_points': len(self.simulation_data),
-            'final_power_level': self.simulator.state.power_level
+            'final_power_level': self.simulator.state.power_level,
+            # Add debugging info about filtering
+            'tracking_start_hours': self.tracking_start_hours,
+            'total_maintenance_events_before_filter': len(self.maintenance_events),
+            'total_work_orders_before_filter': actual_work_orders_created
         }
         
         if self.verbose:
-            print(f"\n📋 Scenario Results:")
+            print(f"\n📋 Scenario Results (Filtered by tracking_start_hours={self.tracking_start_hours}):")
             print(f"   ✅ Success: {results['success']}")
-            print(f"   🔧 Work orders created: {actual_work_orders_created}")
+            print(f"   🔧 Work orders created (filtered): {filtered_work_orders_created}")
             print(f"   ⚡ Work orders executed: {actual_work_orders_executed}")
-            print(f"   📊 Maintenance events: {len(self.maintenance_events)}")
+            print(f"   📊 Maintenance events (filtered): {len(filtered_maintenance_events)}")
             print(f"   ⏱️ Execution time: {execution_time:.1f}s")
+            
+            # Show filtering impact if tracking start time is used
+            if self.tracking_start_hours > 0.0:
+                print(f"   📊 Total events before filter: {len(self.maintenance_events)} maintenance, {actual_work_orders_created} work orders")
+                print(f"   📊 Events filtered out: {len(self.maintenance_events) - len(filtered_maintenance_events)} maintenance, {actual_work_orders_created - filtered_work_orders_created} work orders")
             
             # Show discrepancy if any
             if work_orders_created != actual_work_orders_created:
