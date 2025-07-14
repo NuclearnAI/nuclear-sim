@@ -270,9 +270,9 @@ ACTION_SCENARIOS = {
         {
             "name": "critical_wear",
             "probability": 0.5,
-            "description": "Very high wear with high stress - almost certain 12hr trigger",
+            "description": "Very high wear with high stress - almost certain 12hr trigger (targets 8.5 threshold)",
             "parameters": {
-                "motor_bearing_wear": {"range": [7.9, 7.98], "distribution": "uniform"},
+                "motor_bearing_wear": {"range": [8.45, 8.49], "distribution": "uniform"},
                 "motor_temperature": {"range": [100, 115], "distribution": "normal"},
                 "pump_oil_contamination": {"range": [15.0, 15.15], "distribution": "uniform"},
                 "oil_temperature": {"range": [58, 65], "distribution": "normal"}
@@ -281,9 +281,9 @@ ACTION_SCENARIOS = {
         {
             "name": "high_stress",
             "probability": 0.35,
-            "description": "High wear with very high stress conditions",
+            "description": "High wear with very high stress conditions (targets 8.5 threshold)",
             "parameters": {
-                "motor_bearing_wear": {"range": [7.6, 7.85], "distribution": "uniform"},
+                "motor_bearing_wear": {"range": [8.3, 8.4], "distribution": "uniform"},
                 "motor_temperature": {"range": [105, 120], "distribution": "normal"},
                 "pump_oil_contamination": {"range": [15.1, 15.18], "distribution": "uniform"},
                 "oil_temperature": {"range": [60, 68], "distribution": "normal"}
@@ -292,9 +292,9 @@ ACTION_SCENARIOS = {
         {
             "name": "stable_operation",
             "probability": 0.15,
-            "description": "Moderate wear with elevated conditions - possible trigger",
+            "description": "Moderate wear with elevated conditions - possible trigger (targets 8.5 threshold)",
             "parameters": {
-                "motor_bearing_wear": {"range": [7.2, 7.5], "distribution": "uniform"},
+                "motor_bearing_wear": {"range": [8.0, 8.2], "distribution": "uniform"},
                 "motor_temperature": {"range": [90, 100], "distribution": "normal"},
                 "pump_oil_contamination": {"range": [14.8, 15.0], "distribution": "uniform"},
                 "oil_temperature": {"range": [55, 60], "distribution": "normal"}
@@ -306,9 +306,9 @@ ACTION_SCENARIOS = {
         {
             "name": "high_cavitation",
             "probability": 0.5,
-            "description": "Very high cavitation with high wear - almost certain 12hr trigger",
+            "description": "Very high cavitation with high wear - almost certain 12hr trigger (targets 6.5 threshold)",
             "parameters": {
-                "pump_bearing_wear": {"range": [5.9, 5.98], "distribution": "uniform"},
+                "pump_bearing_wear": {"range": [6.45, 6.49], "distribution": "uniform"},
                 "cavitation_intensity": {"range": [0.25, 0.35], "distribution": "uniform"},
                 "pump_vibrations": {"range": [15.0, 20.0], "distribution": "normal"},
                 "npsh_available": {"range": [13.0, 15.0], "distribution": "normal"}
@@ -317,9 +317,9 @@ ACTION_SCENARIOS = {
         {
             "name": "moderate_wear_high_load",
             "probability": 0.35,
-            "description": "High wear with very high hydraulic load",
+            "description": "High wear with very high hydraulic load (targets 6.5 threshold)",
             "parameters": {
-                "pump_bearing_wear": {"range": [5.6, 5.85], "distribution": "uniform"},
+                "pump_bearing_wear": {"range": [6.3, 6.4], "distribution": "uniform"},
                 "cavitation_intensity": {"range": [0.18, 0.28], "distribution": "uniform"},
                 "pump_vibrations": {"range": [12.0, 18.0], "distribution": "normal"},
                 "npsh_available": {"range": [14.0, 16.0], "distribution": "normal"}
@@ -328,9 +328,9 @@ ACTION_SCENARIOS = {
         {
             "name": "normal_operation",
             "probability": 0.15,
-            "description": "Elevated wear with moderate stress - possible trigger",
+            "description": "Elevated wear with moderate stress - possible trigger (targets 6.5 threshold)",
             "parameters": {
-                "pump_bearing_wear": {"range": [5.2, 5.5], "distribution": "uniform"},
+                "pump_bearing_wear": {"range": [6.0, 6.2], "distribution": "uniform"},
                 "cavitation_intensity": {"range": [0.12, 0.18], "distribution": "uniform"},
                 "pump_vibrations": {"range": [8.0, 12.0], "distribution": "normal"},
                 "npsh_available": {"range": [16.0, 18.0], "distribution": "normal"}
@@ -342,7 +342,7 @@ ACTION_SCENARIOS = {
         {
             "name": "critical_contamination",
             "probability": 0.5,
-            "description": "Very high contamination - almost certain 12hr trigger",
+            "description": "Very high contamination - almost certain 12hr trigger (targets 15.2 threshold)",
             "parameters": {
                 "pump_oil_contamination": {"range": [15.18, 15.195], "distribution": "uniform"},
                 "oil_temperature": {"range": [65, 75], "distribution": "normal"},
@@ -353,9 +353,9 @@ ACTION_SCENARIOS = {
         {
             "name": "accelerated_degradation",
             "probability": 0.35,
-            "description": "Very accelerated oil degradation conditions",
+            "description": "Accelerated oil degradation conditions (targets 15.2 threshold)",
             "parameters": {
-                "pump_oil_contamination": {"range": [15.1, 15.17], "distribution": "uniform"},
+                "pump_oil_contamination": {"range": [15.15, 15.17], "distribution": "uniform"},
                 "oil_temperature": {"range": [60, 68], "distribution": "normal"},
                 "pump_oil_water_content": {"range": [0.08, 0.09], "distribution": "uniform"},
                 "pump_oil_acid_number": {"range": [1.4, 1.5], "distribution": "normal"}
@@ -364,9 +364,9 @@ ACTION_SCENARIOS = {
         {
             "name": "good_oil_condition",
             "probability": 0.15,
-            "description": "Elevated oil degradation - possible trigger",
+            "description": "Good oil condition - unlikely trigger (below 15.2 threshold)",
             "parameters": {
-                "pump_oil_contamination": {"range": [14.8, 15.05], "distribution": "uniform"},
+                "pump_oil_contamination": {"range": [14.8, 15.0], "distribution": "uniform"},
                 "oil_temperature": {"range": [58, 65], "distribution": "normal"},
                 "pump_oil_water_content": {"range": [0.075, 0.08], "distribution": "uniform"},
                 "pump_oil_acid_number": {"range": [1.3, 1.4], "distribution": "normal"}
@@ -378,7 +378,7 @@ ACTION_SCENARIOS = {
         {
             "name": "high_axial_load",
             "probability": 0.6,
-            "description": "Very high axial load - almost certain 12hr trigger",
+            "description": "Very high axial load - almost certain 12hr trigger (targets 4.5 threshold)",
             "parameters": {
                 "thrust_bearing_wear": {"range": [4.45, 4.49], "distribution": "uniform"},
                 "pump_vibrations": {"range": [18.0, 22.0], "distribution": "normal"},
@@ -388,9 +388,9 @@ ACTION_SCENARIOS = {
         {
             "name": "medium_load_high_speed",
             "probability": 0.25,
-            "description": "High wear with very high axial stress",
+            "description": "High wear with very high axial stress (targets 4.5 threshold)",
             "parameters": {
-                "thrust_bearing_wear": {"range": [4.3, 4.4], "distribution": "uniform"},
+                "thrust_bearing_wear": {"range": [4.4, 4.45], "distribution": "uniform"},
                 "pump_vibrations": {"range": [15.0, 20.0], "distribution": "normal"},
                 "cavitation_intensity": {"range": [0.15, 0.2], "distribution": "uniform"}
             }
@@ -398,9 +398,9 @@ ACTION_SCENARIOS = {
         {
             "name": "normal_thrust_conditions",
             "probability": 0.15,
-            "description": "Elevated thrust conditions - possible trigger",
+            "description": "Elevated thrust conditions - possible trigger (targets 4.5 threshold)",
             "parameters": {
-                "thrust_bearing_wear": {"range": [4.1, 4.25], "distribution": "uniform"},
+                "thrust_bearing_wear": {"range": [4.3, 4.4], "distribution": "uniform"},
                 "pump_vibrations": {"range": [12.0, 16.0], "distribution": "normal"},
                 "cavitation_intensity": {"range": [0.1, 0.15], "distribution": "uniform"}
             }
