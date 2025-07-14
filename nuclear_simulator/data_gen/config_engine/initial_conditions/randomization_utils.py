@@ -304,45 +304,168 @@ ACTION_SCENARIOS = {
     
     "pump_bearing_replacement": [
         {
-            "name": "high_cavitation_physics",
+            "name": "critical_pump_bearing_cavitation_physics",
             "probability": 0.5,
-            "description": "Physics-driven high cavitation with compound acceleration - 11hr trigger via physics",
+            "description": "Complete physics package for critical pump bearing cavitation - 6hr trigger",
             "parameters": {
-                "pump_bearing_wear": {"range": [6.2, 6.3], "distribution": "uniform", "array_handling": "first_element_only"},  # Start 0.2-0.3% below threshold
-                "cavitation_intensity": {"range": [0.25, 0.35], "distribution": "uniform", "array_handling": "first_element_only"},  # 2.5-2.7x acceleration
-                "impeller_wear": {"range": [3.0, 5.0], "distribution": "uniform", "array_handling": "first_element_only"},  # 1.12-1.2x coupling acceleration
-                "npsh_available": {"range": [16.0, 17.5], "distribution": "uniform", "array_handling": "first_element_only"},  # SAFE: above 15.0m trip
-                "oil_temperature": {"range": [60, 70], "distribution": "normal"},  # 1.3-1.7x temperature acceleration
-                "motor_temperature": {"range": [80, 90], "distribution": "normal", "array_handling": "first_element_only"},  # Supporting elevated conditions
-                "pump_vibrations": {"range": [12.0, 18.0], "distribution": "normal", "array_handling": "first_element_only"}  # Higher hydraulic loads
+                # === TARGET PARAMETER ===
+                "pump_bearing_wear": {"range": [6.2, 6.4], "distribution": "uniform", "array_handling": "first_element_only"},
+                
+                # === CAVITATION PHYSICS PACKAGE ===
+                "cavitation_intensity": {"range": [0.23, 0.27], "distribution": "uniform", "array_handling": "first_element_only"},
+                
+                # Pre-existing damage to increase NPSH requirements
+                "impeller_cavitation_damage": {"range": [2.3, 2.7], "distribution": "uniform", "array_handling": "first_element_only"},
+                "impeller_wear": {"range": [5.5, 6.5], "distribution": "uniform", "array_handling": "first_element_only"},
+                "motor_bearing_wear": {"range": [4.5, 5.5], "distribution": "uniform", "array_handling": "first_element_only"},
+                "thrust_bearing_wear": {"range": [2.5, 3.5], "distribution": "uniform", "array_handling": "first_element_only"},
+                
+                # NPSH conditions for sustained cavitation
+                "npsh_available": {"range": [16.5, 17.0], "distribution": "uniform", "array_handling": "first_element_only"},
+                
+                # System conditions that reduce NPSH available
+                "suction_pressure": {"range": [0.36, 0.40], "distribution": "uniform"},
+                "feedwater_temperature": {"range": [236, 240], "distribution": "uniform"},
+                "discharge_pressure": {"range": [8.2, 8.4], "distribution": "uniform"},
+                
+                # Operating conditions that amplify cavitation
+                "pump_flows": {"range": [575, 585], "distribution": "uniform", "array_handling": "first_element_only"},
+                "pump_speeds": {"range": [3670, 3690], "distribution": "uniform", "array_handling": "first_element_only"},
+                
+                # Supporting conditions for bearing wear acceleration
+                "oil_temperature": {"range": [66, 70], "distribution": "normal"},
+                "pump_oil_contamination": {"range": [13.5, 14.5], "distribution": "uniform"},
+                "pump_oil_water_content": {"range": [0.063, 0.067], "distribution": "uniform"},
+                "pump_oil_acid_number": {"range": [1.38, 1.42], "distribution": "uniform"},
+                
+                # Vibration from cavitation and bearing wear
+                "pump_vibrations": {"range": [14.0, 16.0], "distribution": "normal", "array_handling": "first_element_only"},
+                
+                # Motor conditions
+                "motor_temperature": {"range": [88, 92], "distribution": "normal", "array_handling": "first_element_only"},
+                "bearing_temperatures": {"range": [73, 77], "distribution": "normal", "array_handling": "first_element_only"},
+                
+                # Seal conditions (supporting but not triggering)
+                "seal_face_wear": {"range": [9.5, 10.5], "distribution": "uniform", "array_handling": "first_element_only"},
+                
+                # Steam generator conditions
+                "sg_levels": {"range": [12.3, 12.7], "distribution": "uniform", "array_handling": "preserve_pattern"},
+                "sg_pressures": {"range": [6.85, 6.94], "distribution": "uniform", "array_handling": "preserve_pattern"},
+                "sg_steam_flows": {"range": [495, 505], "distribution": "uniform", "array_handling": "preserve_pattern"},
+                "sg_steam_qualities": {"range": [0.985, 0.995], "distribution": "uniform", "array_handling": "preserve_pattern"},
+                
+                # Oil levels (normal)
+                "pump_oil_levels": {"range": [88, 92], "distribution": "uniform", "array_handling": "first_element_only"}
             }
         },
         {
-            "name": "moderate_cavitation_physics",
+            "name": "moderate_pump_bearing_cavitation_physics",
             "probability": 0.35,
-            "description": "Physics-driven moderate cavitation with coupling effects - 8hr trigger via physics",
+            "description": "Complete physics package for moderate pump bearing cavitation - 8hr trigger",
             "parameters": {
-                "pump_bearing_wear": {"range": [6.25, 6.35], "distribution": "uniform", "array_handling": "first_element_only"},  # Start 0.15-0.25% below threshold
-                "cavitation_intensity": {"range": [0.18, 0.28], "distribution": "uniform", "array_handling": "first_element_only"},  # 2.18-2.28x acceleration
-                "impeller_wear": {"range": [2.0, 4.0], "distribution": "uniform", "array_handling": "first_element_only"},  # 1.08-1.16x coupling acceleration
-                "npsh_available": {"range": [16.5, 18.0], "distribution": "uniform", "array_handling": "first_element_only"},  # SAFE: above 15.0m trip
-                "oil_temperature": {"range": [55, 65], "distribution": "normal"},  # 1.17-1.5x temperature acceleration
-                "motor_temperature": {"range": [75, 85], "distribution": "normal", "array_handling": "first_element_only"},  # Supporting elevated conditions
-                "pump_vibrations": {"range": [10.0, 15.0], "distribution": "normal", "array_handling": "first_element_only"}  # Moderate hydraulic loads
+                # === TARGET PARAMETER ===
+                "pump_bearing_wear": {"range": [6.0, 6.2], "distribution": "uniform", "array_handling": "first_element_only"},
+                
+                # === CAVITATION PHYSICS PACKAGE ===
+                "cavitation_intensity": {"range": [0.20, 0.25], "distribution": "uniform", "array_handling": "first_element_only"},
+                
+                # Pre-existing damage to increase NPSH requirements
+                "impeller_cavitation_damage": {"range": [2.0, 2.5], "distribution": "uniform", "array_handling": "first_element_only"},
+                "impeller_wear": {"range": [5.0, 6.0], "distribution": "uniform", "array_handling": "first_element_only"},
+                "motor_bearing_wear": {"range": [4.0, 5.0], "distribution": "uniform", "array_handling": "first_element_only"},
+                "thrust_bearing_wear": {"range": [2.0, 3.0], "distribution": "uniform", "array_handling": "first_element_only"},
+                
+                # NPSH conditions for sustained cavitation
+                "npsh_available": {"range": [16.8, 17.2], "distribution": "uniform", "array_handling": "first_element_only"},
+                
+                # System conditions that reduce NPSH available
+                "suction_pressure": {"range": [0.37, 0.39], "distribution": "uniform"},
+                "feedwater_temperature": {"range": [237, 239], "distribution": "uniform"},
+                "discharge_pressure": {"range": [8.25, 8.35], "distribution": "uniform"},
+                
+                # Operating conditions that amplify cavitation
+                "pump_flows": {"range": [578, 582], "distribution": "uniform", "array_handling": "first_element_only"},
+                "pump_speeds": {"range": [3675, 3685], "distribution": "uniform", "array_handling": "first_element_only"},
+                
+                # Supporting conditions for bearing wear acceleration
+                "oil_temperature": {"range": [67, 69], "distribution": "normal"},
+                "pump_oil_contamination": {"range": [13.8, 14.2], "distribution": "uniform"},
+                "pump_oil_water_content": {"range": [0.064, 0.066], "distribution": "uniform"},
+                "pump_oil_acid_number": {"range": [1.39, 1.41], "distribution": "uniform"},
+                
+                # Vibration from cavitation and bearing wear
+                "pump_vibrations": {"range": [14.5, 15.5], "distribution": "normal", "array_handling": "first_element_only"},
+                
+                # Motor conditions
+                "motor_temperature": {"range": [89, 91], "distribution": "normal", "array_handling": "first_element_only"},
+                "bearing_temperatures": {"range": [74, 76], "distribution": "normal", "array_handling": "first_element_only"},
+                
+                # Seal conditions (supporting but not triggering)
+                "seal_face_wear": {"range": [9.8, 10.2], "distribution": "uniform", "array_handling": "first_element_only"},
+                
+                # Steam generator conditions
+                "sg_levels": {"range": [12.4, 12.6], "distribution": "uniform", "array_handling": "preserve_pattern"},
+                "sg_pressures": {"range": [6.89, 6.90], "distribution": "uniform", "array_handling": "preserve_pattern"},
+                "sg_steam_flows": {"range": [498, 502], "distribution": "uniform", "array_handling": "preserve_pattern"},
+                "sg_steam_qualities": {"range": [0.988, 0.992], "distribution": "uniform", "array_handling": "preserve_pattern"},
+                
+                # Oil levels (normal)
+                "pump_oil_levels": {"range": [89, 91], "distribution": "uniform", "array_handling": "first_element_only"}
             }
         },
         {
-            "name": "low_cavitation_physics",
+            "name": "low_pump_bearing_cavitation_physics",
             "probability": 0.15,
-            "description": "Physics-driven low cavitation with temperature effects - 6hr trigger via physics",
+            "description": "Complete physics package for low pump bearing cavitation - 10hr trigger",
             "parameters": {
-                "pump_bearing_wear": {"range": [6.3, 6.4], "distribution": "uniform", "array_handling": "first_element_only"},  # Start 0.1-0.2% below threshold
-                "cavitation_intensity": {"range": [0.12, 0.18], "distribution": "uniform", "array_handling": "first_element_only"},  # 2.12-2.18x acceleration
-                "impeller_wear": {"range": [1.0, 3.0], "distribution": "uniform", "array_handling": "first_element_only"},  # 1.04-1.12x coupling acceleration
-                "npsh_available": {"range": [17.0, 18.5], "distribution": "uniform", "array_handling": "first_element_only"},  # SAFE: above 15.0m trip
-                "oil_temperature": {"range": [50, 60], "distribution": "normal"},  # 1.0-1.33x temperature acceleration
-                "motor_temperature": {"range": [70, 80], "distribution": "normal", "array_handling": "first_element_only"},  # Supporting elevated conditions
-                "pump_vibrations": {"range": [8.0, 12.0], "distribution": "normal", "array_handling": "first_element_only"}  # Lower hydraulic loads
+                # === TARGET PARAMETER ===
+                "pump_bearing_wear": {"range": [5.8, 6.0], "distribution": "uniform", "array_handling": "first_element_only"},
+                
+                # === CAVITATION PHYSICS PACKAGE ===
+                "cavitation_intensity": {"range": [0.15, 0.20], "distribution": "uniform", "array_handling": "first_element_only"},
+                
+                # Pre-existing damage to increase NPSH requirements
+                "impeller_cavitation_damage": {"range": [1.5, 2.0], "distribution": "uniform", "array_handling": "first_element_only"},
+                "impeller_wear": {"range": [4.5, 5.5], "distribution": "uniform", "array_handling": "first_element_only"},
+                "motor_bearing_wear": {"range": [3.5, 4.5], "distribution": "uniform", "array_handling": "first_element_only"},
+                "thrust_bearing_wear": {"range": [1.5, 2.5], "distribution": "uniform", "array_handling": "first_element_only"},
+                
+                # NPSH conditions for sustained cavitation
+                "npsh_available": {"range": [17.0, 17.5], "distribution": "uniform", "array_handling": "first_element_only"},
+                
+                # System conditions that reduce NPSH available
+                "suction_pressure": {"range": [0.375, 0.385], "distribution": "uniform"},
+                "feedwater_temperature": {"range": [237.5, 238.5], "distribution": "uniform"},
+                "discharge_pressure": {"range": [8.28, 8.32], "distribution": "uniform"},
+                
+                # Operating conditions that amplify cavitation
+                "pump_flows": {"range": [579, 581], "distribution": "uniform", "array_handling": "first_element_only"},
+                "pump_speeds": {"range": [3678, 3682], "distribution": "uniform", "array_handling": "first_element_only"},
+                
+                # Supporting conditions for bearing wear acceleration
+                "oil_temperature": {"range": [67.5, 68.5], "distribution": "normal"},
+                "pump_oil_contamination": {"range": [13.9, 14.1], "distribution": "uniform"},
+                "pump_oil_water_content": {"range": [0.0645, 0.0655], "distribution": "uniform"},
+                "pump_oil_acid_number": {"range": [1.395, 1.405], "distribution": "uniform"},
+                
+                # Vibration from cavitation and bearing wear
+                "pump_vibrations": {"range": [14.8, 15.2], "distribution": "normal", "array_handling": "first_element_only"},
+                
+                # Motor conditions
+                "motor_temperature": {"range": [89.5, 90.5], "distribution": "normal", "array_handling": "first_element_only"},
+                "bearing_temperatures": {"range": [74.5, 75.5], "distribution": "normal", "array_handling": "first_element_only"},
+                
+                # Seal conditions (supporting but not triggering)
+                "seal_face_wear": {"range": [9.9, 10.1], "distribution": "uniform", "array_handling": "first_element_only"},
+                
+                # Steam generator conditions
+                "sg_levels": {"range": [12.45, 12.55], "distribution": "uniform", "array_handling": "preserve_pattern"},
+                "sg_pressures": {"range": [6.89, 6.90], "distribution": "uniform", "array_handling": "preserve_pattern"},
+                "sg_steam_flows": {"range": [499, 501], "distribution": "uniform", "array_handling": "preserve_pattern"},
+                "sg_steam_qualities": {"range": [0.989, 0.991], "distribution": "uniform", "array_handling": "preserve_pattern"},
+                
+                # Oil levels (normal)
+                "pump_oil_levels": {"range": [89.5, 90.5], "distribution": "uniform", "array_handling": "first_element_only"}
             }
         }
     ],
@@ -418,48 +541,162 @@ ACTION_SCENARIOS = {
     
     "seal_replacement": [
         {
-            "name": "critical_seal_physics",
+            "name": "critical_seal_cavitation_physics",
             "probability": 0.4,
-            "description": "Physics-driven critical seal wear targeting 16.0% threshold - 4hr trigger via aggressive cavitation",
+            "description": "Complete physics package for critical seal cavitation - 4hr trigger",
             "parameters": {
-                "seal_face_wear": {"range": [15.3, 15.4], "distribution": "uniform", "array_handling": "first_element_only"},  # Close to 16.0% threshold
-                "cavitation_intensity": {"range": [0.40, 0.50], "distribution": "uniform", "array_handling": "first_element_only"},  # AGGRESSIVE: 7.0-7.5x seal acceleration
-                "oil_temperature": {"range": [65, 75], "distribution": "normal"},  # Below protection limits
-                "pump_oil_contamination": {"range": [12.0, 15.0], "distribution": "uniform"},  # Below 15.2 maintenance threshold
-                "pump_oil_water_content": {"range": [0.06, 0.08], "distribution": "uniform"},  # Moderate moisture
-                "motor_temperature": {"range": [85, 95], "distribution": "normal", "array_handling": "first_element_only"},  # Well below 130°C protection
-                "pump_bearing_wear": {"range": [5.0, 6.0], "distribution": "uniform", "array_handling": "first_element_only"},  # Below 6.5% maintenance threshold
-                "impeller_wear": {"range": [6.0, 7.5], "distribution": "uniform", "array_handling": "first_element_only"}  # Below 8.0% maintenance threshold
+                # === TARGET PARAMETER ===
+                "seal_face_wear": {"range": [15.6, 15.8], "distribution": "uniform", "array_handling": "first_element_only"},
+                
+                # === CAVITATION PHYSICS PACKAGE ===
+                "cavitation_intensity": {"range": [0.18, 0.22], "distribution": "uniform", "array_handling": "first_element_only"},
+                
+                # Pre-existing damage to increase NPSH requirements
+                "impeller_cavitation_damage": {"range": [1.8, 2.2], "distribution": "uniform", "array_handling": "first_element_only"},
+                "impeller_wear": {"range": [4.5, 5.5], "distribution": "uniform", "array_handling": "first_element_only"},
+                "motor_bearing_wear": {"range": [3.5, 4.5], "distribution": "uniform", "array_handling": "first_element_only"},
+                "pump_bearing_wear": {"range": [2.5, 3.5], "distribution": "uniform", "array_handling": "first_element_only"},
+                "thrust_bearing_wear": {"range": [1.5, 2.5], "distribution": "uniform", "array_handling": "first_element_only"},
+                
+                # NPSH conditions for sustained cavitation
+                "npsh_available": {"range": [16.5, 17.5], "distribution": "uniform", "array_handling": "first_element_only"},
+                
+                # System conditions that reduce NPSH available
+                "suction_pressure": {"range": [0.38, 0.42], "distribution": "uniform"},
+                "feedwater_temperature": {"range": [233, 237], "distribution": "uniform"},
+                "discharge_pressure": {"range": [8.1, 8.3], "distribution": "uniform"},
+                
+                # Operating conditions that amplify cavitation
+                "pump_flows": {"range": [565, 575], "distribution": "uniform", "array_handling": "first_element_only"},
+                "pump_speeds": {"range": [3640, 3660], "distribution": "uniform", "array_handling": "first_element_only"},
+                
+                # Supporting conditions for seal wear acceleration
+                "oil_temperature": {"range": [63, 67], "distribution": "normal"},
+                "pump_oil_contamination": {"range": [12.0, 14.0], "distribution": "uniform"},
+                "pump_oil_water_content": {"range": [0.065, 0.075], "distribution": "uniform"},
+                "pump_oil_acid_number": {"range": [1.25, 1.35], "distribution": "uniform"},
+                
+                # Vibration from cavitation
+                "pump_vibrations": {"range": [11.0, 13.0], "distribution": "normal", "array_handling": "first_element_only"},
+                
+                # Motor conditions (supporting but not triggering)
+                "motor_temperature": {"range": [83, 87], "distribution": "normal", "array_handling": "first_element_only"},
+                "bearing_temperatures": {"range": [68, 72], "distribution": "normal", "array_handling": "first_element_only"},
+                
+                # Steam generator conditions
+                "sg_levels": {"range": [12.3, 12.7], "distribution": "uniform", "array_handling": "preserve_pattern"},
+                "sg_pressures": {"range": [6.85, 6.94], "distribution": "uniform", "array_handling": "preserve_pattern"},
+                "sg_steam_flows": {"range": [495, 505], "distribution": "uniform", "array_handling": "preserve_pattern"},
+                "sg_steam_qualities": {"range": [0.985, 0.995], "distribution": "uniform", "array_handling": "preserve_pattern"},
+                
+                # Oil levels (lower from seal leakage)
+                "pump_oil_levels": {"range": [83, 87], "distribution": "uniform", "array_handling": "first_element_only"}
             }
         },
         {
-            "name": "aggressive_seal_physics",
+            "name": "moderate_seal_cavitation_physics",
             "probability": 0.35,
-            "description": "Physics-driven aggressive seal wear targeting 16.0% threshold - 6hr trigger via high cavitation",
+            "description": "Complete physics package for moderate seal cavitation - 6hr trigger",
             "parameters": {
-                "seal_face_wear": {"range": [15.2, 15.3], "distribution": "uniform", "array_handling": "first_element_only"},  # Close to 16.0% threshold
-                "cavitation_intensity": {"range": [0.30, 0.40], "distribution": "uniform", "array_handling": "first_element_only"},  # AGGRESSIVE: 6.5-7.0x seal acceleration
-                "oil_temperature": {"range": [60, 70], "distribution": "normal"},  # Below protection limits
-                "pump_oil_contamination": {"range": [10.0, 14.0], "distribution": "uniform"},  # Below 15.2 maintenance threshold
-                "pump_oil_water_content": {"range": [0.05, 0.07], "distribution": "uniform"},  # Moderate moisture
-                "motor_temperature": {"range": [80, 90], "distribution": "normal", "array_handling": "first_element_only"},  # Well below 130°C protection
-                "pump_bearing_wear": {"range": [4.0, 5.5], "distribution": "uniform", "array_handling": "first_element_only"},  # Below 6.5% maintenance threshold
-                "impeller_wear": {"range": [5.0, 6.5], "distribution": "uniform", "array_handling": "first_element_only"}  # Below 8.0% maintenance threshold
+                # === TARGET PARAMETER ===
+                "seal_face_wear": {"range": [15.4, 15.6], "distribution": "uniform", "array_handling": "first_element_only"},
+                
+                # === CAVITATION PHYSICS PACKAGE ===
+                "cavitation_intensity": {"range": [0.15, 0.20], "distribution": "uniform", "array_handling": "first_element_only"},
+                
+                # Pre-existing damage to increase NPSH requirements
+                "impeller_cavitation_damage": {"range": [1.5, 2.0], "distribution": "uniform", "array_handling": "first_element_only"},
+                "impeller_wear": {"range": [4.0, 5.0], "distribution": "uniform", "array_handling": "first_element_only"},
+                "motor_bearing_wear": {"range": [3.0, 4.0], "distribution": "uniform", "array_handling": "first_element_only"},
+                "pump_bearing_wear": {"range": [2.0, 3.0], "distribution": "uniform", "array_handling": "first_element_only"},
+                "thrust_bearing_wear": {"range": [1.0, 2.0], "distribution": "uniform", "array_handling": "first_element_only"},
+                
+                # NPSH conditions for sustained cavitation
+                "npsh_available": {"range": [17.0, 18.0], "distribution": "uniform", "array_handling": "first_element_only"},
+                
+                # System conditions that reduce NPSH available
+                "suction_pressure": {"range": [0.39, 0.41], "distribution": "uniform"},
+                "feedwater_temperature": {"range": [234, 236], "distribution": "uniform"},
+                "discharge_pressure": {"range": [8.15, 8.25], "distribution": "uniform"},
+                
+                # Operating conditions that amplify cavitation
+                "pump_flows": {"range": [568, 572], "distribution": "uniform", "array_handling": "first_element_only"},
+                "pump_speeds": {"range": [3645, 3655], "distribution": "uniform", "array_handling": "first_element_only"},
+                
+                # Supporting conditions for seal wear acceleration
+                "oil_temperature": {"range": [64, 66], "distribution": "normal"},
+                "pump_oil_contamination": {"range": [12.5, 13.5], "distribution": "uniform"},
+                "pump_oil_water_content": {"range": [0.068, 0.072], "distribution": "uniform"},
+                "pump_oil_acid_number": {"range": [1.28, 1.32], "distribution": "uniform"},
+                
+                # Vibration from cavitation
+                "pump_vibrations": {"range": [11.5, 12.5], "distribution": "normal", "array_handling": "first_element_only"},
+                
+                # Motor conditions (supporting but not triggering)
+                "motor_temperature": {"range": [84, 86], "distribution": "normal", "array_handling": "first_element_only"},
+                "bearing_temperatures": {"range": [69, 71], "distribution": "normal", "array_handling": "first_element_only"},
+                
+                # Steam generator conditions
+                "sg_levels": {"range": [12.4, 12.6], "distribution": "uniform", "array_handling": "preserve_pattern"},
+                "sg_pressures": {"range": [6.89, 6.90], "distribution": "uniform", "array_handling": "preserve_pattern"},
+                "sg_steam_flows": {"range": [498, 502], "distribution": "uniform", "array_handling": "preserve_pattern"},
+                "sg_steam_qualities": {"range": [0.988, 0.992], "distribution": "uniform", "array_handling": "preserve_pattern"},
+                
+                # Oil levels (lower from seal leakage)
+                "pump_oil_levels": {"range": [84, 86], "distribution": "uniform", "array_handling": "first_element_only"}
             }
         },
         {
-            "name": "moderate_seal_physics",
+            "name": "low_seal_cavitation_physics",
             "probability": 0.25,
-            "description": "Physics-driven moderate seal wear targeting 16.0% threshold - 8hr trigger via moderate cavitation",
+            "description": "Complete physics package for low seal cavitation - 8hr trigger",
             "parameters": {
-                "seal_face_wear": {"range": [15.1, 15.2], "distribution": "uniform", "array_handling": "first_element_only"},  # Close to 16.0% threshold
-                "cavitation_intensity": {"range": [0.20, 0.30], "distribution": "uniform", "array_handling": "first_element_only"},  # MODERATE: 6.0-6.5x seal acceleration
-                "oil_temperature": {"range": [55, 65], "distribution": "normal"},  # Below protection limits
-                "pump_oil_contamination": {"range": [8.0, 12.0], "distribution": "uniform"},  # Well below 15.2 maintenance threshold
-                "pump_oil_water_content": {"range": [0.04, 0.06], "distribution": "uniform"},  # Moderate moisture
-                "motor_temperature": {"range": [75, 85], "distribution": "normal", "array_handling": "first_element_only"},  # Well below 130°C protection
-                "pump_bearing_wear": {"range": [3.0, 5.0], "distribution": "uniform", "array_handling": "first_element_only"},  # Well below 6.5% maintenance threshold
-                "impeller_wear": {"range": [4.0, 6.0], "distribution": "uniform", "array_handling": "first_element_only"}  # Well below 8.0% maintenance threshold
+                # === TARGET PARAMETER ===
+                "seal_face_wear": {"range": [15.2, 15.4], "distribution": "uniform", "array_handling": "first_element_only"},
+                
+                # === CAVITATION PHYSICS PACKAGE ===
+                "cavitation_intensity": {"range": [0.12, 0.18], "distribution": "uniform", "array_handling": "first_element_only"},
+                
+                # Pre-existing damage to increase NPSH requirements
+                "impeller_cavitation_damage": {"range": [1.2, 1.8], "distribution": "uniform", "array_handling": "first_element_only"},
+                "impeller_wear": {"range": [3.5, 4.5], "distribution": "uniform", "array_handling": "first_element_only"},
+                "motor_bearing_wear": {"range": [2.5, 3.5], "distribution": "uniform", "array_handling": "first_element_only"},
+                "pump_bearing_wear": {"range": [1.5, 2.5], "distribution": "uniform", "array_handling": "first_element_only"},
+                "thrust_bearing_wear": {"range": [0.8, 1.5], "distribution": "uniform", "array_handling": "first_element_only"},
+                
+                # NPSH conditions for sustained cavitation
+                "npsh_available": {"range": [17.5, 18.5], "distribution": "uniform", "array_handling": "first_element_only"},
+                
+                # System conditions that reduce NPSH available
+                "suction_pressure": {"range": [0.395, 0.405], "distribution": "uniform"},
+                "feedwater_temperature": {"range": [234.5, 235.5], "distribution": "uniform"},
+                "discharge_pressure": {"range": [8.18, 8.22], "distribution": "uniform"},
+                
+                # Operating conditions that amplify cavitation
+                "pump_flows": {"range": [569, 571], "distribution": "uniform", "array_handling": "first_element_only"},
+                "pump_speeds": {"range": [3648, 3652], "distribution": "uniform", "array_handling": "first_element_only"},
+                
+                # Supporting conditions for seal wear acceleration
+                "oil_temperature": {"range": [64.5, 65.5], "distribution": "normal"},
+                "pump_oil_contamination": {"range": [12.8, 13.2], "distribution": "uniform"},
+                "pump_oil_water_content": {"range": [0.069, 0.071], "distribution": "uniform"},
+                "pump_oil_acid_number": {"range": [1.29, 1.31], "distribution": "uniform"},
+                
+                # Vibration from cavitation
+                "pump_vibrations": {"range": [11.8, 12.2], "distribution": "normal", "array_handling": "first_element_only"},
+                
+                # Motor conditions (supporting but not triggering)
+                "motor_temperature": {"range": [84.5, 85.5], "distribution": "normal", "array_handling": "first_element_only"},
+                "bearing_temperatures": {"range": [69.5, 70.5], "distribution": "normal", "array_handling": "first_element_only"},
+                
+                # Steam generator conditions
+                "sg_levels": {"range": [12.45, 12.55], "distribution": "uniform", "array_handling": "preserve_pattern"},
+                "sg_pressures": {"range": [6.89, 6.90], "distribution": "uniform", "array_handling": "preserve_pattern"},
+                "sg_steam_flows": {"range": [499, 501], "distribution": "uniform", "array_handling": "preserve_pattern"},
+                "sg_steam_qualities": {"range": [0.989, 0.991], "distribution": "uniform", "array_handling": "preserve_pattern"},
+                
+                # Oil levels (lower from seal leakage)
+                "pump_oil_levels": {"range": [84.5, 85.5], "distribution": "uniform", "array_handling": "first_element_only"}
             }
         }
     ],
