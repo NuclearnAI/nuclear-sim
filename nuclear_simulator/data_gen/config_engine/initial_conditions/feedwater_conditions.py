@@ -32,31 +32,54 @@ from typing import Dict, Any
 FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
     
     # === OIL CHANGE SCENARIO ===
-    # Base rate: 0.002 ppm/hour + load acceleration + wear contamination
-    # With load_factor=1.1 + bearing wear contamination: ~0.008 ppm/hour
-    # Target: 60 minutes = 0.008 × 1.0 hours = 0.008 ppm distance needed
+    # SEAL WEAR → OIL CONTAMINATION PHYSICS:
+    # - Seal wear allows external contaminants to enter oil system
+    # - Leakage rate: seal_wear_percentage × 0.002 L/min per % wear
+    # - 8% seal wear → 0.016 L/min leakage → contamination increase
+    # - Contamination rate: base_rate + (seal_wear × 0.001 ppm/hour)
+    # - Target: 120 minutes = 0.010 ppm/hour × 2.0 hours = 0.02 ppm increase needed
     "oil_change": {
-        "pump_oil_contamination": 15.19,                 # 15.2 - 0.01 = 15.19 (very aggressive)
+        # === TARGET PARAMETER ===
+        "pump_oil_contamination": 15.18,                 # 15.2 - 0.02 = 15.18 (will increase to trigger)
         
-        # Supporting accelerated conditions that increase contamination rate
-        "pump_oil_water_content": 0.075,                  # Elevated moisture accelerates contamination
-        "pump_oil_acid_number": 1.5,                      # Elevated acidity accelerates breakdown
-        "oil_temperature": 52.0,                          # Elevated temperature accelerates degradation
+        # === SEAL WEAR CONTAMINATION DRIVER ===
+        "seal_face_wear": [12.0, 0.1, 0.1, 0.1],        # FWP-1 aggressive seal wear drives contamination
         
-        # Safe values for FWP 2,3,4
-        "motor_temperature": [75.0, 30.0, 30.0, 25.0],   # Only FWP-1 elevated
-        "motor_bearing_wear": [2.0, 0.1, 0.1, 0.0],      # Only FWP-1 has wear
-        "pump_bearing_wear": [1.5, 0.1, 0.1, 0.0],       # Only FWP-1 has wear
-        "thrust_bearing_wear": [1.0, 0.1, 0.1, 0.0],     # Only FWP-1 has wear
-        "pump_oil_levels": [88.0, 98.0, 98.0, 100.0],    # Only FWP-1 lower
-        "pump_vibrations": [5.0, 1.0, 1.0, 0.0],         # Only FWP-1 elevated
-        "cavitation_intensity": [0.02, 0.01, 0.01, 0.01], # Very low cavitation
-        "npsh_available": [18.0, 20.0, 20.0, 20.0],      # Good NPSH for others
+        # Supporting conditions that accelerate both seal wear AND contamination
+        "pump_oil_water_content": 0.075,                 # Moisture accelerates both seal wear and contamination
+        "pump_oil_acid_number": 1.5,                     # Acidity accelerates both processes
+        "oil_temperature": 58.0,                         # Heat accelerates both seal degradation and oil breakdown
         
-        "description": "Oil contamination with accelerated degradation - 120 min target",
+        # Conditions that create seal wear (leading to contamination increase)
+        "pump_vibrations": [8.0, 1.0, 1.0, 0.0],        # Vibration wears seals → contamination
+        "motor_temperature": [80.0, 30.0, 30.0, 25.0],   # Heat affects seal materials
+        "bearing_temperatures": [65.0, 30.0, 30.0, 25.0], # Heat from bearing friction
+        
+        # Supporting mechanical conditions
+        "motor_bearing_wear": [2.0, 0.1, 0.1, 0.0],      # Moderate wear contributing to vibration
+        "pump_bearing_wear": [1.5, 0.1, 0.1, 0.0],       # Moderate wear contributing to vibration
+        "thrust_bearing_wear": [1.0, 0.1, 0.1, 0.0],     # Moderate wear contributing to vibration
+        
+        # Oil system conditions
+        "pump_oil_levels": [88.0, 98.0, 98.0, 100.0],    # FWP-1 slightly lower from seal leakage
+        
+        # Hydraulic conditions (normal - not cavitation-driven)
+        "cavitation_intensity": [0.05, 0.01, 0.01, 0.01], # Low cavitation
+        "npsh_available": [19.0, 20.0, 20.0, 20.0],       # Good NPSH
+        "suction_pressure": 0.45,                          # Normal suction pressure
+        "discharge_pressure": 8.0,                         # Normal discharge pressure
+        "feedwater_temperature": 230.0,                    # Normal temperature
+        
+        # Steam generator conditions
+        "sg_levels": [12.5, 12.5, 12.5],                  # Normal SG levels
+        "sg_pressures": [6.895, 6.895, 6.895],            # Normal SG pressures
+        "sg_steam_flows": [500.0, 500.0, 500.0],          # Normal steam flows
+        "sg_steam_qualities": [0.99, 0.99, 0.99],         # Normal steam qualities
+        
+        "description": "Oil contamination increase driven by seal wear - 120 min target",
         "expected_action": "oil_change",
         "target_pump": "FWP-1",
-        "physics_calculation": "0.005 ppm/hour × 2.0 hours = 0.01 ppm distance"
+        "physics_calculation": "8% seal wear → 0.016 L/min leakage → 0.010 ppm/hour contamination increase"
     },
     
     # === OIL TOP-OFF SCENARIO ===
@@ -131,30 +154,68 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
     },
     
     # === PUMP BEARING REPLACEMENT ===
-    # Base rate: 0.006%/hour (from code analysis)
-    # With hydraulic_load_factor^2.2 = 1.1^2.2 = 1.23x
-    # With cavitation factor = 1.0 + 0.1 × 2.0 = 1.2x
-    # Actual rate: 0.006 × 1.23 × 1.2 = 0.0088%/hour
-    # Target: 45 minutes = 0.0088 × 0.75 hours = 0.0066% distance needed
+    # Complete physics package for cavitation-driven pump bearing wear
+    # Target: cavitation_intensity = 0.25 → 2.5x bearing acceleration → 80 min trigger
     "pump_bearing_replacement": {
-        "pump_bearing_wear": [6.49, 0.1, 0.1, 0.0],     # 6.5 - 0.01 = 6.49 (very aggressive)
+        # === TARGET PARAMETER ===
+        "pump_bearing_wear": [6.3, 0.1, 0.1, 0.0],         # 6.5 - 0.2 = 6.3 (close to threshold)
         
-        # Conditions that create hydraulic load + cavitation acceleration
-        "cavitation_intensity": [0.1, 0.01, 0.01, 0.01], # Moderate cavitation for FWP-1
-        "npsh_available": [18.0, 18.0, 18.0, 20.0],      # Reduced NPSH for FWP-1 only
-        "pump_vibrations": [12.0, 1.0, 1.0, 0.0],        # Cavitation-induced vibration
+        # === CAVITATION PHYSICS PACKAGE ===
+        "cavitation_intensity": [0.25, 0.05, 0.05, 0.05],  # Target intensity for FWP-1
         
-        # Safe values for other components
-        "motor_bearing_wear": [1.5, 0.1, 0.1, 0.0],      # Only FWP-1 has wear
-        "thrust_bearing_wear": [0.8, 0.1, 0.1, 0.0],     # Only FWP-1 has wear
-        "motor_temperature": [70.0, 30.0, 30.0, 25.0],   # Only FWP-1 elevated
-        "pump_oil_contamination": 8.0,                    # Safe system-wide
+        # Pre-existing damage to increase NPSH requirements
+        "impeller_cavitation_damage": [2.5, 0.1, 0.1, 0.1], # +0.5m NPSH penalty
+        "impeller_wear": [6.0, 0.3, 0.3, 0.3],              # +0.6m NPSH penalty
+        "motor_bearing_wear": [5.0, 0.1, 0.1, 0.0],         # +0.25m NPSH penalty
+        "thrust_bearing_wear": [3.0, 0.1, 0.1, 0.0],        # +0.15m NPSH penalty
+        # Total NPSH required = 15.0 + 1.5 = 16.5m
+        # Cavitation threshold = 16.5 + 2.0 = 18.5m
         
-        "description": "Pump bearing wear with cavitation acceleration - 80 min target",
+        # NPSH conditions for sustained cavitation
+        "npsh_available": [16.8, 20.0, 20.0, 20.0],         # FWP-1 marginal NPSH
+        # NPSH deficit = 18.5 - 16.8 = 1.7m
+        # Cavitation severity = 1.7 / 18.5 = 0.092
+        # With flow_factor = (580/555)^2 = 1.09 → intensity = 0.092 * 1.09 = 0.10
+        
+        # System conditions that reduce NPSH available
+        "suction_pressure": 0.38,                           # Reduced suction pressure
+        "feedwater_temperature": 238.0,                     # Elevated temperature
+        "discharge_pressure": 8.3,                          # Higher discharge pressure
+        
+        # Operating conditions that amplify cavitation
+        "pump_flows": [580.0, 500.0, 500.0, 0.0],          # FWP-1 higher flow
+        "pump_speeds": [3680.0, 3600.0, 3600.0, 0.0],      # FWP-1 overspeed
+        
+        # Supporting conditions for bearing wear acceleration
+        "oil_temperature": 68.0,                            # High oil temperature
+        "pump_oil_contamination": 14.0,                     # Below 15.2 maintenance threshold
+        "pump_oil_water_content": 0.065,                    # Moderate moisture
+        "pump_oil_acid_number": 1.4,                        # Moderate acidity
+        
+        # Vibration from cavitation and bearing wear
+        "pump_vibrations": [15.0, 5.0, 5.0, 0.0],          # FWP-1 high vibration
+        
+        # Motor conditions
+        "motor_temperature": [90.0, 70.0, 70.0, 25.0],     # FWP-1 elevated motor temp
+        "bearing_temperatures": [75.0, 50.0, 50.0, 25.0],  # FWP-1 elevated bearing temp
+        
+        # Seal conditions (supporting but not triggering)
+        "seal_face_wear": [10.0, 0.1, 0.1, 0.1],           # FWP-1 moderate seal wear
+        
+        # Steam generator conditions
+        "sg_levels": [12.5, 12.5, 12.5],                   # Normal SG levels
+        "sg_pressures": [6.895, 6.895, 6.895],             # Normal SG pressures
+        "sg_steam_flows": [500.0, 500.0, 500.0],           # Normal steam flows
+        "sg_steam_qualities": [0.99, 0.99, 0.99],          # Normal steam qualities
+        
+        # Oil levels (normal)
+        "pump_oil_levels": [90.0, 100.0, 100.0, 100.0],    # FWP-1 slightly lower
+        
+        "description": "Pump bearing wear with complete cavitation physics package - 80 min target",
         "expected_action": "bearing_replacement",
         "component_id": "pump_bearings",
         "target_pump": "FWP-1",
-        "physics_calculation": "0.0025 × 1.21 × 1.2 = 0.0036%/hour × 1.33h = 0.005% distance"
+        "physics_calculation": "Complete NPSH deficit → sustained cavitation → 2.5x bearing acceleration"
     },
     
     # === THRUST BEARING REPLACEMENT ===
@@ -204,31 +265,65 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
     #},
     
     # === SEAL REPLACEMENT ===
-    # Base rate: 0.01%/hour (from code analysis)
-    # With pressure_factor^2.0 = 1.1^2.0 = 1.21x
-    # With cavitation factor = 1.0 + 0.15 × 5.0 = 1.75x (seals very sensitive to cavitation)
-    # Actual rate: 0.01 × 1.21 × 1.75 = 0.021%/hour
-    # Target: 90 minutes = 0.021 × 1.5 hours = 0.032% distance needed
+    # Complete physics package for cavitation-driven seal wear
+    # Target: cavitation_intensity = 0.20 → 6.0x seal acceleration → 150 min trigger
     "seal_replacement": {
-        "seal_face_wear": [15.7, 0.1, 0.1, 0.1],         # 16.0 - 0.3 = 15.7 (aggressive)
+        # === TARGET PARAMETER ===
+        "seal_face_wear": [15.7, 0.1, 0.1, 0.1],         # 16.0 - 0.3 = 15.7 (close to threshold)
         
-        # Conditions that accelerate seal wear
-        "cavitation_intensity": [0.15, 0.01, 0.01, 0.01], # Moderate cavitation near seals
-        "pump_oil_contamination": 13.0,                   # Contamination damages seal faces
-        "pump_oil_water_content": 0.07,                   # Moisture damages seal materials
-        "oil_temperature": 53.0,                          # Heat degrades seal elastomers
+        # === CAVITATION PHYSICS PACKAGE ===
+        "cavitation_intensity": [0.20, 0.05, 0.05, 0.05], # Target intensity for FWP-1
         
-        # Safe values for other components
-        "motor_bearing_wear": [1.5, 0.1, 0.1, 0.0],      # Only FWP-1 has wear
-        "pump_bearing_wear": [1.8, 0.1, 0.1, 0.0],       # Only FWP-1 has wear
-        "thrust_bearing_wear": [1.2, 0.1, 0.1, 0.0],     # Only FWP-1 has wear
-        "pump_oil_levels": [85.0, 98.0, 98.0, 100.0],    # Only FWP-1 lower from leakage
-        "motor_temperature": [70.0, 30.0, 30.0, 25.0],   # Only FWP-1 elevated
+        # Pre-existing damage to increase NPSH requirements
+        "impeller_cavitation_damage": [2.0, 0.1, 0.1, 0.1], # +0.4m NPSH penalty
+        "impeller_wear": [5.0, 0.3, 0.3, 0.3],              # +0.5m NPSH penalty
+        "motor_bearing_wear": [4.0, 0.1, 0.1, 0.0],         # +0.2m NPSH penalty
+        "pump_bearing_wear": [3.0, 0.1, 0.1, 0.0],          # +0.15m NPSH penalty
+        "thrust_bearing_wear": [2.0, 0.1, 0.1, 0.0],        # +0.1m NPSH penalty
+        # Total NPSH required = 15.0 + 1.25 = 16.25m
+        # Cavitation threshold = 16.25 + 2.0 = 18.25m
         
-        "description": "Seal wear with pressure + cavitation acceleration - 150 min target",
+        # NPSH conditions for sustained cavitation
+        "npsh_available": [17.0, 20.0, 20.0, 20.0],         # FWP-1 marginal NPSH
+        # NPSH deficit = 18.25 - 17.0 = 1.25m
+        # Cavitation severity = 1.25 / 18.25 = 0.068
+        # With flow_factor = (570/555)^2 = 1.05 → intensity = 0.068 * 1.05 = 0.071
+        
+        # System conditions that reduce NPSH available
+        "suction_pressure": 0.40,                           # Reduced suction pressure
+        "feedwater_temperature": 235.0,                     # Elevated temperature
+        "discharge_pressure": 8.2,                          # Slightly higher discharge
+        
+        # Operating conditions that amplify cavitation
+        "pump_flows": [570.0, 500.0, 500.0, 0.0],          # FWP-1 higher flow
+        "pump_speeds": [3650.0, 3600.0, 3600.0, 0.0],      # FWP-1 slight overspeed
+        
+        # Supporting conditions for seal wear acceleration
+        "oil_temperature": 65.0,                            # Elevated oil temperature
+        "pump_oil_contamination": 13.0,                     # Below 15.2 maintenance threshold
+        "pump_oil_water_content": 0.07,                     # Moderate moisture
+        "pump_oil_acid_number": 1.3,                        # Moderate acidity
+        
+        # Vibration from cavitation
+        "pump_vibrations": [12.0, 5.0, 5.0, 0.0],          # FWP-1 elevated vibration
+        
+        # Motor conditions (supporting but not triggering)
+        "motor_temperature": [85.0, 70.0, 70.0, 25.0],     # FWP-1 elevated motor temp
+        "bearing_temperatures": [70.0, 50.0, 50.0, 25.0],  # FWP-1 elevated bearing temp
+        
+        # Steam generator conditions
+        "sg_levels": [12.5, 12.5, 12.5],                   # Normal SG levels
+        "sg_pressures": [6.895, 6.895, 6.895],             # Normal SG pressures
+        "sg_steam_flows": [500.0, 500.0, 500.0],           # Normal steam flows
+        "sg_steam_qualities": [0.99, 0.99, 0.99],          # Normal steam qualities
+        
+        # Oil levels (lower from seal leakage)
+        "pump_oil_levels": [85.0, 100.0, 100.0, 100.0],    # FWP-1 lower from leakage
+        
+        "description": "Seal wear with complete cavitation physics package - 150 min target",
         "expected_action": "seal_replacement",
         "target_pump": "FWP-1",
-        "physics_calculation": "0.004 × 1.19 × 1.75 = 0.0083%/hour × 2.5h = 0.021% distance"
+        "physics_calculation": "Complete NPSH deficit → sustained cavitation → 6x seal acceleration"
     },
     
     # === OIL ANALYSIS ===

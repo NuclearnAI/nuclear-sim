@@ -474,10 +474,10 @@ ACTION_SCENARIOS = {
         {
             "name": "high_seal_wear_contamination",
             "probability": 0.4,
-            "description": "High seal wear driving contamination increase - 8hr trigger",
+            "description": "High seal wear driving contamination increase - 6hr trigger",
             "parameters": {
-                "pump_oil_contamination": {"range": [15.17, 15.19], "distribution": "uniform"},
-                "seal_face_wear": {"range": [7.0, 9.0], "distribution": "uniform", "array_handling": "first_element_only"},
+                "pump_oil_contamination": {"range": [15.16, 15.18], "distribution": "uniform"},
+                "seal_face_wear": {"range": [11.0, 13.0], "distribution": "uniform", "array_handling": "first_element_only"},
                 "pump_oil_water_content": {"range": [0.07, 0.08], "distribution": "uniform"},
                 "pump_oil_acid_number": {"range": [1.4, 1.6], "distribution": "uniform"},
                 "oil_temperature": {"range": [55, 62], "distribution": "normal"},
@@ -502,10 +502,10 @@ ACTION_SCENARIOS = {
         {
             "name": "moderate_seal_wear_contamination",
             "probability": 0.35,
-            "description": "Moderate seal wear with contamination buildup - 10hr trigger",
+            "description": "Moderate seal wear with contamination buildup - 8hr trigger",
             "parameters": {
-                "pump_oil_contamination": {"range": [15.15, 15.17], "distribution": "uniform"},
-                "seal_face_wear": {"range": [5.0, 7.0], "distribution": "uniform", "array_handling": "first_element_only"},
+                "pump_oil_contamination": {"range": [15.14, 15.16], "distribution": "uniform"},
+                "seal_face_wear": {"range": [8.0, 11.0], "distribution": "uniform", "array_handling": "first_element_only"},
                 "pump_oil_water_content": {"range": [0.065, 0.075], "distribution": "uniform"},
                 "pump_oil_acid_number": {"range": [1.35, 1.55], "distribution": "uniform"},
                 "oil_temperature": {"range": [52, 58], "distribution": "normal"},
@@ -530,10 +530,10 @@ ACTION_SCENARIOS = {
         {
             "name": "low_seal_wear_contamination",
             "probability": 0.25,
-            "description": "Low seal wear with slow contamination increase - 12hr trigger",
+            "description": "Low seal wear with slow contamination increase - 10hr trigger",
             "parameters": {
-                "pump_oil_contamination": {"range": [15.12, 15.15], "distribution": "uniform"},
-                "seal_face_wear": {"range": [3.0, 5.0], "distribution": "uniform", "array_handling": "first_element_only"},
+                "pump_oil_contamination": {"range": [15.10, 15.14], "distribution": "uniform"},
+                "seal_face_wear": {"range": [6.0, 8.0], "distribution": "uniform", "array_handling": "first_element_only"},
                 "pump_oil_water_content": {"range": [0.06, 0.07], "distribution": "uniform"},
                 "pump_oil_acid_number": {"range": [1.3, 1.4], "distribution": "uniform"},
                 "oil_temperature": {"range": [50, 55], "distribution": "normal"},
