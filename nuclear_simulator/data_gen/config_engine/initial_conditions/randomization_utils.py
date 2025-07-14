@@ -472,36 +472,87 @@ ACTION_SCENARIOS = {
     
     "oil_change": [
         {
-            "name": "critical_contamination",
-            "probability": 0.5,
-            "description": "Very high contamination - almost certain 12hr trigger (targets 15.2 threshold)",
+            "name": "high_seal_wear_contamination",
+            "probability": 0.4,
+            "description": "High seal wear driving contamination increase - 8hr trigger",
             "parameters": {
-                "pump_oil_contamination": {"range": [15.18, 15.195], "distribution": "uniform"},
-                "oil_temperature": {"range": [65, 75], "distribution": "normal"},
-                "pump_oil_water_content": {"range": [0.085, 0.095], "distribution": "uniform"},
-                "pump_oil_acid_number": {"range": [1.5, 1.58], "distribution": "normal"}
+                "pump_oil_contamination": {"range": [15.17, 15.19], "distribution": "uniform"},
+                "seal_face_wear": {"range": [7.0, 9.0], "distribution": "uniform", "array_handling": "first_element_only"},
+                "pump_oil_water_content": {"range": [0.07, 0.08], "distribution": "uniform"},
+                "pump_oil_acid_number": {"range": [1.4, 1.6], "distribution": "uniform"},
+                "oil_temperature": {"range": [55, 62], "distribution": "normal"},
+                "pump_vibrations": {"range": [7.0, 10.0], "distribution": "normal", "array_handling": "first_element_only"},
+                "motor_temperature": {"range": [78, 82], "distribution": "normal", "array_handling": "first_element_only"},
+                "bearing_temperatures": {"range": [63, 67], "distribution": "normal", "array_handling": "first_element_only"},
+                "motor_bearing_wear": {"range": [1.8, 2.2], "distribution": "uniform", "array_handling": "first_element_only"},
+                "pump_bearing_wear": {"range": [1.3, 1.7], "distribution": "uniform", "array_handling": "first_element_only"},
+                "thrust_bearing_wear": {"range": [0.8, 1.2], "distribution": "uniform", "array_handling": "first_element_only"},
+                "pump_oil_levels": {"range": [86, 90], "distribution": "uniform", "array_handling": "first_element_only"},
+                "cavitation_intensity": {"range": [0.04, 0.06], "distribution": "uniform", "array_handling": "first_element_only"},
+                "npsh_available": {"range": [18.5, 19.5], "distribution": "uniform", "array_handling": "first_element_only"},
+                "suction_pressure": {"range": [0.44, 0.46], "distribution": "uniform"},
+                "discharge_pressure": {"range": [7.9, 8.1], "distribution": "uniform"},
+                "feedwater_temperature": {"range": [228, 232], "distribution": "uniform"},
+                "sg_levels": {"range": [12.3, 12.7], "distribution": "uniform", "array_handling": "preserve_pattern"},
+                "sg_pressures": {"range": [6.85, 6.94], "distribution": "uniform", "array_handling": "preserve_pattern"},
+                "sg_steam_flows": {"range": [495, 505], "distribution": "uniform", "array_handling": "preserve_pattern"},
+                "sg_steam_qualities": {"range": [0.985, 0.995], "distribution": "uniform", "array_handling": "preserve_pattern"}
             }
         },
         {
-            "name": "accelerated_degradation",
+            "name": "moderate_seal_wear_contamination",
             "probability": 0.35,
-            "description": "Accelerated oil degradation conditions (targets 15.2 threshold)",
+            "description": "Moderate seal wear with contamination buildup - 10hr trigger",
             "parameters": {
                 "pump_oil_contamination": {"range": [15.15, 15.17], "distribution": "uniform"},
-                "oil_temperature": {"range": [60, 68], "distribution": "normal"},
-                "pump_oil_water_content": {"range": [0.08, 0.09], "distribution": "uniform"},
-                "pump_oil_acid_number": {"range": [1.4, 1.5], "distribution": "normal"}
+                "seal_face_wear": {"range": [5.0, 7.0], "distribution": "uniform", "array_handling": "first_element_only"},
+                "pump_oil_water_content": {"range": [0.065, 0.075], "distribution": "uniform"},
+                "pump_oil_acid_number": {"range": [1.35, 1.55], "distribution": "uniform"},
+                "oil_temperature": {"range": [52, 58], "distribution": "normal"},
+                "pump_vibrations": {"range": [6.0, 8.0], "distribution": "normal", "array_handling": "first_element_only"},
+                "motor_temperature": {"range": [75, 80], "distribution": "normal", "array_handling": "first_element_only"},
+                "bearing_temperatures": {"range": [60, 65], "distribution": "normal", "array_handling": "first_element_only"},
+                "motor_bearing_wear": {"range": [1.5, 2.0], "distribution": "uniform", "array_handling": "first_element_only"},
+                "pump_bearing_wear": {"range": [1.0, 1.5], "distribution": "uniform", "array_handling": "first_element_only"},
+                "thrust_bearing_wear": {"range": [0.5, 1.0], "distribution": "uniform", "array_handling": "first_element_only"},
+                "pump_oil_levels": {"range": [87, 89], "distribution": "uniform", "array_handling": "first_element_only"},
+                "cavitation_intensity": {"range": [0.045, 0.055], "distribution": "uniform", "array_handling": "first_element_only"},
+                "npsh_available": {"range": [18.8, 19.2], "distribution": "uniform", "array_handling": "first_element_only"},
+                "suction_pressure": {"range": [0.445, 0.455], "distribution": "uniform"},
+                "discharge_pressure": {"range": [7.95, 8.05], "distribution": "uniform"},
+                "feedwater_temperature": {"range": [229, 231], "distribution": "uniform"},
+                "sg_levels": {"range": [12.4, 12.6], "distribution": "uniform", "array_handling": "preserve_pattern"},
+                "sg_pressures": {"range": [6.89, 6.90], "distribution": "uniform", "array_handling": "preserve_pattern"},
+                "sg_steam_flows": {"range": [498, 502], "distribution": "uniform", "array_handling": "preserve_pattern"},
+                "sg_steam_qualities": {"range": [0.988, 0.992], "distribution": "uniform", "array_handling": "preserve_pattern"}
             }
         },
         {
-            "name": "good_oil_condition",
-            "probability": 0.15,
-            "description": "Good oil condition - unlikely trigger (below 15.2 threshold)",
+            "name": "low_seal_wear_contamination",
+            "probability": 0.25,
+            "description": "Low seal wear with slow contamination increase - 12hr trigger",
             "parameters": {
-                "pump_oil_contamination": {"range": [14.8, 15.0], "distribution": "uniform"},
-                "oil_temperature": {"range": [58, 65], "distribution": "normal"},
-                "pump_oil_water_content": {"range": [0.075, 0.08], "distribution": "uniform"},
-                "pump_oil_acid_number": {"range": [1.3, 1.4], "distribution": "normal"}
+                "pump_oil_contamination": {"range": [15.12, 15.15], "distribution": "uniform"},
+                "seal_face_wear": {"range": [3.0, 5.0], "distribution": "uniform", "array_handling": "first_element_only"},
+                "pump_oil_water_content": {"range": [0.06, 0.07], "distribution": "uniform"},
+                "pump_oil_acid_number": {"range": [1.3, 1.4], "distribution": "uniform"},
+                "oil_temperature": {"range": [50, 55], "distribution": "normal"},
+                "pump_vibrations": {"range": [5.0, 7.0], "distribution": "normal", "array_handling": "first_element_only"},
+                "motor_temperature": {"range": [72, 78], "distribution": "normal", "array_handling": "first_element_only"},
+                "bearing_temperatures": {"range": [58, 63], "distribution": "normal", "array_handling": "first_element_only"},
+                "motor_bearing_wear": {"range": [1.2, 1.8], "distribution": "uniform", "array_handling": "first_element_only"},
+                "pump_bearing_wear": {"range": [0.8, 1.2], "distribution": "uniform", "array_handling": "first_element_only"},
+                "thrust_bearing_wear": {"range": [0.3, 0.8], "distribution": "uniform", "array_handling": "first_element_only"},
+                "pump_oil_levels": {"range": [87.5, 88.5], "distribution": "uniform", "array_handling": "first_element_only"},
+                "cavitation_intensity": {"range": [0.048, 0.052], "distribution": "uniform", "array_handling": "first_element_only"},
+                "npsh_available": {"range": [18.9, 19.1], "distribution": "uniform", "array_handling": "first_element_only"},
+                "suction_pressure": {"range": [0.448, 0.452], "distribution": "uniform"},
+                "discharge_pressure": {"range": [7.98, 8.02], "distribution": "uniform"},
+                "feedwater_temperature": {"range": [229.5, 230.5], "distribution": "uniform"},
+                "sg_levels": {"range": [12.45, 12.55], "distribution": "uniform", "array_handling": "preserve_pattern"},
+                "sg_pressures": {"range": [6.89, 6.90], "distribution": "uniform", "array_handling": "preserve_pattern"},
+                "sg_steam_flows": {"range": [499, 501], "distribution": "uniform", "array_handling": "preserve_pattern"},
+                "sg_steam_qualities": {"range": [0.989, 0.991], "distribution": "uniform", "array_handling": "preserve_pattern"}
             }
         }
     ],
@@ -899,7 +950,14 @@ def get_randomized_feedwater_conditions(
         "cavitation_intensity": ("first_element_only", [0.05, 0.01, 0.01, 0.01]),
         "seal_face_wear": ("first_element_only", [0.0, 0.1, 0.1, 0.1]),
         "impeller_wear": ("first_element_only", [0.0, 0.1, 0.1, 0.1]),
-        "bearing_temperatures": ("first_element_only", [50.0, 30.0, 30.0, 25.0])
+        "impeller_cavitation_damage": ("first_element_only", [0.0, 0.1, 0.1, 0.1]),
+        "bearing_temperatures": ("first_element_only", [50.0, 30.0, 30.0, 25.0]),
+        "pump_flows": ("first_element_only", [500.0, 500.0, 500.0, 0.0]),
+        "pump_speeds": ("first_element_only", [3600.0, 3600.0, 3600.0, 0.0]),
+        "sg_levels": ("preserve_pattern", [12.5, 12.5, 12.5]),
+        "sg_pressures": ("preserve_pattern", [6.895, 6.895, 6.895]),
+        "sg_steam_flows": ("preserve_pattern", [500.0, 500.0, 500.0]),
+        "sg_steam_qualities": ("preserve_pattern", [0.99, 0.99, 0.99])
     }
     
     for param_name, (handling, default_array) in array_parameters.items():
