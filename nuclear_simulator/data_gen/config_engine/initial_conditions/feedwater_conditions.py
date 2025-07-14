@@ -553,3 +553,148 @@ MAINTENANCE_THRESHOLD_ALIGNMENT = {
     "motor_temperature": 85.0,  # ✅ Matches config threshold
     "seal_leakage_rate": 0.15,  # ✅ Matches config threshold
 }
+
+
+# === RANDOMIZATION SUPPORT ===
+
+from typing import Optional
+from .randomization_utils import add_randomness_to_conditions, validate_safety_limits
+
+def get_randomized_feedwater_conditions(
+    action: str,
+    seed: Optional[int] = None,
+    scaling_factor: float = 0.1
+) -> Dict[str, Any]:
+    """
+    Get randomized conditions for a specific feedwater action
+    
+    This function is called by the initial conditions catalog to provide
+    randomized variants that interface with ComprehensiveComposer.
+    
+    Args:
+        action: Feedwater action name
+        seed: Random seed for reproducibility
+        scaling_factor: Scaling factor for randomization
+    
+    Returns:
+        Randomized conditions dictionary
+    """
+    if action not in FEEDWATER_CONDITIONS:
+        raise ValueError(f"Unknown feedwater action: {action}")
+    
+    base_conditions = FEEDWATER_CONDITIONS[action]
+    
+    # Feedwater-specific safety-aware rules
+    feedwater_rules = {
+        # MAINTENANCE TARGETS (we want to hit these)
+        "pump_oil_contamination": {
+            "scale_factor": 0.05,
+            "min_value": 12.0,
+            "max_value": 18.0,
+            "target_threshold": 15.2,
+            "threshold_type": "maintenance"
+        },
+        "pump_oil_levels": {
+            "scale_factor": 0.08,
+            "min_value": 55.0,
+            "max_value": 75.0,
+            "target_threshold": 60.0,
+            "threshold_type": "maintenance",
+            "array_handling": "preserve_pattern"
+        },
+        "motor_bearing_wear": {
+            "scale_factor": 0.06,
+            "min_value": 6.0,
+            "max_value": 9.5,
+            "target_threshold": 8.5,
+            "threshold_type": "maintenance",
+            "array_handling": "preserve_pattern"
+        },
+        "pump_bearing_wear": {
+            "scale_factor": 0.06,
+            "min_value": 4.5,
+            "max_value": 7.0,
+            "target_threshold": 6.5,
+            "threshold_type": "maintenance",
+            "array_handling": "preserve_pattern"
+        },
+        "thrust_bearing_wear": {
+            "scale_factor": 0.06,
+            "min_value": 3.0,
+            "max_value": 5.0,
+            "target_threshold": 4.5,
+            "threshold_type": "maintenance",
+            "array_handling": "preserve_pattern"
+        },
+        
+        # SAFETY LIMITS (never exceed)
+        "motor_temperature": {
+            "scale_factor": 0.08,
+            "min_value": 60.0,
+            "max_value": 115.0,  # 15°C safety margin below 130°C TRIP
+            "safety_limit": 130.0,
+            "threshold_type": "safety",
+            "array_handling": "preserve_pattern"
+        },
+        "npsh_available": {
+            "scale_factor": 0.05,
+            "min_value": 13.0,  # 1m above 12m CRITICAL TRIP
+            "max_value": 25.0,
+            "safety_limit": 12.0,
+            "threshold_type": "safety",
+            "safety_direction": "less_than",  # NPSH below 12m is dangerous
+            "array_handling": "individual"
+        },
+        "pump_vibrations": {
+            "scale_factor": 0.10,
+            "min_value": 0.0,
+            "max_value": 22.0,  # 3 mm/s safety margin below 25 TRIP
+            "safety_limit": 25.0,
+            "threshold_type": "safety",
+            "array_handling": "preserve_pattern"
+        },
+        "bearing_temperatures": {
+            "scale_factor": 0.10,
+            "min_value": 40.0,
+            "max_value": 110.0,  # 10°C safety margin below 120°C TRIP
+            "safety_limit": 120.0,
+            "threshold_type": "safety",
+            "array_handling": "preserve_pattern"
+        }
+    }
+    
+    randomized = add_randomness_to_conditions(
+        base_conditions,
+        feedwater_rules,
+        scaling_factor,
+        seed
+    )
+    
+    # Validate safety
+    violations = validate_safety_limits(randomized, feedwater_rules)
+    if violations["errors"]:
+        raise ValueError(f"Safety violations in randomized conditions: {violations['errors']}")
+    
+    return randomized
+
+# Convenience functions for common scenarios
+def create_randomized_feedwater_scenario(action: str, num_variants: int = 5, base_seed: int = 42):
+    """Create multiple randomized variants of a feedwater scenario"""
+    variants = {}
+    for i in range(num_variants):
+        seed = base_seed + i
+        randomized = get_randomized_feedwater_conditions(action, seed)
+        variants[f"{action}_variant_{i+1}"] = randomized
+    return variants
+
+def get_randomized_oil_change_conditions(seed: int = None):
+    """Get randomized oil change scenario"""
+    return get_randomized_feedwater_conditions("oil_change", seed)
+
+def get_randomized_bearing_replacement_conditions(seed: int = None):
+    """Get randomized bearing replacement scenario"""
+    return get_randomized_feedwater_conditions("motor_bearing_replacement", seed)
+
+def get_randomized_oil_top_off_conditions(seed: int = None):
+    """Get randomized oil top-off scenario"""
+    return get_randomized_feedwater_conditions("oil_top_off", seed)

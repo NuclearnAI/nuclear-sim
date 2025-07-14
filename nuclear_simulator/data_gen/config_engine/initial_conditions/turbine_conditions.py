@@ -379,3 +379,159 @@ TURBINE_CONDITIONS: Dict[str, Dict[str, Any]] = {
         "description": "Shutdown parameters requiring optimization"
     }
 }
+
+
+# === RANDOMIZATION SUPPORT ===
+
+from typing import Optional
+from .randomization_utils import add_randomness_to_conditions, validate_safety_limits
+
+def get_randomized_turbine_conditions(
+    action: str,
+    seed: Optional[int] = None,
+    scaling_factor: float = 0.1
+) -> Dict[str, Any]:
+    """
+    Get randomized conditions for a specific turbine action
+    
+    This function is called by the initial conditions catalog to provide
+    randomized variants that interface with ComprehensiveComposer.
+    
+    Args:
+        action: Turbine action name
+        seed: Random seed for reproducibility
+        scaling_factor: Scaling factor for randomization
+    
+    Returns:
+        Randomized conditions dictionary
+    """
+    if action not in TURBINE_CONDITIONS:
+        raise ValueError(f"Unknown turbine action: {action}")
+    
+    base_conditions = TURBINE_CONDITIONS[action]
+    
+    # Turbine-specific safety-aware rules
+    turbine_rules = {
+        # MAINTENANCE TARGETS (we want to hit these)
+        "oil_contamination_level": {
+            "scale_factor": 0.05,
+            "min_value": 12.0,
+            "max_value": 18.0,
+            "target_threshold": 15.0,
+            "threshold_type": "maintenance"
+        },
+        "oil_reservoir_level": {
+            "scale_factor": 0.08,
+            "min_value": 65.0,
+            "max_value": 85.0,
+            "target_threshold": 70.0,
+            "threshold_type": "maintenance"
+        },
+        "overall_efficiency": {
+            "scale_factor": 0.03,
+            "min_value": 0.28,
+            "max_value": 0.32,
+            "target_threshold": 0.30,
+            "threshold_type": "maintenance"
+        },
+        "turbine_efficiency": {
+            "scale_factor": 0.03,
+            "min_value": 0.28,
+            "max_value": 0.32,
+            "target_threshold": 0.30,
+            "threshold_type": "maintenance",
+            "array_handling": "individual"
+        },
+        
+        # SAFETY LIMITS (never exceed)
+        "thrust_bearing_displacement": {
+            "scale_factor": 0.02,
+            "min_value": 10.0,
+            "max_value": 45.0,  # 5mm safety margin below 50mm TRIP
+            "safety_limit": 50.0,
+            "threshold_type": "safety",
+            "array_handling": "individual"
+        },
+        "bearing_vibrations": {
+            "scale_factor": 0.08,
+            "min_value": 0.0,
+            "max_value": 22.0,  # 3 mils safety margin below 25 TRIP
+            "safety_limit": 25.0,
+            "threshold_type": "safety",
+            "array_handling": "individual"
+        },
+        "rotor_vibration": {
+            "scale_factor": 0.08,
+            "min_value": 0.0,
+            "max_value": 22.0,  # 3 mils safety margin below 25 TRIP
+            "safety_limit": 25.0,
+            "threshold_type": "safety",
+            "array_handling": "individual"
+        },
+        "overall_vibration": {
+            "scale_factor": 0.08,
+            "min_value": 0.0,
+            "max_value": 22.0,  # 3 mils safety margin below 25 TRIP
+            "safety_limit": 25.0,
+            "threshold_type": "safety",
+            "array_handling": "individual"
+        },
+        "vibration_1x": {
+            "scale_factor": 0.08,
+            "min_value": 0.0,
+            "max_value": 22.0,  # 3 mils safety margin below 25 TRIP
+            "safety_limit": 25.0,
+            "threshold_type": "safety",
+            "array_handling": "individual"
+        },
+        "rotor_temperature": {
+            "scale_factor": 0.05,
+            "min_value": 400.0,
+            "max_value": 500.0,  # Conservative for thermal expansion
+            "threshold_type": "operational",
+            "array_handling": "individual"
+        },
+        "blade_temperature": {
+            "scale_factor": 0.05,
+            "min_value": 450.0,
+            "max_value": 550.0,  # Conservative for blade material limits
+            "threshold_type": "operational",
+            "array_handling": "individual"
+        }
+    }
+    
+    randomized = add_randomness_to_conditions(
+        base_conditions,
+        turbine_rules,
+        scaling_factor,
+        seed
+    )
+    
+    # Validate safety
+    violations = validate_safety_limits(randomized, turbine_rules)
+    if violations["errors"]:
+        raise ValueError(f"Safety violations in randomized conditions: {violations['errors']}")
+    
+    return randomized
+
+# Convenience functions for common scenarios
+def create_randomized_turbine_scenario(action: str, num_variants: int = 5, base_seed: int = 42):
+    """Create multiple randomized variants of a turbine scenario"""
+    variants = {}
+    for i in range(num_variants):
+        seed = base_seed + i
+        randomized = get_randomized_turbine_conditions(action, seed)
+        variants[f"{action}_variant_{i+1}"] = randomized
+    return variants
+
+def get_randomized_turbine_oil_change_conditions(seed: int = None):
+    """Get randomized turbine oil change scenario"""
+    return get_randomized_turbine_conditions("turbine_oil_change", seed)
+
+def get_randomized_bearing_inspection_conditions(seed: int = None):
+    """Get randomized bearing inspection scenario"""
+    return get_randomized_turbine_conditions("turbine_bearing_inspection", seed)
+
+def get_randomized_efficiency_analysis_conditions(seed: int = None):
+    """Get randomized efficiency analysis scenario"""
+    return get_randomized_turbine_conditions("efficiency_analysis", seed)

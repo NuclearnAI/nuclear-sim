@@ -181,3 +181,149 @@ STEAM_GENERATOR_CONDITIONS: Dict[str, Dict[str, Any]] = {
         "description": "Maintenance planning parameters"
     }
 }
+
+
+# === RANDOMIZATION SUPPORT ===
+
+from typing import Optional
+from .randomization_utils import add_randomness_to_conditions, validate_safety_limits
+
+def get_randomized_sg_conditions(
+    action: str,
+    seed: Optional[int] = None,
+    scaling_factor: float = 0.1
+) -> Dict[str, Any]:
+    """
+    Get randomized conditions for a specific steam generator action
+    
+    This function is called by the initial conditions catalog to provide
+    randomized variants that interface with ComprehensiveComposer.
+    
+    Args:
+        action: Steam generator action name
+        seed: Random seed for reproducibility
+        scaling_factor: Scaling factor for randomization
+    
+    Returns:
+        Randomized conditions dictionary
+    """
+    if action not in STEAM_GENERATOR_CONDITIONS:
+        raise ValueError(f"Unknown steam generator action: {action}")
+    
+    base_conditions = STEAM_GENERATOR_CONDITIONS[action]
+    
+    # Steam generator-specific safety-aware rules
+    sg_rules = {
+        # MAINTENANCE TARGETS (we want to hit these)
+        "tsp_fouling_thicknesses": {
+            "scale_factor": 0.08,
+            "min_value": 0.04,
+            "max_value": 0.07,
+            "target_threshold": 0.05,  # 5% fouling threshold
+            "threshold_type": "maintenance",
+            "array_handling": "individual"
+        },
+        "sg_steam_qualities": {
+            "scale_factor": 0.02,
+            "min_value": 0.985,
+            "max_value": 1.0,
+            "target_threshold": 0.995,  # 99.5% quality threshold
+            "threshold_type": "maintenance",
+            "array_handling": "individual"
+        },
+        "tsp_heat_transfer_degradations": {
+            "scale_factor": 0.10,
+            "min_value": 0.05,
+            "max_value": 0.25,
+            "target_threshold": 0.15,  # 15% degradation threshold
+            "threshold_type": "maintenance",
+            "array_handling": "individual"
+        },
+        
+        # OPERATIONAL PARAMETERS (moderate scaling)
+        "scale_thicknesses": {
+            "scale_factor": 0.15,
+            "min_value": 0.0,
+            "max_value": 2.0,  # Keep well below levels that cause >305°C tube wall
+            "threshold_type": "operational",
+            "array_handling": "individual"
+        },
+        "sg_steam_flows": {
+            "scale_factor": 0.05,
+            "min_value": 400.0,
+            "max_value": 520.0,  # Reasonable operational range
+            "threshold_type": "operational",
+            "array_handling": "individual"
+        },
+        "sg_feedwater_flows": {
+            "scale_factor": 0.05,
+            "min_value": 400.0,
+            "max_value": 520.0,  # Reasonable operational range
+            "threshold_type": "operational",
+            "array_handling": "individual"
+        },
+        "sg_pressures": {
+            "scale_factor": 0.03,
+            "min_value": 6.5,
+            "max_value": 7.2,  # Reasonable pressure range
+            "threshold_type": "operational",
+            "array_handling": "individual"
+        },
+        "sg_temperatures": {
+            "scale_factor": 0.03,
+            "min_value": 280.0,
+            "max_value": 290.0,  # Reasonable temperature range
+            "threshold_type": "operational",
+            "array_handling": "individual"
+        },
+        "sg_levels": {
+            "scale_factor": 0.05,
+            "min_value": 10.0,
+            "max_value": 15.0,  # Reasonable level range
+            "threshold_type": "operational",
+            "array_handling": "individual"
+        },
+        "primary_flow_rates": {
+            "scale_factor": 0.05,
+            "min_value": 5000.0,
+            "max_value": 6000.0,  # Reasonable primary flow range
+            "threshold_type": "operational",
+            "array_handling": "individual"
+        }
+    }
+    
+    randomized = add_randomness_to_conditions(
+        base_conditions,
+        sg_rules,
+        scaling_factor,
+        seed
+    )
+    
+    # Validate safety (steam generators have fewer hard safety trips)
+    violations = validate_safety_limits(randomized, sg_rules)
+    if violations["errors"]:
+        raise ValueError(f"Safety violations in randomized conditions: {violations['errors']}")
+    
+    return randomized
+
+# Convenience functions for common scenarios
+def create_randomized_sg_scenario(action: str, num_variants: int = 5, base_seed: int = 42):
+    """Create multiple randomized variants of a steam generator scenario"""
+    variants = {}
+    for i in range(num_variants):
+        seed = base_seed + i
+        randomized = get_randomized_sg_conditions(action, seed)
+        variants[f"{action}_variant_{i+1}"] = randomized
+    return variants
+
+def get_randomized_tsp_cleaning_conditions(seed: int = None):
+    """Get randomized TSP chemical cleaning scenario"""
+    return get_randomized_sg_conditions("tsp_chemical_cleaning", seed)
+
+def get_randomized_steam_quality_conditions(seed: int = None):
+    """Get randomized steam quality improvement scenario"""
+    return get_randomized_sg_conditions("steam_quality_improvement", seed)
+
+def get_randomized_scale_removal_conditions(seed: int = None):
+    """Get randomized scale removal scenario"""
+    return get_randomized_sg_conditions("scale_removal", seed)

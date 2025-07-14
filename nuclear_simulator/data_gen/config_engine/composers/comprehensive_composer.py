@@ -8,6 +8,7 @@ to trigger specific maintenance actions through natural degradation.
 
 import sys
 import yaml
+import time
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Optional, Any, Union
@@ -20,6 +21,11 @@ sys.path.insert(0, str(project_root))
 
 # Import initial conditions catalog
 from ..initial_conditions import get_initial_conditions_catalog
+
+# Import randomization functions
+from ..initial_conditions.feedwater_conditions import get_randomized_feedwater_conditions
+from ..initial_conditions.turbine_conditions import get_randomized_turbine_conditions
+from ..initial_conditions.steam_generator_conditions import get_randomized_sg_conditions
 
 
 class ComprehensiveComposer:
@@ -70,7 +76,10 @@ class ComprehensiveComposer:
         self,
         target_action: str,
         duration_hours: float = 2.0,
-        plant_name: Optional[str] = None
+        plant_name: Optional[str] = None,
+        randomize: bool = False,
+        randomization_seed: Optional[int] = None,
+        randomization_factor: float = 0.1
     ) -> Dict[str, Any]:
         """
         Create a realistic maintenance test scenario with targeted initial conditions
@@ -129,7 +138,7 @@ class ComprehensiveComposer:
         }
         
         # 7. Apply targeted initial conditions to trigger the specific action
-        self._apply_targeted_initial_conditions(config, target_action)
+        self._apply_targeted_initial_conditions(config, target_action, randomize, randomization_seed, randomization_factor)
         
         # 8. Update metadata with enhanced information for state manager integration
         config['metadata'] = {
@@ -170,23 +179,35 @@ class ComprehensiveComposer:
         
         return config
     
-    def _apply_targeted_initial_conditions(self, config: Dict[str, Any], target_action: str):
+    def _apply_targeted_initial_conditions(self, config: Dict[str, Any], target_action: str, 
+                                         randomize: bool = False, randomization_seed: Optional[int] = None, 
+                                         randomization_factor: float = 0.1):
         """
         Apply targeted initial conditions to trigger the specific maintenance action
         
         Args:
             config: Configuration dictionary to modify
             target_action: Maintenance action to target
+            randomize: Whether to apply randomization
+            randomization_seed: Random seed for reproducibility
+            randomization_factor: Scaling factor for randomization
         """
         print(f"   🎯 Applying targeted initial conditions for {target_action}")
+        if randomize:
+            print(f"   🎲 Randomization enabled (seed={randomization_seed}, factor={randomization_factor})")
         
         target_subsystem = self.action_subsystem_map.get(target_action)
         if not target_subsystem:
             print(f"   ⚠️ No subsystem mapping found for {target_action}")
             return
         
-        # Get initial conditions from catalog
-        conditions = self.initial_conditions_catalog.get_conditions(target_subsystem, target_action)
+        # Get initial conditions - randomized or base
+        if randomize:
+            conditions = self._get_randomized_conditions(target_subsystem, target_action, 
+                                                       randomization_seed, randomization_factor)
+        else:
+            conditions = self.initial_conditions_catalog.get_conditions(target_subsystem, target_action)
+        
         if not conditions:
             print(f"   ⚠️ No initial conditions found for {target_subsystem}.{target_action}")
             return
@@ -198,9 +219,39 @@ class ComprehensiveComposer:
         condition_params = {k: v for k, v in conditions.items() 
                           if k not in ['description', 'safety_notes', 'threshold_info']}
         
-        print(f"   ✅ Applied {len(condition_params)} targeted initial conditions for {target_subsystem}.{target_action}")
+        randomization_note = " (randomized)" if randomize else ""
+        print(f"   ✅ Applied {len(condition_params)} targeted initial conditions{randomization_note} for {target_subsystem}.{target_action}")
         if 'description' in conditions:
             print(f"   📝 {conditions['description']}")
+    
+    def _get_randomized_conditions(self, subsystem: str, action: str, seed: Optional[int], factor: float) -> Dict[str, Any]:
+        """
+        Get randomized conditions for the specified subsystem and action
+        
+        Args:
+            subsystem: Target subsystem
+            action: Target action
+            seed: Random seed
+            factor: Randomization factor
+            
+        Returns:
+            Randomized conditions dictionary
+        """
+        try:
+            if subsystem == "feedwater":
+                return get_randomized_feedwater_conditions(action, seed, factor)
+            elif subsystem == "turbine":
+                return get_randomized_turbine_conditions(action, seed, factor)
+            elif subsystem == "steam_generator":
+                return get_randomized_sg_conditions(action, seed, factor)
+            else:
+                print(f"   ⚠️ Randomization not supported for subsystem: {subsystem}")
+                # Fall back to base conditions
+                return self.initial_conditions_catalog.get_conditions(subsystem, action)
+        except Exception as e:
+            print(f"   ⚠️ Error getting randomized conditions: {e}")
+            # Fall back to base conditions
+            return self.initial_conditions_catalog.get_conditions(subsystem, action)
     
     def _apply_conditions_to_config(self, config: Dict[str, Any], subsystem: str, conditions: Dict[str, Any]):
         """

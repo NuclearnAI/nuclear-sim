@@ -77,7 +77,10 @@ class ScenarioRunner:
         action: str,
         duration_hours: float = 2.0,
         aggressive_mode: bool = True,
-        plant_name: Optional[str] = None
+        plant_name: Optional[str] = None,
+        randomize: bool = False,
+        randomization_seed: Optional[int] = None,
+        randomization_factor: float = 0.1
     ) -> Dict[str, Any]:
         """
         Generate a maintenance-targeted scenario configuration
@@ -104,7 +107,10 @@ class ScenarioRunner:
             config = self.maintenance_composer.compose_action_test_scenario(
                 target_action=action,
                 duration_hours=duration_hours,
-                plant_name=plant_name
+                plant_name=plant_name,
+                randomize=randomize,
+                randomization_seed=randomization_seed,
+                randomization_factor=randomization_factor
             )
             
             if self.verbose:
@@ -142,7 +148,10 @@ class ScenarioRunner:
         duration_hours: float = 2.0,
         aggressive_mode: bool = True,
         save_config: bool = True,
-        tracking_start_hours: float = 0.0
+        tracking_start_hours: float = 0.0,
+        randomize: bool = False,
+        randomization_seed: Optional[int] = None,
+        randomization_factor: float = 0.1
     ) -> Dict[str, Any]:
         """
         Generate and run a maintenance-targeted scenario
@@ -168,7 +177,10 @@ class ScenarioRunner:
         config = self.generate_maintenance_scenario(
             action=action,
             duration_hours=duration_hours,
-            aggressive_mode=aggressive_mode
+            aggressive_mode=aggressive_mode,
+            randomize=randomize,
+            randomization_seed=randomization_seed,
+            randomization_factor=randomization_factor
         )
         
         # Save configuration if requested
@@ -839,6 +851,12 @@ Examples:
   # Run a single maintenance scenario
   python scenario_runner.py --action oil_top_off --duration 2.0
   
+  # Run with randomization
+  python scenario_runner.py --action oil_change --randomize --seed 42 --randomization-factor 0.1
+  
+  # Generate multiple randomized variants
+  python scenario_runner.py --action oil_change --randomize --num-variants 5 --seed 42
+  
   # Run an operational scenario
   python scenario_runner.py --scenario power_ramp_up --duration 1.5
   
@@ -900,6 +918,12 @@ Examples:
     parser.add_argument('--count', type=int, default=1, help='Number of runs per action in batch mode')
     parser.add_argument('--aggressive', action='store_true', help='Use aggressive thresholds (default: conservative)')
     parser.add_argument('--tracking-start', type=float, default=0.0, help='Start time for CSV data tracking in hours. Data before this time will not be saved to CSVs (default: 0.0)')
+    
+    # Randomization parameters
+    parser.add_argument('--randomize', action='store_true', help='Enable randomization of initial conditions')
+    parser.add_argument('--seed', type=int, help='Random seed for reproducibility')
+    parser.add_argument('--randomization-factor', type=float, default=0.1, help='Randomization factor (default: 0.1 = ±10%)')
+    parser.add_argument('--num-variants', type=int, default=1, help='Number of randomized variants to generate (default: 1)')
     
     # Run-all-actions specific parameters
     parser.add_argument('--subsystem', type=str, choices=['steam_generator', 'turbine', 'feedwater', 'condenser'], 
@@ -1081,12 +1105,34 @@ def main():
                 return 1
             
             aggressive_mode = args.aggressive
-            runner.run_maintenance_scenario(
-                action=action,
-                duration_hours=args.duration,
-                aggressive_mode=aggressive_mode,
-                tracking_start_hours=args.tracking_start
-            )
+            
+            # Handle multiple variants
+            if args.num_variants > 1:
+                print(f"🎲 Generating {args.num_variants} randomized variants")
+                for i in range(args.num_variants):
+                    variant_seed = args.seed + i if args.seed else None
+                    print(f"\n[{i+1}/{args.num_variants}] Running variant {i+1}")
+                    runner.run_maintenance_scenario(
+                        action=action,
+                        duration_hours=args.duration,
+                        aggressive_mode=aggressive_mode,
+                        tracking_start_hours=args.tracking_start,
+                        randomize=args.randomize,
+                        randomization_seed=variant_seed,
+                        randomization_factor=args.randomization_factor
+                    )
+                    # Small delay between variants for unique timestamps
+                    time.sleep(1)
+            else:
+                runner.run_maintenance_scenario(
+                    action=action,
+                    duration_hours=args.duration,
+                    aggressive_mode=aggressive_mode,
+                    tracking_start_hours=args.tracking_start,
+                    randomize=args.randomize,
+                    randomization_seed=args.seed,
+                    randomization_factor=args.randomization_factor
+                )
         
         elif args.scenario:
             # Single operational scenario
