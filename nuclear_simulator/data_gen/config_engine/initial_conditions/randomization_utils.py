@@ -473,7 +473,7 @@ ACTION_SCENARIOS = {
     "oil_change": [
         {
             "name": "high_seal_wear_contamination",
-            "probability": 0.4,
+            "probability": 0.5,
             "description": "High seal wear driving contamination increase - 6hr trigger",
             "parameters": {
                 "pump_oil_contamination": {"range": [15.16, 15.18], "distribution": "uniform"},
@@ -501,7 +501,7 @@ ACTION_SCENARIOS = {
         },
         {
             "name": "moderate_seal_wear_contamination",
-            "probability": 0.35,
+            "probability": 0.25,
             "description": "Moderate seal wear with contamination buildup - 8hr trigger",
             "parameters": {
                 "pump_oil_contamination": {"range": [15.14, 15.16], "distribution": "uniform"},
