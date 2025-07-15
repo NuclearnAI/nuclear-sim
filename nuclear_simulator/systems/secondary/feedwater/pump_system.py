@@ -554,8 +554,8 @@ class FeedwaterPump(BasePump):
     
     def _simulate_cavitation(self, dt: float, system_conditions: Dict):
         """Simulate enhanced cavitation modeling with damage accumulation"""
-        if self.state.status != PumpStatus.RUNNING:
-            # Reset cavitation when not running
+        if self.state.status not in [PumpStatus.RUNNING, PumpStatus.STARTING]:
+            # Reset cavitation only when completely stopped
             self.state.cavitation_intensity = 0.0
             self.state.cavitation_time = 0.0
             self.state.cavitation_noise_level = 0.0
