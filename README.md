@@ -1,302 +1,372 @@
 # Nuclear Plant Simulator
 
-A comprehensive nuclear power plant simulator with hierarchical system architecture, supporting multiple heat source types and advanced simulation capabilities.
+A comprehensive nuclear power plant simulation platform with advanced maintenance scenario generation, intelligent initial conditions optimization, and sophisticated secondary system modeling. Built for training data generation, operational scenario analysis, and maintenance planning.
 
-## Key Features
+## 🚀 Key Features
 
-- **Unified CLI**: Single command-line interface for all operations.
-- **Multiple Heat Sources**: Supports realistic reactor physics and simplified constant heat sources.
-- **Hierarchical System Model**: Mirrors real nuclear plant systems.
-- **Comprehensive Data Logging**: All 22+ plant parameters logged to CSV in real-time.
-- **Automatic Plotting**: Generates standard plots for key parameters after each run.
-- **Run Management**: Organizes simulation runs with metadata and artifacts.
-- **Interactive Mode**: Step-by-step simulation with real-time dashboard.
-- **Extensible Architecture**: Designed for adding new systems, heat sources, and scenarios.
-- **Educational Focus**: Suitable for learning reactor physics, operations, and safety.
+### Primary Interface: Scenario Runner
+- **Unified CLI & API**: Single interface for all simulation operations via `scenario_runner.py`
+- **Maintenance Scenario Generation**: Intelligent targeting of specific maintenance actions with optimized initial conditions
+- **Batch Processing**: Run multiple scenarios, all available actions, or subsystem-specific operations
+- **YAML Configuration Support**: Define and run scenarios from configuration files
+- **Interactive Mode**: Step-by-step scenario exploration and execution
 
-## 🚀 Quick Start & Installation
+### Advanced Simulation Capabilities
+- **Comprehensive Secondary Systems**: Fully implemented steam generators, turbines, feedwater systems, and condensers with realistic physics
+- **Intelligent Maintenance System**: Automatic work order generation, maintenance orchestration, and component monitoring
+- **Data Generation Framework**: Sophisticated training data generation with timing optimization and validation
+- **State Management**: Advanced component registration and threshold monitoring
+- **Configuration Engine**: Template-based plant configuration with targeted initial conditions
 
-### Option 1: Run Locally (No Installation)
-From the `nuclear-simulator` directory:
+### Modern Architecture
+- **Hierarchical System Design**: Mirrors real nuclear plant organization
+- **Extensible Framework**: Easy addition of new systems, components, and scenarios
+- **Modern Python Packaging**: Uses pyproject.toml and modern dependency management
+- **Comprehensive Logging**: Detailed simulation data export and visualization
+
+## 🎯 Quick Start
+
+### Installation
 ```bash
-./nuclear-sim --help
-./nuclear-sim run normal_operation --name "Test" --duration 300
+# Clone the repository
+git clone https://github.com/cjb873/nuclear-sim.git
+cd nuclear-sim
+
+# Install dependencies (using uv - recommended)
+uv sync
+
+# Or using pip
+pip install -r requirements.txt
 ```
 
-### Option 2: Install Globally (Recommended)
-1.  Clone the repository:
-    ```bash
-    git clone <repository-url>
-    cd nuclear-simulator
-    ```
-2.  Install dependencies:
-    ```bash
-    pip install -r requirements.txt
-    # or if using uv
-    uv sync
-    ```
-3.  Run the installation script (from the `nuclear-simulator` directory):
-    ```bash
-    ./install.sh
-    ```
-    This may require `sudo` privileges if `/usr/local/bin` is not writable by your user.
-4.  Then use `nuclear-sim` from any directory:
-    ```bash
-    nuclear-sim --help
-    nuclear-sim run normal_operation --name "Test" --duration 300
-    ```
+### Basic Usage - Scenario Runner (Main Interface)
+
+```bash
+# Run a maintenance scenario (most common use case)
+python nuclear_simulator/data_gen/runners/scenario_runner.py --action oil_top_off --duration 2.0
+
+# List all available maintenance actions
+python nuclear_simulator/data_gen/runners/scenario_runner.py --list-actions
+
+# Run all actions for a specific subsystem
+python nuclear_simulator/data_gen/runners/scenario_runner.py --run-all-actions --subsystem feedwater --duration 1.5
+
+# Batch run multiple specific actions
+python nuclear_simulator/data_gen/runners/scenario_runner.py --batch-maintenance --actions "oil_top_off,bearing_inspection,tsp_chemical_cleaning" --count 2
+
+# Interactive mode for exploration
+python nuclear_simulator/data_gen/runners/scenario_runner.py --interactive
+
+# Run from YAML configuration
+python nuclear_simulator/data_gen/runners/scenario_runner.py --yaml-file my_scenario.yaml
+```
 
 ### Quick Test
-To verify the simulator is working:
 ```bash
-# If installed globally
-nuclear-sim run normal_operation --name "Quick Test" --duration 120
-# Or if running locally
-./nuclear-sim run normal_operation --name "Quick Test" --duration 120
+# Verify installation with a fast maintenance scenario
+python nuclear_simulator/data_gen/runners/scenario_runner.py --action oil_top_off --duration 1.0 --no-plots
 ```
-View results:
+
+## 🏗️ Architecture Overview
+
+The simulator is organized into a sophisticated, hierarchical structure:
+
+```
+nuclear_simulator/
+├── data_gen/                           # 🎯 MAIN INTERFACE & DATA GENERATION
+│   ├── runners/
+│   │   ├── scenario_runner.py          # 🚀 PRIMARY CLI & API INTERFACE
+│   │   └── maintenance_scenario_runner.py  # Maintenance-specific execution
+│   ├── config_engine/                  # Configuration generation system
+│   │   ├── composers/                  # Intelligent config composition
+│   │   ├── templates/                  # Base plant configurations
+│   │   └── initial_conditions/        # Targeted initial condition generation
+│   ├── core/                          # Data generation framework
+│   ├── optimization/                  # Timing and parameter optimization
+│   └── validation/                    # Scenario validation framework
+├── simulator/                         # Core simulation engine
+│   ├── core/sim.py                   # Main NuclearPlantSimulator class
+│   └── state/                        # Advanced state management
+├── systems/                          # Plant systems (fully implemented)
+│   ├── primary/                      # Primary reactor systems
+│   │   └── reactor/                  # Reactor physics and heat sources
+│   ├── secondary/                    # 🔥 COMPREHENSIVE SECONDARY SYSTEMS
+│   │   ├── steam_generator/          # Steam generators with fouling models
+│   │   ├── turbine/                  # Turbine with rotor dynamics
+│   │   ├── feedwater/                # Feedwater system with pump models
+│   │   ├── condenser/                # Condenser with vacuum systems
+│   │   ├── water_chemistry.py        # Water chemistry modeling
+│   │   └── ph_control_system.py      # pH control systems
+│   └── maintenance/                  # 🔧 ADVANCED MAINTENANCE SYSTEM
+│       ├── auto_maintenance.py       # Automatic maintenance scheduling
+│       ├── work_orders.py           # Work order management
+│       ├── maintenance_orchestrator.py  # Intelligent maintenance decisions
+│       └── component_registry.py    # Component monitoring and tracking
+├── tests/                           # Comprehensive test suite
+└── data/                           # Legacy data utilities
+```
+
+## 🎯 Scenario Runner - Main Interface
+
+The `scenario_runner.py` is the primary interface for all simulation operations:
+
+### Core Commands
+
 ```bash
-nuclear-sim list
-nuclear-sim status
+# MAINTENANCE SCENARIOS (Primary Use Case)
+--action ACTION              # Run specific maintenance action
+--batch-maintenance          # Run multiple maintenance actions
+--run-all-actions           # Run ALL available maintenance actions
+--subsystem SUBSYSTEM       # Filter to specific subsystem
+--exclude-actions ACTIONS   # Exclude specific actions
+
+# CONFIGURATION & VALIDATION
+--yaml-file FILE            # Run from YAML configuration
+--yaml-dir DIRECTORY        # Run all YAML files in directory
+--validate-yaml FILE        # Validate YAML without running
+
+# INFORMATION & EXPLORATION
+--list-actions              # List all available maintenance actions
+--interactive               # Interactive exploration mode
+
+# EXECUTION CONTROL
+--duration HOURS            # Simulation duration (default: 2.0)
+--count N                   # Runs per action in batch mode
+--aggressive                # Use aggressive maintenance thresholds
+--no-plots                  # Disable plotting for faster execution
+--output-dir DIR            # Custom output directory
 ```
 
-### Troubleshooting Setup
-- **"Command not found"**: Use `./nuclear-sim` if not installed globally, or run `./install.sh`.
-- **Permission denied for `./nuclear-sim`**: Run `chmod +x nuclear-sim`.
-- **Permission denied for `install.sh`**: Run `chmod +x install.sh`, then `sudo ./install.sh`.
-- **Python errors**: Ensure Python 3.8+ is installed. Install dependencies (`pip install numpy matplotlib seaborn rich` or from `requirements.txt`).
+### Available Maintenance Actions
 
-## 🏗️ Project Structure
+The simulator supports comprehensive maintenance actions across all major secondary systems:
 
-The simulator is organized into a hierarchical structure:
+#### Steam Generator (4 actions)
+- `tsp_chemical_cleaning` - TSP fouling removal
+- `scale_removal` - Tube scale cleaning  
+- `moisture_separator_maintenance` - Steam quality improvement
+- `tube_interior_fouling` - Interior fouling maintenance
 
-```
-nuclear-simulator/
-├── simulator/                    # Core simulation engine
-│   ├── core/                    # Main simulator logic
-│   │   └── sim.py              # NuclearPlantSimulator class
-│   ├── state/                   # Reactor state management (placeholder)
-│   └── control/                 # Control actions and interfaces (placeholder)
-├── systems/                     # Plant systems (hierarchical)
-│   ├── primary/                 # Primary system
-│   │   ├── reactor/            # Reactor core systems
-│   │   │   ├── reactivity_model.py # Comprehensive reactivity model
-│   │   │   ├── reactor_physics.py  # Unified reactor physics
-│   │   │   └── heat_sources/   # Different heat source options
-│   │   ├── coolant/            # Primary coolant system (placeholder)
-│   │   └── steam_generator/    # Steam generators (placeholder)
-│   ├── secondary/              # Secondary system (placeholders for steam, turbine, condenser)
-│   └── safety/                 # Safety systems (placeholder)
-├── scenarios/                   # Simulation scenarios
-│   └── scenario_generator.py   # Scenario generation logic
-├── data/                       # Data management utilities
-│   ├── plant_data_logger.py   # Data logging to CSV
-│   └── gen_training_data.py   # Training data generation
-├── visualization/              # Plotting and visualization
-│   └── plant_plotter.py       # Plotting utilities using logged data
-├── management/                 # Run management
-│   └── run_manager.py         # Simulation run management
-├── examples/                   # Example scripts and notebooks (see examples/README.md)
-├── tests/                      # Test files (see tests/README.md)
-├── game/                       # Interactive operator training game (see game/README.md)
-├── runs/                       # Simulation output data
-├── nuclear_sim.py              # Main CLI Python script
-└── nuclear-sim                 # Executable CLI wrapper script
-```
-*(Placeholders indicate planned modules/directories that are currently empty or minimally populated.)*
+#### Turbine (5 actions)
+- `bearing_maintenance` - Bearing temperature/vibration issues
+- `vibration_analysis` - Rotor dynamics analysis
+- `turbine_oil_top_off` - Oil level maintenance
+- `efficiency_analysis` - Performance optimization
+- `rotor_balancing` - Dynamic balancing
 
-## Core Concepts & Architecture
+#### Feedwater (4 actions)
+- `oil_top_off` - Pump oil level maintenance
+- `oil_change` - Oil contamination removal
+- `bearing_inspection` - Pump bearing maintenance
+- `pump_overhaul` - Efficiency restoration
 
-### Main Components Overview
-- **`simulator/`**: Contains the core simulation engine (`sim.py`) and placeholders for state and control logic.
-- **`systems/`**: Models the physical plant systems.
-    - **`systems/primary/reactor/`**: Holds the detailed reactor physics and heat source models.
-    - Other subdirectories are placeholders for future system components.
-- **`scenarios/`**: Defines and generates various operational and emergency scenarios.
-- **`data/`**: Utilities for logging simulation data and generating training datasets.
-- **`visualization/`**: Tools for plotting data from simulation runs.
-- **`management/`**: Handles the creation, execution, and tracking of simulation runs.
-- **`game/`**: A FastAPI-based interactive game built on top of the simulator. See `game/README.md`.
-- **`examples/`**: Demonstrates various ways to use the simulator. See `examples/README.md`.
-- **`tests/`**: Contains the test suite for the project. See `tests/README.md`.
+#### Condenser (3 actions)
+- `condenser_tube_cleaning` - Fouling removal
+- `condenser_cleaning` - General cleaning
+- `vacuum_system_maintenance` - Vacuum performance
 
-### Heat Source Architecture
-The simulator supports multiple heat source types via a pluggable interface (`systems.primary.reactor.heat_sources.heat_source_interface.HeatSource`).
-- **`ReactorHeatSource`**: Full reactor physics simulation.
-- **`ConstantHeatSource`**: Simplified, instant-response heat source, ideal for testing secondary systems or for educational purposes focusing on plant balance.
+### Example Workflows
 
-## Usage
-
-### Command-Line Interface (CLI)
-The primary way to interact with the simulator is through the `nuclear-sim` command.
-
-**Basic Command Structure:**
 ```bash
-# If installed globally
-nuclear-sim <command> [options]
-# Or if running locally from project root
-./nuclear-sim <command> [options]
+# Development workflow - test specific action
+python nuclear_simulator/data_gen/runners/scenario_runner.py --action oil_top_off --duration 1.0
+
+# Training data generation - comprehensive batch
+python nuclear_simulator/data_gen/runners/scenario_runner.py --run-all-actions --duration 2.0 --count 3
+
+# Subsystem analysis - focus on turbine
+python nuclear_simulator/data_gen/runners/scenario_runner.py --run-all-actions --subsystem turbine --duration 1.5
+
+# Production scenario - from YAML configuration
+python nuclear_simulator/data_gen/runners/scenario_runner.py --yaml-file production_scenario.yaml
 ```
 
-**Main Commands:**
-- `run`: Execute a nuclear plant scenario.
-- `list`: Show all simulation runs.
-- `status`: Show system status and summary of runs.
-- `plot`: (Planned/Future) Create plots from run data via CLI.
-- `params`: (Planned/Future) List available parameters for a run via CLI.
-- `interactive`: Launch the simulator in interactive step-by-step mode.
+## 🔧 Core Systems
 
-**Running Scenarios:**
-```bash
-# Run a normal operation scenario
-./nuclear-sim run normal_operation --name "Baseline Test" --duration 600
+### Secondary Systems (Fully Implemented)
+The secondary systems are comprehensively modeled with realistic physics:
 
-# Run with constant heat source
-./nuclear-sim run normal_operation --name "Constant Heat Test" --heat-source constant --duration 300
+- **Steam Generators**: TSP fouling models, tube scaling, moisture separation
+- **Turbine Systems**: Multi-stage modeling, rotor dynamics, bearing lubrication
+- **Feedwater Systems**: Pump performance, lubrication systems, level control
+- **Condenser Systems**: Vacuum control, tube fouling, heat transfer
+- **Water Chemistry**: pH control, chemical species tracking, corrosion modeling
 
-# Run an emergency scenario
-./nuclear-sim run steam_line_break --name "MSLB Test" --duration 300 --tags "emergency,training"
-```
-**Available Scenarios:**
-- Normal Operations: `normal_operation`, `power_ramp_up`, `power_ramp_down`, `load_following`
-- Emergency Scenarios: `steam_line_break`, `loss_of_coolant`, `turbine_trip`
+### Maintenance System
+Advanced maintenance framework with:
 
-**CLI Options for `run` command:**
-  `--name NAME`: Run name (required).
-  `--description DESC`: Run description.
-  `--duration SECONDS`: Duration in seconds (default: 600).
-  `--tags TAG1,TAG2`: Comma-separated tags.
-  `--heat-source TYPE`: Heat source type: `reactor` or `constant` (default: `reactor`).
+- **Automatic Monitoring**: Component threshold monitoring and violation detection
+- **Work Order Management**: Automatic work order creation, scheduling, and execution
+- **Maintenance Orchestration**: Intelligent decision-making for maintenance actions
+- **Component Registry**: Comprehensive component tracking and maintenance history
 
-**Viewing and Managing Runs:**
-```bash
-# List all runs
-./nuclear-sim list
+### Data Generation Framework
+Sophisticated system for generating training data:
 
-# Filter runs by scenario type or tags
-./nuclear-sim list --scenario-type steam_line_break
-./nuclear-sim list --tags emergency
+- **Intelligent Initial Conditions**: Automatically positions components near maintenance thresholds
+- **Timing Optimization**: Binary search optimization for precise maintenance trigger timing
+- **Scenario Validation**: Comprehensive validation across multiple scenario profiles
+- **Configuration Engine**: Template-based generation of complete plant configurations
 
-# Show system status (summary of runs)
-./nuclear-sim status
-```
-
-### Interactive Mode
-Run the simulator step-by-step with a real-time dashboard.
-```bash
-python nuclear_sim.py interactive <scenario_type> --name "Interactive Run Name"
-# Example:
-python nuclear_sim.py interactive normal_operation --name "Interactive Test"
-```
-**Interactive Controls:**
-- `ENTER`: Advance one simulation step.
-- `s <number>`: Advance multiple steps.
-- `a`: Enable auto-advance mode.
-- `p`: Pause auto-advance mode.
-- `q`: Quit and save the session.
-
-The `examples/` directory contains several `interactive_*.sh` scripts that provide convenient one-click launchers for common interactive scenarios. See `examples/README.md` for details.
-
-### Python API Usage
-You can also use the simulator components directly in Python scripts.
-```python
-from simulator.core.sim import NuclearPlantSimulator
-from systems.primary.reactor.heat_sources import ConstantHeatSource
-
-# Create simulator with constant heat source
-heat_source = ConstantHeatSource(rated_power_mw=3000.0)
-simulator = NuclearPlantSimulator(dt=1.0, heat_source=heat_source)
-
-# Run simulation
-simulator.reset()
-for t in range(300):
-    result = simulator.step()
-    if result['done']:
-        break
-print(f"Final power: {simulator.state.power_level:.1f}%")
-```
-See `examples/nuclear_plant_constant_heat_simulation.ipynb` for a Jupyter Notebook demonstration.
-
-## Output and Data Management
+## 📊 Output and Data Management
 
 ### Automatic Data Export
-Every simulation run automatically generates:
-- **Complete CSV Data Export**: All 22+ plant parameters logged at every timestep to `data/timeseries.csv` within the run directory.
-- **Format**: `timestamp,parameter_name,value,unit,quality`.
-
-### Logged Parameters (Examples)
-- Power: `power_level`, `thermal_power`, `neutron_flux`
-- Temperatures: `fuel_temperature`, `coolant_temperature`, `steam_temperature`
-- Control: `control_rod_position`, `steam_valve_position`
-- Safety: `scram_status`, `reactivity`
-
-### Automatic Plotting
-After each run, standard plots are generated in the `plots/` subdirectory of the run:
-- Overview Plot: Key plant parameters.
-- Power Parameters Plot.
-- Temperature Parameters Plot.
-- Control Parameters Plot.
+Every simulation run generates:
+- **Complete CSV Data**: All plant parameters logged at every timestep
+- **Configuration Files**: YAML configurations for reproducibility
+- **Plots and Visualizations**: Standard plots for key parameters
+- **Maintenance Reports**: Work order summaries and maintenance effectiveness
 
 ### Run Organization
-Each simulation creates a structured data package in `runs/<run_id>/`:
 ```
-runs/normal_operation_20250603_171635/
-├── data/
-│   └── timeseries.csv          # Complete parameter data
-├── plots/
-│   ├── overview.png
-│   ├── power_parameters.png
-│   └── ... (other standard plots)
-├── config/
-│   ├── run_config.json         # Run configuration
-│   └── scenario.json           # Scenario definition
-└── logs/
-    └── execution.json          # Execution metadata
+simulation_runs/
+├── oil_top_off_20250711_104500/
+│   ├── data/
+│   │   └── timeseries.csv              # Complete parameter data
+│   ├── plots/
+│   │   ├── overview.png
+│   │   ├── maintenance_timeline.png
+│   │   └── component_parameters.png
+│   ├── config/
+│   │   └── oil_top_off_20250711_104500_config.yaml
+│   └── results/
+│       └── maintenance_summary.json
 ```
 
-## Development
+## 🛠️ Configuration Management
 
-### Adding New Heat Sources
-1. Create a class inheriting from `systems.primary.reactor.heat_sources.heat_source_interface.HeatSource`.
-2. Implement the required methods (`update`, `get_thermal_power_mw`, etc.).
-3. Pass an instance of your new heat source to the `NuclearPlantSimulator` constructor.
+### YAML-Based Configuration
+The simulator uses comprehensive YAML configurations:
+
+```yaml
+metadata:
+  scenario_name: "Feedwater Oil Top-off Scenario"
+  target_action: "oil_top_off"
+  target_subsystem: "feedwater"
+  duration_hours: 2.0
+
+plant_config:
+  # Complete plant configuration with targeted initial conditions
+  secondary_systems:
+    feedwater:
+      pumps:
+        oil_level: 0.25  # Positioned near maintenance threshold
+        # ... detailed configuration
+```
+
+### Configuration Templates
+- **Comprehensive Templates**: Complete plant configurations for different scenarios
+- **Targeted Initial Conditions**: Automatically generated conditions that trigger specific maintenance
+- **Scenario Profiles**: Different timing profiles (demo_fast, training_realistic, validation_thorough)
+
+## 🚀 Development and Extension
+
+### Adding New Maintenance Actions
+1. Create initial conditions in `config_engine/initial_conditions/`
+2. Add action mapping in `comprehensive_composer.py`
+3. Test with scenario runner: `--action your_new_action`
 
 ### Adding New Systems
-1. Create a new directory under `systems/` (e.g., `systems/auxiliary/feedwater_system/`).
-2. Implement system classes and logic.
-3. Integrate the new system into the main `NuclearPlantSimulator` in `simulator/core/sim.py`.
+1. Create system directory under `systems/`
+2. Implement physics models and maintenance interfaces
+3. Register with state manager and maintenance system
+4. Add configuration templates
 
-### Testing
-The project uses a custom test framework. See `tests/README.md` for details on running and adding tests.
-```bash
-# Run all tests
-python tests/test_suite.py
-# Or using pytest
-python -m pytest tests/
+### Python API Usage
+```python
+from nuclear_simulator.data_gen.runners.scenario_runner import ScenarioRunner
+
+# Initialize runner
+runner = ScenarioRunner(output_dir="my_runs", verbose=True)
+
+# Run maintenance scenario
+result = runner.run_maintenance_scenario(
+    action="oil_top_off",
+    duration_hours=2.0,
+    aggressive_mode=True
+)
+
+# Batch processing
+results = runner.run_batch_maintenance(
+    actions=["oil_top_off", "bearing_inspection"],
+    duration_hours=1.5,
+    count_per_action=3
+)
 ```
 
-## Contributing
-1. Fork the repository.
-2. Create a feature branch.
-3. Make your changes.
-4. Add tests for new functionality.
-5. Submit a pull request.
+## 📋 Use Cases
 
-## License
+### Training Data Generation
+```bash
+# Generate comprehensive training dataset
+python nuclear_simulator/data_gen/runners/scenario_runner.py --run-all-actions --duration 4.0 --count 5
+```
+
+### Maintenance Planning
+```bash
+# Analyze specific subsystem maintenance needs
+python nuclear_simulator/data_gen/runners/scenario_runner.py --run-all-actions --subsystem turbine --duration 2.0
+```
+
+### Scenario Development
+```bash
+# Interactive development and testing
+python nuclear_simulator/data_gen/runners/scenario_runner.py --interactive
+```
+
+### Production Simulation
+```bash
+# Run from validated YAML configuration
+python nuclear_simulator/data_gen/runners/scenario_runner.py --yaml-file production_scenario.yaml
+```
+
+## 🧪 Testing
+
+```bash
+# Run test suite
+python tests/test_suite.py
+
+# Test specific functionality
+python -m pytest tests/test_maintenance_scenarios.py
+```
+
+## 📦 Dependencies
+
+- **Core**: numpy, matplotlib, pandas, seaborn
+- **Web Interface**: fastapi, uvicorn, websockets
+- **Configuration**: dataclass-wizard, pyyaml
+- **Development**: jupyter, rich (for enhanced CLI output)
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Add tests for new functionality
+4. Test with scenario runner: `--action test_action`
+5. Submit a pull request
+
+## 📄 License
+
 [Add your license information here]
 
-## Support
-- Check examples in `examples/README.md`.
-- Review test files in `tests/README.md`.
-- Open an issue on GitHub.
+## 🆘 Support
 
-## Future Enhancements
-- Advanced Control Systems (PID, MPC)
-- Machine Learning Integration (RL agents)
-- 3D Visualization
-- Distributed Simulation
-- Additional Heat Sources (MSR, Fusion)
-- TimescaleDB/Grafana Integration
+- **Quick Help**: `python nuclear_simulator/data_gen/runners/scenario_runner.py --help`
+- **List Actions**: `python nuclear_simulator/data_gen/runners/scenario_runner.py --list-actions`
+- **Interactive Mode**: `python nuclear_simulator/data_gen/runners/scenario_runner.py --interactive`
+- **GitHub Issues**: Open an issue for bugs or feature requests
+
+## 🔮 Future Enhancements
+
+- **Advanced Control Systems**: Model predictive control and advanced process control
+- **Machine Learning Integration**: Reinforcement learning agents for plant operation
+- **Real-time Visualization**: 3D plant visualization and real-time dashboards
+- **Distributed Simulation**: Multi-node simulation for large-scale scenarios
+- **Additional Reactor Types**: Molten salt reactors, small modular reactors
+- **Cloud Integration**: Cloud-based simulation and data storage
 
 ---
-**Nuclear Plant Simulator** - A comprehensive, educational nuclear power plant simulation platform.
+
+**Nuclear Plant Simulator** - A comprehensive nuclear power plant simulation platform for training, analysis, and research.
+
+*Primary Interface: `nuclear_simulator/data_gen/runners/scenario_runner.py`*

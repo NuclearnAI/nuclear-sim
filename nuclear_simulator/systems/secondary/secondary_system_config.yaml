@@ -1,0 +1,241 @@
+# Secondary System Configuration
+# Structured to match SecondarySystemConfig dataclass for dataclass-wizard
+
+# === MAIN SYSTEM PARAMETERS ===
+system_id: "SECONDARY-TEST-001"
+plant_id: "PWR-YAML-TEST-001"
+rated_thermal_power: 3200.0e6  # W (3200 MW) - CHANGED FOR TESTING
+rated_electrical_power: 1100.0  # MW - CHANGED FOR TESTING
+design_efficiency: 0.35  # 35% - CHANGED FOR TESTING
+num_loops: 4  # CHANGED FOR TESTING
+
+# === STEAM GENERATOR CONFIGURATION ===
+steam_generator:
+  system_id: "SG-TEST-001"
+  num_steam_generators: 4
+  design_total_thermal_power: 3200.0e6
+  design_total_steam_flow: 1600.0
+  design_steam_pressure: 6.9
+  design_steam_temperature: 285.8
+  design_feedwater_temperature: 227.0
+  
+  # Individual SG parameters
+  design_thermal_power_per_sg: 800.0e6
+  design_steam_flow_per_sg: 400.0
+  design_feedwater_flow_per_sg: 400.0
+  
+  # Physical parameters
+  design_overall_htc: 3000.0
+  heat_transfer_area_per_sg: 5000.0
+  tube_count_per_sg: 3388
+  tube_inner_diameter: 0.0191
+  tube_wall_thickness: 0.00109
+  tube_outer_diameter: 0.0222
+  tube_length: 19.8
+  secondary_water_mass: 68000.0
+  steam_dome_volume: 28.0
+  
+  # Heat transfer coefficients
+  primary_htc: 28000.0
+  secondary_htc: 18000.0
+  
+  # Design pressures
+  design_pressure_primary: 15.51
+  design_pressure_secondary: 6.895
+  
+  # Material properties
+  tube_material_conductivity: 385.0
+  tube_material_density: 8960.0
+  tube_material_specific_heat: 385.0
+  
+  # Operational parameters
+  minimum_power_fraction: 0.1
+  maximum_power_fraction: 1.05
+  minimum_steam_quality: 0.95
+  maximum_tube_wall_temperature: 350.0
+  level_control_enabled: true
+  pressure_control_enabled: true
+  load_following_enabled: true
+  
+  # Control gains
+  feedwater_control_gain: 0.08
+  steam_pressure_control_gain: 0.05
+  
+  # System coordination
+  auto_load_balancing: true
+  system_coordination: true
+  performance_optimization: true
+  predictive_maintenance: true
+  auto_pressure_control: true
+  system_optimization: true
+  
+  # Performance parameters
+  design_efficiency: 0.98
+  thermal_performance_factor: 1.0
+  availability_factor: 1.0
+  
+  # Water chemistry integration
+  enable_chemistry_tracking: true
+  chemistry_update_interval_hours: 1.0
+  
+  # Initial conditions for 4 steam generators
+  initial_conditions:
+    sg_levels: [12.5, 12.5, 12.5, 12.5]
+    sg_pressures: [6.9, 6.9, 6.9, 6.9]
+    sg_temperatures: [285.8, 285.8, 285.8, 285.8]
+    sg_steam_qualities: [0.99, 0.99, 0.99, 0.99]
+    sg_steam_flows: [400.0, 400.0, 400.0, 400.0]
+    sg_feedwater_flows: [400.0, 400.0, 400.0, 400.0]
+    primary_inlet_temps: [327.0, 327.0, 327.0, 327.0]
+    primary_outlet_temps: [293.0, 293.0, 293.0, 293.0]
+    primary_flow_rates: [5700.0, 5700.0, 5700.0, 5700.0]
+    tsp_fouling_thicknesses: [0.0, 0.0, 0.0, 0.0]
+    tsp_heat_transfer_degradations: [0.0, 0.0, 0.0, 0.0]
+  
+  # TSP fouling configuration for 4 steam generators
+  tsp_fouling:
+    fouling_rate_factors: [1.0, 1.0, 1.0, 1.0]
+
+# === TURBINE CONFIGURATION ===
+turbine:
+  system_id: "TURB-TEST-001"
+  rated_power_mwe: 1100.0
+  design_steam_flow: 1600.0
+  design_steam_pressure: 6.9
+  design_steam_temperature: 285.8
+  design_condenser_pressure: 0.007
+  design_efficiency: 0.34
+  
+  # Performance parameters
+  mechanical_efficiency: 0.985
+  generator_efficiency: 0.985
+  auxiliary_power_fraction: 0.02
+  
+  # Operational parameters
+  minimum_load: 0.2
+  maximum_load: 1.05
+  load_following_enabled: true
+  performance_optimization: true
+  predictive_maintenance: true
+
+# === FEEDWATER CONFIGURATION ===
+feedwater:
+  system_id: "FW-TEST-001"
+  num_steam_generators: 4
+  design_total_flow: 1600.0
+  design_sg_level: 12.5
+  design_feedwater_temperature: 227.0
+  design_pressure: 8.0
+  design_suction_pressure: 0.5
+  
+  # Performance parameters
+  design_efficiency: 0.85
+  minimum_flow_fraction: 0.1
+  maximum_flow_fraction: 1.2
+  
+  # Operational parameters
+  auto_level_control: true
+  load_following_enabled: true
+  steam_quality_compensation: true
+  predictive_maintenance: true
+  
+  # Initial conditions for 4 steam generators
+  initial_conditions:
+    sg_levels: [12.5, 12.5, 12.5, 12.5]
+    sg_pressures: [6.9, 6.9, 6.9, 6.9]
+    sg_steam_flows: [400.0, 400.0, 400.0, 400.0]
+    sg_steam_qualities: [0.99, 0.99, 0.99, 0.99]
+
+# === CONDENSER CONFIGURATION ===
+condenser:
+  system_id: "COND-TEST-001"
+  design_heat_duty: 2100.0e6
+  design_steam_flow: 1600.0
+  design_cooling_water_flow: 47000.0
+  design_condenser_pressure: 0.007
+  design_cooling_water_temp_rise: 10.0
+  
+  # Performance parameters
+  design_thermal_efficiency: 0.95
+  minimum_load_fraction: 0.2
+  maximum_load_fraction: 1.1
+  
+  # Operational parameters
+  auto_vacuum_control: true
+  fouling_monitoring_enabled: true
+  tube_leak_monitoring_enabled: true
+  predictive_maintenance: true
+
+# === INTEGRATION CONFIGURATION ===
+integration:
+  # System coordination
+  enable_system_coordination: true
+  load_following_enabled: true
+  automatic_startup_enabled: true
+  
+  # Performance optimization
+  enable_performance_optimization: true
+  optimization_interval_hours: 1.0
+  efficiency_target: 0.35  # Updated to match new design efficiency
+  
+  # System protection and interlocks
+  enable_system_interlocks: true
+  turbine_steam_generator_interlock: true
+  feedwater_steam_generator_interlock: true
+  condenser_turbine_interlock: true
+  
+  # Load dispatch and control
+  load_dispatch_mode: "automatic"
+  load_ramp_rate: 5.0
+  minimum_system_load: 0.2
+  maximum_system_load: 1.05
+  
+  # System startup and shutdown
+  startup_sequence_enabled: true
+  shutdown_sequence_enabled: true
+  startup_time_minutes: 180.0
+  shutdown_time_minutes: 120.0
+  
+  # Emergency response
+  emergency_shutdown_enabled: true
+  emergency_feedwater_enabled: true
+  steam_dump_enabled: true
+  
+  # System monitoring and diagnostics
+  enable_system_diagnostics: true
+  diagnostic_interval_minutes: 15.0
+  performance_trending_enabled: true
+  predictive_analytics_enabled: true
+
+# === MAINTENANCE CONFIGURATION ===
+maintenance:
+  # System-level maintenance
+  system_efficiency_threshold: 0.32  # Updated for higher efficiency system
+  system_availability_threshold: 0.95
+  system_reliability_threshold: 0.98
+  
+  # Coordinated maintenance
+  enable_coordinated_maintenance: true
+  maintenance_window_hours: 168.0
+  outage_planning_enabled: true
+  
+  # System maintenance actions
+  system_performance_test_action: "secondary_system_performance_test"
+  system_optimization_action: "secondary_system_optimization"
+  system_coordination_test_action: "secondary_system_coordination_test"
+  integrated_leak_test_action: "secondary_system_leak_test"
+  system_calibration_action: "secondary_system_calibration"
+  
+  # System maintenance intervals
+  system_performance_test_interval_hours: 720.0
+  system_optimization_interval_hours: 2190.0
+  system_coordination_test_interval_hours: 4380.0
+  integrated_leak_test_interval_hours: 8760.0
+  system_calibration_interval_hours: 4380.0
+  
+  # System maintenance cooldowns
+  system_performance_test_cooldown_hours: 720.0
+  system_optimization_cooldown_hours: 2190.0
+  system_coordination_test_cooldown_hours: 4380.0
+  integrated_leak_test_cooldown_hours: 8760.0
+  system_calibration_cooldown_hours: 4380.0
