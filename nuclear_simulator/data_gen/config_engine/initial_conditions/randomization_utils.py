@@ -273,7 +273,7 @@ ACTION_SCENARIOS = {
             "description": "Very high wear with high stress - almost certain 12hr trigger (targets 8.5 threshold)",
             "parameters": {
                 "motor_bearing_wear": {"range": [8.45, 8.49], "distribution": "uniform", "array_handling": "first_element_only"},
-                "motor_temperature": {"range": [100, 115], "distribution": "normal", "array_handling": "first_element_only"},
+                "motor_temperature": {"range": [95, 105], "distribution": "normal", "array_handling": "first_element_only"},
                 "pump_oil_contamination": {"range": [15.0, 15.15], "distribution": "uniform"},
                 "oil_temperature": {"range": [58, 65], "distribution": "normal"}
             }
@@ -284,7 +284,7 @@ ACTION_SCENARIOS = {
             "description": "High wear with very high stress conditions (targets 8.5 threshold)",
             "parameters": {
                 "motor_bearing_wear": {"range": [8.3, 8.4], "distribution": "uniform", "array_handling": "first_element_only"},
-                "motor_temperature": {"range": [105, 120], "distribution": "normal", "array_handling": "first_element_only"},
+                "motor_temperature": {"range": [98, 110], "distribution": "normal", "array_handling": "first_element_only"},
                 "pump_oil_contamination": {"range": [15.1, 15.18], "distribution": "uniform"},
                 "oil_temperature": {"range": [60, 68], "distribution": "normal"}
             }
@@ -306,31 +306,35 @@ ACTION_SCENARIOS = {
         {
             "name": "critical_pump_bearing_cavitation_physics",
             "probability": 0.5,
-            "description": "Complete physics package for critical pump bearing cavitation - 6hr trigger",
+            "description": "Aggressive pump bearing wear acceleration - 6hr trigger via physics progression",
             "parameters": {
-                # === TARGET PARAMETER ===
-                "pump_bearing_wear": {"range": [6.4, 6.48], "distribution": "uniform", "array_handling": "first_element_only"},
+                # === TARGET PARAMETER - Close to threshold but not there yet ===
+                "pump_bearing_wear": {"range": [5.9, 6.1], "distribution": "uniform", "array_handling": "first_element_only"},
                 
-                # === CAVITATION PHYSICS PACKAGE ===
-                "cavitation_intensity": {"range": [0.23, 0.27], "distribution": "uniform", "array_handling": "first_element_only"},
+                # === SUSTAINABLE CAVITATION SUPPORT CONDITIONS ===
+                # Tight NPSH margin for sustained cavitation
+                "npsh_available": {"range": [15.2, 15.8], "distribution": "uniform", "array_handling": "first_element_only"},
                 
-                # Pre-existing damage to increase NPSH requirements
-                "impeller_cavitation_damage": {"range": [2.3, 2.7], "distribution": "uniform", "array_handling": "first_element_only"},
-                "impeller_wear": {"range": [5.5, 6.5], "distribution": "uniform", "array_handling": "first_element_only"},
-                "motor_bearing_wear": {"range": [4.5, 5.5], "distribution": "uniform", "array_handling": "first_element_only"},
-                "thrust_bearing_wear": {"range": [2.5, 3.5], "distribution": "uniform", "array_handling": "first_element_only"},
+                # System conditions that create sustained NPSH deficit
+                "suction_pressure": {"range": [0.39, 0.41], "distribution": "uniform"},
+                "feedwater_temperature": {"range": [244, 248], "distribution": "uniform"},
+                "discharge_pressure": {"range": [8.45, 8.55], "distribution": "uniform"},
                 
-                # NPSH conditions for sustained cavitation
-                "npsh_available": {"range": [16.5, 17.0], "distribution": "uniform", "array_handling": "first_element_only"},
+                # Operating conditions that increase NPSH requirement and velocity
+                "pump_flows": {"range": [585, 595], "distribution": "uniform", "array_handling": "first_element_only"},
+                "pump_speeds": {"range": [3690, 3710], "distribution": "uniform", "array_handling": "first_element_only"},
                 
-                # System conditions that reduce NPSH available
-                "suction_pressure": {"range": [0.36, 0.40], "distribution": "uniform"},
-                "feedwater_temperature": {"range": [236, 240], "distribution": "uniform"},
-                "discharge_pressure": {"range": [8.2, 8.4], "distribution": "uniform"},
+                # Pre-existing damage that sustains cavitation and creates coupling
+                "impeller_cavitation_damage": {"range": [4.0, 6.0], "distribution": "uniform", "array_handling": "first_element_only"},
+                "impeller_wear": {"range": [7.0, 9.0], "distribution": "uniform", "array_handling": "first_element_only"},
                 
-                # Operating conditions that amplify cavitation
-                "pump_flows": {"range": [575, 585], "distribution": "uniform", "array_handling": "first_element_only"},
-                "pump_speeds": {"range": [3670, 3690], "distribution": "uniform", "array_handling": "first_element_only"},
+                # System stress for hydraulic load amplification
+                "sg_levels": {"range": [12.1, 12.3], "distribution": "uniform", "array_handling": "preserve_pattern"},
+                "sg_pressures": {"range": [6.85, 6.88], "distribution": "uniform", "array_handling": "preserve_pattern"},
+                
+                # Moderate other bearing wear (not triggering their thresholds)
+                "motor_bearing_wear": {"range": [3.0, 4.0], "distribution": "uniform", "array_handling": "first_element_only"},
+                "thrust_bearing_wear": {"range": [1.5, 2.0], "distribution": "uniform", "array_handling": "first_element_only"},
                 
                 # Supporting conditions for bearing wear acceleration
                 "oil_temperature": {"range": [66, 70], "distribution": "normal"},
@@ -361,31 +365,35 @@ ACTION_SCENARIOS = {
         {
             "name": "moderate_pump_bearing_cavitation_physics",
             "probability": 0.35,
-            "description": "Complete physics package for moderate pump bearing cavitation - 8hr trigger",
+            "description": "Moderate pump bearing wear acceleration - 8hr trigger via physics progression",
             "parameters": {
-                # === TARGET PARAMETER ===
-                "pump_bearing_wear": {"range": [6.35, 6.42], "distribution": "uniform", "array_handling": "first_element_only"},
+                # === TARGET PARAMETER - Close to threshold but not there yet ===
+                "pump_bearing_wear": {"range": [5.8, 6.0], "distribution": "uniform", "array_handling": "first_element_only"},
                 
-                # === CAVITATION PHYSICS PACKAGE ===
-                "cavitation_intensity": {"range": [0.20, 0.25], "distribution": "uniform", "array_handling": "first_element_only"},
+                # === SUSTAINABLE CAVITATION SUPPORT CONDITIONS ===
+                # Moderate NPSH margin for sustained cavitation
+                "npsh_available": {"range": [15.8, 16.2], "distribution": "uniform", "array_handling": "first_element_only"},
                 
-                # Pre-existing damage to increase NPSH requirements
-                "impeller_cavitation_damage": {"range": [2.0, 2.5], "distribution": "uniform", "array_handling": "first_element_only"},
-                "impeller_wear": {"range": [5.0, 6.0], "distribution": "uniform", "array_handling": "first_element_only"},
-                "motor_bearing_wear": {"range": [4.0, 5.0], "distribution": "uniform", "array_handling": "first_element_only"},
-                "thrust_bearing_wear": {"range": [2.0, 3.0], "distribution": "uniform", "array_handling": "first_element_only"},
+                # System conditions that create moderate NPSH deficit
+                "suction_pressure": {"range": [0.40, 0.42], "distribution": "uniform"},
+                "feedwater_temperature": {"range": [240, 244], "distribution": "uniform"},
+                "discharge_pressure": {"range": [8.35, 8.45], "distribution": "uniform"},
                 
-                # NPSH conditions for sustained cavitation
-                "npsh_available": {"range": [16.8, 17.2], "distribution": "uniform", "array_handling": "first_element_only"},
+                # Operating conditions that increase NPSH requirement moderately
+                "pump_flows": {"range": [580, 590], "distribution": "uniform", "array_handling": "first_element_only"},
+                "pump_speeds": {"range": [3680, 3700], "distribution": "uniform", "array_handling": "first_element_only"},
                 
-                # System conditions that reduce NPSH available
-                "suction_pressure": {"range": [0.37, 0.39], "distribution": "uniform"},
-                "feedwater_temperature": {"range": [237, 239], "distribution": "uniform"},
-                "discharge_pressure": {"range": [8.25, 8.35], "distribution": "uniform"},
+                # Pre-existing damage that sustains moderate cavitation
+                "impeller_cavitation_damage": {"range": [3.0, 4.5], "distribution": "uniform", "array_handling": "first_element_only"},
+                "impeller_wear": {"range": [6.0, 7.5], "distribution": "uniform", "array_handling": "first_element_only"},
                 
-                # Operating conditions that amplify cavitation
-                "pump_flows": {"range": [578, 582], "distribution": "uniform", "array_handling": "first_element_only"},
-                "pump_speeds": {"range": [3675, 3685], "distribution": "uniform", "array_handling": "first_element_only"},
+                # System stress for moderate hydraulic load
+                "sg_levels": {"range": [12.2, 12.4], "distribution": "uniform", "array_handling": "preserve_pattern"},
+                "sg_pressures": {"range": [6.86, 6.89], "distribution": "uniform", "array_handling": "preserve_pattern"},
+                
+                # Moderate other bearing wear (not triggering their thresholds)
+                "motor_bearing_wear": {"range": [2.5, 3.5], "distribution": "uniform", "array_handling": "first_element_only"},
+                "thrust_bearing_wear": {"range": [1.2, 1.8], "distribution": "uniform", "array_handling": "first_element_only"},
                 
                 # Supporting conditions for bearing wear acceleration
                 "oil_temperature": {"range": [67, 69], "distribution": "normal"},
@@ -416,31 +424,35 @@ ACTION_SCENARIOS = {
         {
             "name": "low_pump_bearing_cavitation_physics",
             "probability": 0.15,
-            "description": "Complete physics package for low pump bearing cavitation - 10hr trigger",
+            "description": "Mild pump bearing wear acceleration - 10hr trigger via physics progression",
             "parameters": {
-                # === TARGET PARAMETER ===
-                "pump_bearing_wear": {"range": [6.3, 6.38], "distribution": "uniform", "array_handling": "first_element_only"},
+                # === TARGET PARAMETER - Close to threshold but not there yet ===
+                "pump_bearing_wear": {"range": [5.7, 5.9], "distribution": "uniform", "array_handling": "first_element_only"},
                 
-                # === CAVITATION PHYSICS PACKAGE ===
-                "cavitation_intensity": {"range": [0.15, 0.20], "distribution": "uniform", "array_handling": "first_element_only"},
+                # === SUSTAINABLE CAVITATION SUPPORT CONDITIONS ===
+                # Mild NPSH margin for sustained cavitation
+                "npsh_available": {"range": [16.2, 16.8], "distribution": "uniform", "array_handling": "first_element_only"},
                 
-                # Pre-existing damage to increase NPSH requirements
-                "impeller_cavitation_damage": {"range": [1.5, 2.0], "distribution": "uniform", "array_handling": "first_element_only"},
-                "impeller_wear": {"range": [4.5, 5.5], "distribution": "uniform", "array_handling": "first_element_only"},
-                "motor_bearing_wear": {"range": [3.5, 4.5], "distribution": "uniform", "array_handling": "first_element_only"},
-                "thrust_bearing_wear": {"range": [1.5, 2.5], "distribution": "uniform", "array_handling": "first_element_only"},
+                # System conditions that create mild NPSH deficit
+                "suction_pressure": {"range": [0.41, 0.43], "distribution": "uniform"},
+                "feedwater_temperature": {"range": [238, 242], "distribution": "uniform"},
+                "discharge_pressure": {"range": [8.25, 8.35], "distribution": "uniform"},
                 
-                # NPSH conditions for sustained cavitation
-                "npsh_available": {"range": [17.0, 17.5], "distribution": "uniform", "array_handling": "first_element_only"},
+                # Operating conditions that increase NPSH requirement mildly
+                "pump_flows": {"range": [575, 585], "distribution": "uniform", "array_handling": "first_element_only"},
+                "pump_speeds": {"range": [3670, 3690], "distribution": "uniform", "array_handling": "first_element_only"},
                 
-                # System conditions that reduce NPSH available
-                "suction_pressure": {"range": [0.375, 0.385], "distribution": "uniform"},
-                "feedwater_temperature": {"range": [237.5, 238.5], "distribution": "uniform"},
-                "discharge_pressure": {"range": [8.28, 8.32], "distribution": "uniform"},
+                # Pre-existing damage that sustains mild cavitation
+                "impeller_cavitation_damage": {"range": [2.0, 3.5], "distribution": "uniform", "array_handling": "first_element_only"},
+                "impeller_wear": {"range": [5.0, 6.5], "distribution": "uniform", "array_handling": "first_element_only"},
                 
-                # Operating conditions that amplify cavitation
-                "pump_flows": {"range": [579, 581], "distribution": "uniform", "array_handling": "first_element_only"},
-                "pump_speeds": {"range": [3678, 3682], "distribution": "uniform", "array_handling": "first_element_only"},
+                # System stress for mild hydraulic load
+                "sg_levels": {"range": [12.3, 12.5], "distribution": "uniform", "array_handling": "preserve_pattern"},
+                "sg_pressures": {"range": [6.87, 6.90], "distribution": "uniform", "array_handling": "preserve_pattern"},
+                
+                # Mild other bearing wear (not triggering their thresholds)
+                "motor_bearing_wear": {"range": [2.0, 3.0], "distribution": "uniform", "array_handling": "first_element_only"},
+                "thrust_bearing_wear": {"range": [1.0, 1.5], "distribution": "uniform", "array_handling": "first_element_only"},
                 
                 # Supporting conditions for bearing wear acceleration
                 "oil_temperature": {"range": [67.5, 68.5], "distribution": "normal"},
