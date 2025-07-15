@@ -334,7 +334,7 @@ ACTION_SCENARIOS = {
                 
                 # Supporting conditions for bearing wear acceleration
                 "oil_temperature": {"range": [66, 70], "distribution": "normal"},
-                "pump_oil_contamination": {"range": [13.5, 14.5], "distribution": "uniform"},
+                "pump_oil_contamination": {"range": [8.0, 10.0], "distribution": "uniform"},
                 "pump_oil_water_content": {"range": [0.063, 0.067], "distribution": "uniform"},
                 "pump_oil_acid_number": {"range": [1.38, 1.42], "distribution": "uniform"},
                 
@@ -389,7 +389,7 @@ ACTION_SCENARIOS = {
                 
                 # Supporting conditions for bearing wear acceleration
                 "oil_temperature": {"range": [67, 69], "distribution": "normal"},
-                "pump_oil_contamination": {"range": [13.8, 14.2], "distribution": "uniform"},
+                "pump_oil_contamination": {"range": [8.5, 10.5], "distribution": "uniform"},
                 "pump_oil_water_content": {"range": [0.064, 0.066], "distribution": "uniform"},
                 "pump_oil_acid_number": {"range": [1.39, 1.41], "distribution": "uniform"},
                 
@@ -444,7 +444,7 @@ ACTION_SCENARIOS = {
                 
                 # Supporting conditions for bearing wear acceleration
                 "oil_temperature": {"range": [67.5, 68.5], "distribution": "normal"},
-                "pump_oil_contamination": {"range": [13.9, 14.1], "distribution": "uniform"},
+                "pump_oil_contamination": {"range": [9.0, 11.0], "distribution": "uniform"},
                 "pump_oil_water_content": {"range": [0.0645, 0.0655], "distribution": "uniform"},
                 "pump_oil_acid_number": {"range": [1.395, 1.405], "distribution": "uniform"},
                 
