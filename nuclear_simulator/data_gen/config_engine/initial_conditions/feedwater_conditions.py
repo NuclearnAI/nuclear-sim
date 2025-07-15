@@ -138,7 +138,7 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
         # Conditions that create electrical load acceleration
         "motor_temperature": [82.0, 30.0, 30.0, 25.0],   # Elevated electrical load
         "bearing_temperatures": [68.0, 30.0, 30.0, 25.0], # Heat from electrical losses
-        "pump_vibrations": [15.0, 1.0, 1.0, 0.0],        # Vibration from motor bearing wear
+        "pump_vibrations": [9.0, 1.0, 1.0, 0.0],         # Vibration from motor bearing wear (below 10.0 trip)
         
         # Safe values for other components
         "pump_bearing_wear": [1.0, 0.1, 0.1, 0.0],       # Only FWP-1 has wear
