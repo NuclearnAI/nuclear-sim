@@ -123,6 +123,286 @@ class ScenarioRunner:
             print(f"   ❌ Error generating maintenance scenario: {e}")
             raise
     
+    def generate_combined_maintenance_scenario(
+        self,
+        actions: List[str],
+        duration_hours: float = 2.0,
+        aggressive_mode: bool = True,
+        plant_name: Optional[str] = None,
+        randomize: bool = False,
+        randomization_seed: Optional[int] = None,
+        randomization_factor: float = 0.1
+    ) -> Dict[str, Any]:
+        """
+        Generate a combined maintenance scenario from multiple actions
+        
+        Args:
+            actions: List of maintenance actions to combine
+            duration_hours: Simulation duration in hours
+            aggressive_mode: Use aggressive thresholds for reliable triggering
+            plant_name: Optional plant name override
+            randomize: Enable randomization of initial conditions
+            randomization_seed: Base random seed (different seeds used for each action)
+            randomization_factor: Randomization factor for parameter variation
+            
+        Returns:
+            Complete configuration dictionary with averaged initial conditions
+        """
+        if self.verbose:
+            print(f"🔧 Generating combined maintenance scenario for: {actions}")
+        
+        try:
+            # 1. Get initial conditions for each action with different seeds
+            individual_conditions = []
+            for i, action in enumerate(actions):
+                action_seed = randomization_seed + i if randomization_seed else None
+                conditions = self._get_action_initial_conditions(
+                    action, randomize, action_seed, randomization_factor
+                )
+                individual_conditions.append(conditions)
+                
+                if self.verbose:
+                    print(f"   📋 Action {i+1}/{len(actions)} ({action}): {len(conditions)} parameters")
+            
+            # 2. Average overlapping parameters
+            averaged_conditions = self._average_initial_conditions(individual_conditions)
+            
+            if self.verbose:
+                print(f"   🔀 Averaged conditions: {len(averaged_conditions)} parameters")
+            
+            # 3. Create combined configuration using averaged conditions
+            combined_config = self._create_combined_config(
+                actions, averaged_conditions, duration_hours, plant_name
+            )
+            
+            if self.verbose:
+                print(f"   ✅ Generated combined config with {len(combined_config)} sections")
+                print(f"   🎯 Target actions: {actions}")
+            
+            return combined_config
+            
+        except Exception as e:
+            print(f"   ❌ Error generating combined maintenance scenario: {e}")
+            raise
+    
+    def _get_action_initial_conditions(
+        self,
+        action: str,
+        randomize: bool,
+        seed: Optional[int],
+        factor: float
+    ) -> Dict[str, Any]:
+        """
+        Get initial conditions for a specific action
+        
+        Args:
+            action: Maintenance action name
+            randomize: Whether to apply randomization
+            seed: Random seed for reproducibility
+            factor: Randomization factor
+            
+        Returns:
+            Dictionary of initial conditions for this action
+        """
+        target_subsystem = self.maintenance_composer.action_subsystem_map.get(action)
+        if not target_subsystem:
+            raise ValueError(f"Unknown action: {action}")
+        
+        if randomize:
+            # Get randomized conditions directly from the randomization functions
+            if target_subsystem == "feedwater":
+                from config_engine.initial_conditions.feedwater_conditions import get_randomized_feedwater_conditions
+                conditions = get_randomized_feedwater_conditions(action, seed, factor)
+            elif target_subsystem == "turbine":
+                from config_engine.initial_conditions.turbine_conditions import get_randomized_turbine_conditions
+                conditions = get_randomized_turbine_conditions(action, seed, factor)
+            elif target_subsystem == "steam_generator":
+                from config_engine.initial_conditions.steam_generator_conditions import get_randomized_sg_conditions
+                conditions = get_randomized_sg_conditions(action, seed, factor)
+            else:
+                # Fallback to base conditions if randomization not supported
+                conditions = self.maintenance_composer.initial_conditions_catalog.get_conditions(target_subsystem, action)
+        else:
+            # Get base conditions directly from catalog
+            conditions = self.maintenance_composer.initial_conditions_catalog.get_conditions(target_subsystem, action)
+        
+        if not conditions:
+            raise ValueError(f"No conditions found for {target_subsystem}.{action}")
+        
+        # Filter out metadata fields, keep only actual IC parameters
+        ic_params = {k: v for k, v in conditions.items() 
+                     if k not in ['description', 'expected_action', 'target_pump', 'physics_calculation', 'physics_notes']}
+        
+        return ic_params
+    
+    def _average_initial_conditions(self, conditions_list: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Average overlapping initial condition parameters from multiple actions
+        
+        Args:
+            conditions_list: List of initial condition dictionaries from different actions
+            
+        Returns:
+            Dictionary with averaged overlapping parameters and unique parameters
+        """
+        averaged = {}
+        
+        # Get all unique parameter names across all actions
+        all_params = set()
+        for conditions in conditions_list:
+            all_params.update(conditions.keys())
+        
+        # For each parameter, check if multiple actions set it
+        for param in all_params:
+            values = [cond[param] for cond in conditions_list if param in cond]
+            
+            if len(values) == 1:
+                # Only one action sets this parameter - use it directly
+                averaged[param] = values[0]
+            else:
+                # Multiple actions set this parameter - average them
+                averaged[param] = self._average_parameter_values(values)
+        
+        return averaged
+    
+    def _average_parameter_values(self, values: List[Any]) -> Any:
+        """
+        Average parameter values based on their type
+        
+        Args:
+            values: List of parameter values to average
+            
+        Returns:
+            Averaged value
+        """
+        if all(isinstance(v, (int, float)) for v in values):
+            # Numeric values - arithmetic mean
+            return sum(values) / len(values)
+        elif all(isinstance(v, list) for v in values):
+            # Array values - element-wise averaging
+            return self._average_arrays(values)
+        elif all(isinstance(v, bool) for v in values):
+            # Boolean values - logical OR (if any action needs it true)
+            return any(values)
+        else:
+            # Fallback - use first value
+            return values[0]
+    
+    def _average_arrays(self, arrays: List[List]) -> List:
+        """
+        Element-wise averaging for array parameters
+        
+        Args:
+            arrays: List of arrays to average
+            
+        Returns:
+            Array with averaged elements
+        """
+        if not arrays or not arrays[0]:
+            return []
+        
+        max_length = max(len(arr) for arr in arrays)
+        averaged = []
+        
+        for i in range(max_length):
+            element_values = [arr[i] for arr in arrays if i < len(arr)]
+            if all(isinstance(v, (int, float)) for v in element_values):
+                averaged.append(sum(element_values) / len(element_values))
+            else:
+                averaged.append(element_values[0])  # Fallback to first value
+        
+        return averaged
+    
+    def _create_combined_config(
+        self,
+        actions: List[str],
+        averaged_conditions: Dict[str, Any],
+        duration_hours: float,
+        plant_name: Optional[str]
+    ) -> Dict[str, Any]:
+        """
+        Create a combined configuration using averaged initial conditions
+        
+        Args:
+            actions: List of actions being combined
+            averaged_conditions: Averaged initial conditions
+            duration_hours: Simulation duration
+            plant_name: Optional plant name
+            
+        Returns:
+            Complete configuration dictionary
+        """
+        # Start with the base template
+        import copy
+        config = copy.deepcopy(self.maintenance_composer.base_config)
+        
+        # Update plant identification
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        primary_action = actions[0]
+        
+        if plant_name is None:
+            plant_name = f"Multi-Action Test Plant ({len(actions)} actions)"
+        
+        plant_id = f"MULTI-ACTION-{len(actions)}-{timestamp}"
+        
+        config['plant_name'] = plant_name
+        config['plant_id'] = plant_id
+        config['description'] = f"Combined maintenance test scenario for actions: {', '.join(actions)}"
+        
+        # Update simulation configuration
+        config['simulation_config']['duration_hours'] = duration_hours
+        config['simulation_config']['scenario'] = f"multi_action_{len(actions)}_test"
+        
+        # Add load profile for the combined scenario
+        if 'load_profiles' not in config:
+            config['load_profiles'] = {'profiles': {}}
+        
+        config['load_profiles']['profiles'][f"multi_action_{len(actions)}_test"] = {
+            'type': 'steady_with_noise',
+            'base_power_percent': 90.0,
+            'noise_std_percent': 2.0,
+            'description': f"Steady operation for multi-action testing: {', '.join(actions)}"
+        }
+        
+        # Apply averaged initial conditions to the appropriate subsystem
+        # For now, assume all actions are from the same subsystem (feedwater)
+        # This can be enhanced later to handle cross-subsystem scenarios
+        primary_subsystem = self.maintenance_composer.action_subsystem_map.get(primary_action)
+        if primary_subsystem and primary_subsystem in config.get('secondary_system', {}):
+            subsystem_config = config['secondary_system'][primary_subsystem]
+            if 'initial_conditions' in subsystem_config:
+                initial_conditions = subsystem_config['initial_conditions']
+                
+                # Apply averaged conditions
+                applied_count = 0
+                for param, value in averaged_conditions.items():
+                    if param in initial_conditions:
+                        initial_conditions[param] = value
+                        applied_count += 1
+                
+                if self.verbose:
+                    print(f"   ✅ Applied {applied_count} averaged parameters to {primary_subsystem}")
+        
+        # Update metadata
+        config['metadata'] = {
+            'created_date': datetime.now().strftime("%Y-%m-%d"),
+            'created_by': "Multi-Action Maintenance Composer",
+            'configuration_type': "multi_action_maintenance_test",
+            'target_action': primary_action,  # Required by MaintenanceScenarioRunner
+            'target_actions': actions,  # Additional field for multi-action info
+            'primary_target_action': primary_action,
+            'target_subsystem': primary_subsystem,
+            'validation_status': "generated",
+            'last_modified': datetime.now().strftime("%Y-%m-%d"),
+            'version_notes': f"Generated for testing {len(actions)} combined actions with averaged initial conditions",
+            'base_template': "nuclear_plant_comprehensive_config.yaml",
+            'state_manager_integration': True,
+            'maintenance_monitoring_enabled': True,
+            'threshold_verification_enabled': True
+        }
+        
+        return config
+    
     def generate_operational_scenario(
         self,
         scenario_type: Union[str, Any],
@@ -144,7 +424,7 @@ class ScenarioRunner:
     
     def run_maintenance_scenario(
         self,
-        action: str,
+        actions: Union[str, List[str]],
         duration_hours: float = 2.0,
         aggressive_mode: bool = True,
         save_config: bool = True,
@@ -157,31 +437,57 @@ class ScenarioRunner:
         Generate and run a maintenance-targeted scenario
         
         Args:
-            action: Maintenance action to target
+            actions: Maintenance action(s) to target - single string or list of strings
             duration_hours: Simulation duration in hours
             aggressive_mode: Use aggressive thresholds
             save_config: Save the generated configuration
             tracking_start_hours: Start time for CSV data tracking (hours). Data before this time will not be saved to CSVs.
+            randomize: Enable randomization of initial conditions
+            randomization_seed: Random seed for reproducibility (different seeds used for each action)
+            randomization_factor: Randomization factor for parameter variation
             
         Returns:
             Simulation results
         """
+        # Convert single action to list for uniform processing (backward compatibility)
+        if isinstance(actions, str):
+            actions = [actions]
+        
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        run_name = f"{action}_{timestamp}"
+        primary_action = actions[0]  # Use first action for naming
+        if len(actions) == 1:
+            run_name = f"{primary_action}_{timestamp}"
+        else:
+            run_name = f"multi_action_{len(actions)}_{timestamp}"
         
         if self.verbose:
-            print(f"\n🎯 Running Maintenance Scenario: {action}")
+            if len(actions) == 1:
+                print(f"\n🎯 Running Maintenance Scenario: {primary_action}")
+            else:
+                print(f"\n🎯 Running Multi-Action Maintenance Scenario: {actions}")
             print("=" * 60)
         
-        # Generate configuration
-        config = self.generate_maintenance_scenario(
-            action=action,
-            duration_hours=duration_hours,
-            aggressive_mode=aggressive_mode,
-            randomize=randomize,
-            randomization_seed=randomization_seed,
-            randomization_factor=randomization_factor
-        )
+        # Generate configuration (single or combined)
+        if len(actions) == 1:
+            # Single action - use existing method
+            config = self.generate_maintenance_scenario(
+                action=primary_action,
+                duration_hours=duration_hours,
+                aggressive_mode=aggressive_mode,
+                randomize=randomize,
+                randomization_seed=randomization_seed,
+                randomization_factor=randomization_factor
+            )
+        else:
+            # Multiple actions - use new combined method
+            config = self.generate_combined_maintenance_scenario(
+                actions=actions,
+                duration_hours=duration_hours,
+                aggressive_mode=aggressive_mode,
+                randomize=randomize,
+                randomization_seed=randomization_seed,
+                randomization_factor=randomization_factor
+            )
         
         # Save configuration if requested
         config_file = None
@@ -222,7 +528,9 @@ class ScenarioRunner:
                 # Collect results
                 results = {
                     'run_name': run_name,
-                    'action': action,
+                    'actions': actions,  # List of actions
+                    'primary_action': primary_action,  # First action for backward compatibility
+                    'action': primary_action,  # Backward compatibility
                     'duration_hours': duration_hours,
                     'aggressive_mode': aggressive_mode,
                     'execution_time_seconds': end_time - start_time,
@@ -857,6 +1165,16 @@ Examples:
   # Generate multiple randomized variants
   python scenario_runner.py --action oil_change --randomize --num-variants 5 --seed 42
   
+  # MULTI-ACTION EXAMPLES (NEW):
+  # Run multiple actions combined (parameter averaging)
+  python scenario_runner.py --actions oil_change,pump_bearing_replacement --duration 2.0
+  
+  # Multi-action with randomization (different seeds per action)
+  python scenario_runner.py --actions oil_change,seal_replacement --randomize --seed 42
+  
+  # Multi-action with multiple variants
+  python scenario_runner.py --actions oil_change,motor_bearing_replacement --randomize --num-variants 3 --seed 42
+  
   # Run an operational scenario
   python scenario_runner.py --scenario power_ramp_up --duration 1.5
   
@@ -875,7 +1193,7 @@ Examples:
   # Disable plotting for faster batch runs
   python scenario_runner.py --run-all-actions --no-plots --duration 1.0
   
-  # YAML-FIRST EXAMPLES (NEW):
+  # YAML-FIRST EXAMPLES:
   # Run scenario from YAML file
   python scenario_runner.py --yaml-file my_scenario.yaml
   
@@ -896,6 +1214,7 @@ Examples:
     # Mode selection
     mode_group = parser.add_mutually_exclusive_group(required=True)
     mode_group.add_argument('--action', type=str, help='Run maintenance scenario for specific action')
+    mode_group.add_argument('--actions', type=str, help='Run multi-action maintenance scenario (comma-separated list)')
     mode_group.add_argument('--scenario', type=str, help='Run operational scenario')
     mode_group.add_argument('--batch-maintenance', action='store_true', help='Run batch maintenance scenarios')
     mode_group.add_argument('--run-all-actions', action='store_true', help='Run ALL available maintenance actions')
@@ -914,7 +1233,6 @@ Examples:
     parser.add_argument('--no-plots', action='store_true', help='Disable plot creation and display')
     
     # Maintenance-specific parameters
-    parser.add_argument('--actions', type=str, help='Comma-separated list of actions for batch mode')
     parser.add_argument('--count', type=int, default=1, help='Number of runs per action in batch mode')
     parser.add_argument('--aggressive', action='store_true', help='Use aggressive thresholds (default: conservative)')
     parser.add_argument('--tracking-start', type=float, default=0.0, help='Start time for CSV data tracking in hours. Data before this time will not be saved to CSVs (default: 0.0)')
@@ -1113,7 +1431,7 @@ def main():
                     variant_seed = args.seed + i if args.seed else None
                     print(f"\n[{i+1}/{args.num_variants}] Running variant {i+1}")
                     runner.run_maintenance_scenario(
-                        action=action,
+                        actions=action,
                         duration_hours=args.duration,
                         aggressive_mode=aggressive_mode,
                         tracking_start_hours=args.tracking_start,
@@ -1125,7 +1443,58 @@ def main():
                     time.sleep(1)
             else:
                 runner.run_maintenance_scenario(
-                    action=action,
+                    actions=action,
+                    duration_hours=args.duration,
+                    aggressive_mode=aggressive_mode,
+                    tracking_start_hours=args.tracking_start,
+                    randomize=args.randomize,
+                    randomization_seed=args.seed,
+                    randomization_factor=args.randomization_factor
+                )
+        
+        elif args.actions:
+            # Multi-action maintenance scenario with validation
+            actions_list = [action.strip() for action in args.actions.split(',')]
+            
+            # Validate all actions
+            invalid_actions = []
+            for action in actions_list:
+                if not runner.validate_action(action):
+                    invalid_actions.append(action)
+            
+            if invalid_actions:
+                print(f"❌ Invalid actions: {invalid_actions}")
+                
+                # Suggest similar actions for each invalid one
+                for invalid_action in invalid_actions:
+                    suggestions = runner.suggest_similar_actions(invalid_action)
+                    if suggestions:
+                        print(f"💡 For '{invalid_action}', did you mean: {', '.join(suggestions)}")
+                
+                return 1
+            
+            aggressive_mode = args.aggressive
+            
+            # Handle multiple variants
+            if args.num_variants > 1:
+                print(f"🎲 Generating {args.num_variants} randomized variants")
+                for i in range(args.num_variants):
+                    variant_seed = args.seed + i if args.seed else None
+                    print(f"\n[{i+1}/{args.num_variants}] Running variant {i+1}")
+                    runner.run_maintenance_scenario(
+                        actions=actions_list,
+                        duration_hours=args.duration,
+                        aggressive_mode=aggressive_mode,
+                        tracking_start_hours=args.tracking_start,
+                        randomize=args.randomize,
+                        randomization_seed=variant_seed,
+                        randomization_factor=args.randomization_factor
+                    )
+                    # Small delay between variants for unique timestamps
+                    time.sleep(1)
+            else:
+                runner.run_maintenance_scenario(
+                    actions=actions_list,
                     duration_hours=args.duration,
                     aggressive_mode=aggressive_mode,
                     tracking_start_hours=args.tracking_start,
