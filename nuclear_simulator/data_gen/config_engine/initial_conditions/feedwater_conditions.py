@@ -158,7 +158,7 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
     # Target: cavitation_intensity = 0.25 → 2.5x bearing acceleration → 80 min trigger
     "pump_bearing_replacement": {
         # === TARGET PARAMETER ===
-        "pump_bearing_wear": [6.3, 0.1, 0.1, 0.0],         # 6.5 - 0.2 = 6.3 (close to threshold)
+        "pump_bearing_wear": [6.45, 0.1, 0.1, 0.0],        # 6.5 - 0.05 = 6.45 (very close to threshold)
         
         # === CAVITATION PHYSICS PACKAGE ===
         "cavitation_intensity": [0.25, 0.05, 0.05, 0.05],  # Target intensity for FWP-1

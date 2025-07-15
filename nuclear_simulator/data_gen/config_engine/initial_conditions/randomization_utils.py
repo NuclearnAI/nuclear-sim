@@ -309,7 +309,7 @@ ACTION_SCENARIOS = {
             "description": "Complete physics package for critical pump bearing cavitation - 6hr trigger",
             "parameters": {
                 # === TARGET PARAMETER ===
-                "pump_bearing_wear": {"range": [6.2, 6.4], "distribution": "uniform", "array_handling": "first_element_only"},
+                "pump_bearing_wear": {"range": [6.4, 6.48], "distribution": "uniform", "array_handling": "first_element_only"},
                 
                 # === CAVITATION PHYSICS PACKAGE ===
                 "cavitation_intensity": {"range": [0.23, 0.27], "distribution": "uniform", "array_handling": "first_element_only"},
@@ -364,7 +364,7 @@ ACTION_SCENARIOS = {
             "description": "Complete physics package for moderate pump bearing cavitation - 8hr trigger",
             "parameters": {
                 # === TARGET PARAMETER ===
-                "pump_bearing_wear": {"range": [6.0, 6.2], "distribution": "uniform", "array_handling": "first_element_only"},
+                "pump_bearing_wear": {"range": [6.35, 6.42], "distribution": "uniform", "array_handling": "first_element_only"},
                 
                 # === CAVITATION PHYSICS PACKAGE ===
                 "cavitation_intensity": {"range": [0.20, 0.25], "distribution": "uniform", "array_handling": "first_element_only"},
@@ -419,7 +419,7 @@ ACTION_SCENARIOS = {
             "description": "Complete physics package for low pump bearing cavitation - 10hr trigger",
             "parameters": {
                 # === TARGET PARAMETER ===
-                "pump_bearing_wear": {"range": [5.8, 6.0], "distribution": "uniform", "array_handling": "first_element_only"},
+                "pump_bearing_wear": {"range": [6.3, 6.38], "distribution": "uniform", "array_handling": "first_element_only"},
                 
                 # === CAVITATION PHYSICS PACKAGE ===
                 "cavitation_intensity": {"range": [0.15, 0.20], "distribution": "uniform", "array_handling": "first_element_only"},
