@@ -164,15 +164,15 @@ class ScenarioRunner:
                 if self.verbose:
                     print(f"   📋 Action {i+1}/{len(actions)} ({action}): {len(conditions)} parameters")
             
-            # 2. Combine overlapping parameters using maximum values
-            combined_conditions = self._combine_initial_conditions(individual_conditions)
+            # 2. Average overlapping parameters
+            averaged_conditions = self._average_initial_conditions(individual_conditions)
             
             if self.verbose:
-                print(f"   🔀 Combined conditions (max values): {len(combined_conditions)} parameters")
+                print(f"   🔀 Averaged conditions: {len(averaged_conditions)} parameters")
             
-            # 3. Create combined configuration using combined conditions
+            # 3. Create combined configuration using averaged conditions
             combined_config = self._create_combined_config(
-                actions, combined_conditions, duration_hours, plant_name
+                actions, averaged_conditions, duration_hours, plant_name
             )
             
             if self.verbose:
@@ -235,17 +235,17 @@ class ScenarioRunner:
         
         return ic_params
     
-    def _combine_initial_conditions(self, conditions_list: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def _average_initial_conditions(self, conditions_list: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
-        Combine overlapping initial condition parameters from multiple actions using maximum values
+        Average overlapping initial condition parameters from multiple actions
         
         Args:
             conditions_list: List of initial condition dictionaries from different actions
             
         Returns:
-            Dictionary with maximum overlapping parameters and unique parameters
+            Dictionary with averaged overlapping parameters and unique parameters
         """
-        combined = {}
+        averaged = {}
         
         # Get all unique parameter names across all actions
         all_params = set()
@@ -258,29 +258,29 @@ class ScenarioRunner:
             
             if len(values) == 1:
                 # Only one action sets this parameter - use it directly
-                combined[param] = values[0]
+                averaged[param] = values[0]
             else:
-                # Multiple actions set this parameter - take maximum
-                combined[param] = self._max_parameter_values(values)
+                # Multiple actions set this parameter - average them
+                averaged[param] = self._average_parameter_values(values)
         
-        return combined
+        return averaged
     
-    def _max_parameter_values(self, values: List[Any]) -> Any:
+    def _average_parameter_values(self, values: List[Any]) -> Any:
         """
-        Take maximum parameter values based on their type
+        Average parameter values based on their type
         
         Args:
-            values: List of parameter values to take maximum from
+            values: List of parameter values to average
             
         Returns:
-            Maximum value
+            Averaged value
         """
         if all(isinstance(v, (int, float)) for v in values):
-            # Numeric values - take maximum
-            return max(values)
+            # Numeric values - arithmetic mean
+            return sum(values) / len(values)
         elif all(isinstance(v, list) for v in values):
-            # Array values - element-wise maximum
-            return self._max_arrays(values)
+            # Array values - element-wise averaging
+            return self._average_arrays(values)
         elif all(isinstance(v, bool) for v in values):
             # Boolean values - logical OR (if any action needs it true)
             return any(values)
@@ -288,44 +288,44 @@ class ScenarioRunner:
             # Fallback - use first value
             return values[0]
     
-    def _max_arrays(self, arrays: List[List]) -> List:
+    def _average_arrays(self, arrays: List[List]) -> List:
         """
-        Element-wise maximum for array parameters
+        Element-wise averaging for array parameters
         
         Args:
-            arrays: List of arrays to take maximum from
+            arrays: List of arrays to average
             
         Returns:
-            Array with maximum elements
+            Array with averaged elements
         """
         if not arrays or not arrays[0]:
             return []
         
         max_length = max(len(arr) for arr in arrays)
-        max_array = []
+        averaged = []
         
         for i in range(max_length):
             element_values = [arr[i] for arr in arrays if i < len(arr)]
             if all(isinstance(v, (int, float)) for v in element_values):
-                max_array.append(max(element_values))
+                averaged.append(sum(element_values) / len(element_values))
             else:
-                max_array.append(element_values[0])  # Fallback to first value
+                averaged.append(element_values[0])  # Fallback to first value
         
-        return max_array
+        return averaged
     
     def _create_combined_config(
         self,
         actions: List[str],
-        combined_conditions: Dict[str, Any],
+        averaged_conditions: Dict[str, Any],
         duration_hours: float,
         plant_name: Optional[str]
     ) -> Dict[str, Any]:
         """
-        Create a combined configuration using combined initial conditions (maximum values)
+        Create a combined configuration using averaged initial conditions
         
         Args:
             actions: List of actions being combined
-            combined_conditions: Combined initial conditions using maximum values
+            averaged_conditions: Averaged initial conditions
             duration_hours: Simulation duration
             plant_name: Optional plant name
             
@@ -373,15 +373,15 @@ class ScenarioRunner:
             if 'initial_conditions' in subsystem_config:
                 initial_conditions = subsystem_config['initial_conditions']
                 
-                # Apply combined conditions
+                # Apply averaged conditions
                 applied_count = 0
-                for param, value in combined_conditions.items():
+                for param, value in averaged_conditions.items():
                     if param in initial_conditions:
                         initial_conditions[param] = value
                         applied_count += 1
                 
                 if self.verbose:
-                    print(f"   ✅ Applied {applied_count} combined parameters (max values) to {primary_subsystem}")
+                    print(f"   ✅ Applied {applied_count} averaged parameters to {primary_subsystem}")
         
         # Update metadata
         config['metadata'] = {
@@ -394,7 +394,7 @@ class ScenarioRunner:
             'target_subsystem': primary_subsystem,
             'validation_status': "generated",
             'last_modified': datetime.now().strftime("%Y-%m-%d"),
-            'version_notes': f"Generated for testing {len(actions)} combined actions with combined initial conditions (max values)",
+            'version_notes': f"Generated for testing {len(actions)} combined actions with averaged initial conditions",
             'base_template': "nuclear_plant_comprehensive_config.yaml",
             'state_manager_integration': True,
             'maintenance_monitoring_enabled': True,
