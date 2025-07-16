@@ -1016,14 +1016,6 @@ maintenance_system:
           cooldown_hours: 2190.0                  # Quarterly cooldown
           priority: "MEDIUM"
         
-        # UPDATED: Enhanced cavitation damage thresholds
-        cavitation_damage_severe:
-          threshold: 8.0                          # Severe damage threshold
-          comparison: "greater_than"
-          action: "impeller_replacement"
-          cooldown_hours: 4380.0                  # Semi-annual cooldown
-          priority: "CRITICAL"
-        
         # NEW: NPSH penalty component thresholds
         npsh_wear_penalty:
           threshold: 0.5                          # m - NPSH penalty from wear

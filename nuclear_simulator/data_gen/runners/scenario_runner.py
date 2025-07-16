@@ -164,15 +164,15 @@ class ScenarioRunner:
                 if self.verbose:
                     print(f"   📋 Action {i+1}/{len(actions)} ({action}): {len(conditions)} parameters")
             
-            # 2. Average overlapping parameters
-            averaged_conditions = self._average_initial_conditions(individual_conditions)
+            # 2. Take maximum overlapping parameters
+            maxed_conditions = self._max_initial_conditions(individual_conditions)
             
             if self.verbose:
-                print(f"   🔀 Averaged conditions: {len(averaged_conditions)} parameters")
+                print(f"   🔀 Maximum conditions: {len(maxed_conditions)} parameters")
             
-            # 3. Create combined configuration using averaged conditions
+            # 3. Create combined configuration using maximum conditions
             combined_config = self._create_combined_config(
-                actions, averaged_conditions, duration_hours, plant_name
+                actions, maxed_conditions, duration_hours, plant_name
             )
             
             if self.verbose:
@@ -235,17 +235,17 @@ class ScenarioRunner:
         
         return ic_params
     
-    def _average_initial_conditions(self, conditions_list: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def _max_initial_conditions(self, conditions_list: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
-        Average overlapping initial condition parameters from multiple actions
+        Take maximum overlapping initial condition parameters from multiple actions
         
         Args:
             conditions_list: List of initial condition dictionaries from different actions
             
         Returns:
-            Dictionary with averaged overlapping parameters and unique parameters
+            Dictionary with maximum overlapping parameters and unique parameters
         """
-        averaged = {}
+        maxed = {}
         
         # Get all unique parameter names across all actions
         all_params = set()
@@ -258,13 +258,35 @@ class ScenarioRunner:
             
             if len(values) == 1:
                 # Only one action sets this parameter - use it directly
-                averaged[param] = values[0]
+                maxed[param] = values[0]
             else:
-                # Multiple actions set this parameter - average them
-                averaged[param] = self._average_parameter_values(values)
+                # Multiple actions set this parameter - take maximum
+                maxed[param] = self._max_parameter_values(values)
         
-        return averaged
+        return maxed
     
+    def _max_parameter_values(self, values: List[Any]) -> Any:
+        """
+        Take maximum parameter values based on their type
+        
+        Args:
+            values: List of parameter values to take maximum from
+            
+        Returns:
+            Maximum value
+        """
+        if all(isinstance(v, (int, float)) for v in values):
+            # Numeric values - take maximum
+            return max(values)
+        elif all(isinstance(v, list) for v in values):
+            # Array values - element-wise maximum
+            return self._max_arrays(values)
+        elif all(isinstance(v, bool) for v in values):
+            # Boolean values - logical OR (if any action needs it true)
+            return any(values)
+        else:
+            # Fallback - use first value
+            return values[0]
     def _average_parameter_values(self, values: List[Any]) -> Any:
         """
         Average parameter values based on their type
@@ -287,6 +309,31 @@ class ScenarioRunner:
         else:
             # Fallback - use first value
             return values[0]
+    
+    def _max_arrays(self, arrays: List[List]) -> List:
+        """
+        Element-wise maximum for array parameters
+        
+        Args:
+            arrays: List of arrays to take maximum from
+            
+        Returns:
+            Array with maximum elements
+        """
+        if not arrays or not arrays[0]:
+            return []
+        
+        max_length = max(len(arr) for arr in arrays)
+        max_array = []
+        
+        for i in range(max_length):
+            element_values = [arr[i] for arr in arrays if i < len(arr)]
+            if all(isinstance(v, (int, float)) for v in element_values):
+                max_array.append(max(element_values))
+            else:
+                max_array.append(element_values[0])  # Fallback to first value
+        
+        return max_array
     
     def _average_arrays(self, arrays: List[List]) -> List:
         """
