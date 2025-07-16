@@ -40,7 +40,7 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
     # - Target: 120 minutes = 0.010 ppm/hour × 2.0 hours = 2.2 ppm increase needed
     "oil_change": {
         # === TARGET PARAMETER ===
-        "pump_oil_contamination": 13.0,                  # 15.2 - 2.2 = 13.0 (proper 2+ hour buffer)
+        "pump_oil_contamination": 9.0,                   # 15.2 - 6.2 = 9.0 (balanced 2.5+ hour buffer)
         
         # === SEAL WEAR CONTAMINATION DRIVER ===
         "seal_face_wear": [12.0, 0.1, 0.1, 0.1],        # FWP-1 aggressive seal wear drives contamination
@@ -65,7 +65,7 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
         
         # Hydraulic conditions (normal - not cavitation-driven)
         "cavitation_intensity": [0.05, 0.01, 0.01, 0.01], # Low cavitation
-        "npsh_available": [19.0, 20.0, 20.0, 20.0],       # Good NPSH
+        "npsh_available": [27.0, 20.0, 20.0, 20.0],       # Increased NPSH margin for FWP-1 (12m+ safety margin)
         "suction_pressure": 0.45,                          # Normal suction pressure
         "discharge_pressure": 8.0,                         # Normal discharge pressure
         "feedwater_temperature": 230.0,                    # Normal temperature
@@ -133,7 +133,7 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
     # Actual rate: 0.004 × 1.20 × 1.10 = 0.0053%/hour
     # Target: 120 minutes = 0.0053 × 2.0 hours = 2.5% distance needed
     "motor_bearing_replacement": {
-        "motor_bearing_wear": [6.0, 0.1, 0.1, 0.0],      # 8.5 - 2.5 = 6.0 (proper 2+ hour buffer)
+        "motor_bearing_wear": [3.0, 0.1, 0.1, 0.0],      # 8.5 - 5.5 = 3.0 (balanced 2.5+ hour buffer)
         
         # Conditions that create electrical load acceleration
         "motor_temperature": [82.0, 30.0, 30.0, 25.0],   # Elevated electrical load
@@ -158,15 +158,15 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
     # Target: Physics-driven wear progression from initial conditions to 6.5% threshold
     "pump_bearing_replacement": {
         # === TARGET PARAMETER - Below threshold, will increase via physics ===
-        "pump_bearing_wear": [6.0, 0.1, 0.1, 0.0],         # Start below 6.5% threshold
+        "pump_bearing_wear": [1.5, 0.1, 0.1, 0.0],         # 6.0 - 4.5 = 1.5 (balanced 3+ hour buffer)
         
         # === SUSTAINABLE CAVITATION SUPPORT CONDITIONS ===
         # DO NOT set cavitation_intensity directly - let physics calculate it
         # Instead, create conditions that will result in sustained cavitation
         
         # Pre-existing damage that increases NPSH requirements and sustains cavitation
-        "impeller_cavitation_damage": [2.0, 0.1, 0.1, 0.1], # Reduced damage for proper 2+ hour timing
-        "impeller_wear": [4.0, 0.3, 0.3, 0.3],              # Reduced wear for proper 2+ hour timing
+        "impeller_cavitation_damage": [0.2, 0.1, 0.1, 0.1], # Conservative damage for balanced timing
+        "impeller_wear": [1.2, 0.3, 0.3, 0.3],              # Conservative wear for balanced timing
         "motor_bearing_wear": [3.5, 0.1, 0.1, 0.0],         # Moderate motor bearing wear
         "thrust_bearing_wear": [1.8, 0.1, 0.1, 0.0],        # Moderate thrust bearing wear
         
@@ -220,7 +220,7 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
     # Actual rate: 0.008 × 1.38 = 0.011%/hour
     # Target: 120 minutes = 0.011 × 2.0 hours = 1.5% distance needed
     "thrust_bearing_replacement": {
-        "thrust_bearing_wear": [3.0, 0.1, 0.1, 0.0],     # 4.5 - 1.5 = 3.0 (proper 2+ hour buffer)
+        "thrust_bearing_wear": [1.2, 0.1, 0.1, 0.0],     # 4.0 - 2.8 = 1.2 (balanced 2+ hour buffer)
         
         # Conditions that create high axial loads
         "pump_flows": [580.0, 500.0, 500.0, 0.0],        # High flow = high axial thrust for FWP-1

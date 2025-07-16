@@ -13,7 +13,7 @@ import copy
 def add_randomness_to_conditions(
     conditions_dict: Dict[str, Any],
     parameter_rules: Optional[Dict[str, Dict]] = None,
-    scaling_factor: float = 0.1,
+    scaling_factor: float = 0.07,  # Reduced from 0.1 for more conservative randomization
     seed: Optional[int] = None
 ) -> Dict[str, Any]:
     """
@@ -926,7 +926,7 @@ except ImportError:
 def get_randomized_feedwater_conditions(
     action: str,
     seed: Optional[int] = None,
-    scaling_factor: float = 0.1
+    scaling_factor: float = 0.07  # Reduced from 0.1 for more conservative randomization
 ) -> Dict[str, Any]:
     """
     Get randomized conditions for a specific feedwater action using scenario-based approach
