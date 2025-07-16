@@ -1050,7 +1050,13 @@ class FeedwaterPumpLubricationSystem(BaseLubricationSystem):
     
     def _perform_impeller_replacement(self, **kwargs) -> Dict[str, Any]:
         """
-        Enhanced impeller replacement with explicit wear tracking and coupling benefits
+        Physically realistic impeller replacement - fixes only the impeller
+        
+        PHYSICS REALITY CHECK:
+        - Impeller wear is eliminated (new impeller = 0% wear) ✅
+        - Existing bearing wear stays the same (you can't "un-wear" bearings) ✅
+        - Future bearing wear rates may slow down (less unbalanced forces) ✅
+        - Vibration reduces (new balanced impeller) ✅
         """
         # Store old wear values for reporting
         old_impeller_wear = self.component_wear.get('impeller', 0.0)
@@ -1058,68 +1064,49 @@ class FeedwaterPumpLubricationSystem(BaseLubricationSystem):
         old_pump_bearing_wear = self.component_wear.get('pump_bearings', 0.0)
         old_thrust_bearing_wear = self.component_wear.get('thrust_bearing', 0.0)
         
-        # Calculate coupling benefits before replacement
-        impeller_to_bearing_coupling_reduction = old_impeller_wear * 0.4  # 40% coupling factor
-        
         # Reset impeller wear to zero (new impeller)
         self.component_wear['impeller'] = 0.0
         
-        # Reduce bearing wear due to eliminated impeller coupling effects
-        # New impeller eliminates unbalanced forces and hydraulic disturbances
-        bearing_improvement_motor = min(old_motor_bearing_wear, impeller_to_bearing_coupling_reduction * 0.2)
-        bearing_improvement_pump = min(old_pump_bearing_wear, impeller_to_bearing_coupling_reduction * 0.4)  # Highest coupling
-        bearing_improvement_thrust = min(old_thrust_bearing_wear, impeller_to_bearing_coupling_reduction * 0.25)
-        
-        self.component_wear['motor_bearings'] = max(0.0, old_motor_bearing_wear - bearing_improvement_motor)
-        self.component_wear['pump_bearings'] = max(0.0, old_pump_bearing_wear - bearing_improvement_pump)
-        self.component_wear['thrust_bearing'] = max(0.0, old_thrust_bearing_wear - bearing_improvement_thrust)
-        
-        # Calculate total bearing improvement
-        total_bearing_improvement = bearing_improvement_motor + bearing_improvement_pump + bearing_improvement_thrust
+        # PHYSICALLY REALISTIC: Existing bearing wear stays the same
+        # You cannot "un-wear" bearings by installing a new impeller
+        # Bearings keep their existing damage until they are actually replaced
         
         # Recalculate performance factors after impeller replacement
         self._calculate_pump_performance_factors()
         
-        # Reduce vibration from impeller replacement and bearing improvement
+        # Reduce vibration from impeller replacement only
+        # New balanced impeller reduces vibration directly
         vibration_reduction_impeller = old_impeller_wear * 0.08  # Direct impeller vibration reduction
-        vibration_reduction_bearings = total_bearing_improvement * 0.05  # Bearing improvement vibration reduction
-        total_vibration_reduction = vibration_reduction_impeller + vibration_reduction_bearings
+        self.vibration_increase = max(0.0, self.vibration_increase - vibration_reduction_impeller)
         
-        self.vibration_increase = max(0.0, self.vibration_increase - total_vibration_reduction)
-        
-        # Calculate new bearing wear levels for reporting
-        new_motor_bearing_wear = self.component_wear['motor_bearings']
-        new_pump_bearing_wear = self.component_wear['pump_bearings']
-        new_thrust_bearing_wear = self.component_wear['thrust_bearing']
-        
+        # Create realistic findings report
         findings = (f"Replaced impeller (wear: {old_impeller_wear:.1f}% → 0%). "
-                   f"Bearing improvements from coupling elimination: "
-                   f"Motor {old_motor_bearing_wear:.1f}% → {new_motor_bearing_wear:.1f}%, "
-                   f"Pump {old_pump_bearing_wear:.1f}% → {new_pump_bearing_wear:.1f}%, "
-                   f"Thrust {old_thrust_bearing_wear:.1f}% → {new_thrust_bearing_wear:.1f}%. "
-                   f"Total vibration reduction: {total_vibration_reduction:.2f} mm/s")
+                   f"Bearing wear unchanged (physically realistic): "
+                   f"Motor {old_motor_bearing_wear:.1f}%, "
+                   f"Pump {old_pump_bearing_wear:.1f}%, "
+                   f"Thrust {old_thrust_bearing_wear:.1f}%. "
+                   f"Vibration reduction: {vibration_reduction_impeller:.2f} mm/s")
         
-        # Enhanced performance improvement calculation
+        # Realistic performance improvement calculation
+        # Only from the impeller itself, no "magic" bearing benefits
         base_improvement = 15.0  # Base improvement from new impeller
-        coupling_improvement = total_bearing_improvement * 2.0  # Additional improvement from bearing coupling benefits
-        total_performance_improvement = base_improvement + coupling_improvement
         
         return {
             'success': True,
             'duration_hours': 8.0,
-            'work_performed': 'Enhanced impeller replacement with coupling benefits',
+            'work_performed': 'Physically realistic impeller replacement',
             'findings': findings,
-            'performance_improvement': total_performance_improvement,
+            'performance_improvement': base_improvement,
             'effectiveness_score': 1.0,
             'impeller_wear_removed': old_impeller_wear,
-            'bearing_improvements': {
-                'motor_bearings': bearing_improvement_motor,
-                'pump_bearings': bearing_improvement_pump,
-                'thrust_bearing': bearing_improvement_thrust,
-                'total': total_bearing_improvement
+            'bearing_wear_unchanged': {
+                'motor_bearings': old_motor_bearing_wear,
+                'pump_bearings': old_pump_bearing_wear,
+                'thrust_bearing': old_thrust_bearing_wear,
+                'explanation': 'Existing bearing damage cannot be reversed by impeller replacement'
             },
-            'vibration_reduction': total_vibration_reduction,
-            'coupling_benefits_realized': True,
+            'vibration_reduction': vibration_reduction_impeller,
+            'physics_compliant': True,
             'next_maintenance_due': 17520.0  # 2 years
         }
     
