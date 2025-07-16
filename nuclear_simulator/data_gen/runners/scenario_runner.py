@@ -164,15 +164,15 @@ class ScenarioRunner:
                 if self.verbose:
                     print(f"   📋 Action {i+1}/{len(actions)} ({action}): {len(conditions)} parameters")
             
-            # 2. Take maximum overlapping parameters
-            maxed_conditions = self._max_initial_conditions(individual_conditions)
+            # 2. Take average overlapping parameters
+            averaged_conditions = self._average_initial_conditions(individual_conditions)
             
             if self.verbose:
-                print(f"   🔀 Maximum conditions: {len(maxed_conditions)} parameters")
+                print(f"   🔀 Averaged conditions: {len(averaged_conditions)} parameters")
             
-            # 3. Create combined configuration using maximum conditions
+            # 3. Create combined configuration using averaged conditions
             combined_config = self._create_combined_config(
-                actions, maxed_conditions, duration_hours, plant_name
+                actions, averaged_conditions, duration_hours, plant_name
             )
             
             if self.verbose:
@@ -264,6 +264,36 @@ class ScenarioRunner:
                 maxed[param] = self._max_parameter_values(values)
         
         return maxed
+    
+    def _average_initial_conditions(self, conditions_list: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Take average overlapping initial condition parameters from multiple actions
+        
+        Args:
+            conditions_list: List of initial condition dictionaries from different actions
+            
+        Returns:
+            Dictionary with averaged overlapping parameters and unique parameters
+        """
+        averaged = {}
+        
+        # Get all unique parameter names across all actions
+        all_params = set()
+        for conditions in conditions_list:
+            all_params.update(conditions.keys())
+        
+        # For each parameter, check if multiple actions set it
+        for param in all_params:
+            values = [cond[param] for cond in conditions_list if param in cond]
+            
+            if len(values) == 1:
+                # Only one action sets this parameter - use it directly
+                averaged[param] = values[0]
+            else:
+                # Multiple actions set this parameter - take average
+                averaged[param] = self._average_parameter_values(values)
+        
+        return averaged
     
     def _max_parameter_values(self, values: List[Any]) -> Any:
         """
