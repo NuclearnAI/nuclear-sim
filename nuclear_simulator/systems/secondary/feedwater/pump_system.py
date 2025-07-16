@@ -147,7 +147,7 @@ class FeedwaterPump(BasePump):
         self.severe_cavitation_threshold = 0.7          # Intensity level for immediate trip
         self.sustained_cavitation_time_limit = 300.0    # seconds (5 minutes)
         self.cavitation_damage_trip_threshold = 10.0    # Damage level for maintenance trip
-        self.npsh_critical_factor = 0.8                 # Factor of min NPSH for emergency trip
+        self.npsh_critical_factor = 0.5                 # Factor of min NPSH for emergency trip (reduced from 0.8)
         
         # Mechanical Wear Parameters
         self.base_impeller_wear_rate = 0.001            # %/hour at rated conditions
@@ -368,7 +368,7 @@ class FeedwaterPump(BasePump):
         Returns:
             Dynamic NPSH requirement in meters
         """
-        base_npsh = 15.0  # Fixed baseline NPSH requirement
+        base_npsh = 12.0  # Fixed baseline NPSH requirement (reduced from 15.0 to prevent trips)
         
         # 1. Explicit impeller wear penalty (from lubrication system)
         impeller_wear_penalty = 0.0
