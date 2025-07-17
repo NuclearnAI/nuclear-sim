@@ -308,8 +308,8 @@ ACTION_SCENARIOS = {
             "probability": 0.5,
             "description": "Aggressive pump bearing wear acceleration - 6hr trigger via physics progression",
             "parameters": {
-                # === TARGET PARAMETER - Further from threshold for gradual buildup ===
-                "pump_bearing_wear": {"range": [3.5, 4.5], "distribution": "uniform", "array_handling": "first_element_only"},
+                # === TARGET PARAMETER - 0.8% away from 6.5% threshold ===
+                "pump_bearing_wear": {"range": [5.6, 5.8], "distribution": "uniform", "array_handling": "first_element_only"},
                 
                 # === SUSTAINABLE CAVITATION SUPPORT CONDITIONS ===
                 # Safe NPSH margin to avoid immediate trips
@@ -370,8 +370,8 @@ ACTION_SCENARIOS = {
             "probability": 0.35,
             "description": "Moderate pump bearing wear acceleration - 8hr trigger via physics progression",
             "parameters": {
-                # === TARGET PARAMETER - Close to threshold but not there yet ===
-                "pump_bearing_wear": {"range": [5.8, 6.0], "distribution": "uniform", "array_handling": "first_element_only"},
+                # === TARGET PARAMETER - 0.5-0.7% away from 6.5% threshold ===
+                "pump_bearing_wear": {"range": [5.5, 5.7], "distribution": "uniform", "array_handling": "first_element_only"},
                 
                 # === SUSTAINABLE CAVITATION SUPPORT CONDITIONS ===
                 # Moderate NPSH margin for sustained cavitation
@@ -429,8 +429,8 @@ ACTION_SCENARIOS = {
             "probability": 0.15,
             "description": "Mild pump bearing wear acceleration - 10hr trigger via physics progression",
             "parameters": {
-                # === TARGET PARAMETER - Close to threshold but not there yet ===
-                "pump_bearing_wear": {"range": [5.7, 5.9], "distribution": "uniform", "array_handling": "first_element_only"},
+                # === TARGET PARAMETER - 0.6-1.0% away from 6.5% threshold ===
+                "pump_bearing_wear": {"range": [5.4, 5.6], "distribution": "uniform", "array_handling": "first_element_only"},
                 
                 # === SUSTAINABLE CAVITATION SUPPORT CONDITIONS ===
                 # Mild NPSH margin for sustained cavitation

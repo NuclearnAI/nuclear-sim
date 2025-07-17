@@ -164,7 +164,7 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
     # Target: Physics-driven wear progression from initial conditions to 6.5% threshold
     "pump_bearing_replacement": {
         # === TARGET PARAMETER - Below threshold, will increase via physics ===
-        "pump_bearing_wear": [4.0, 0.1, 0.1, 0.0],         # Further from threshold for gradual buildup
+        "pump_bearing_wear": [5.7, 0.1, 0.1, 0.0],         # 0.8% away from 6.5% threshold for reliable triggering
         
         # === SUSTAINABLE CAVITATION SUPPORT CONDITIONS ===
         # Start with zero cavitation damage for gradual physics buildup
