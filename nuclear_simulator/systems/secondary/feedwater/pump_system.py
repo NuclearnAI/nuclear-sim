@@ -339,10 +339,11 @@ class FeedwaterPump(BasePump):
             self._trip_pump("Severe Cavitation")
             return True
             
-        # Sustained cavitation - trip after time limit
-        if self.state.cavitation_time > self.sustained_cavitation_time_limit:
-            self._trip_pump("Sustained Cavitation")
-            return True
+        # DISABLED: Sustained cavitation - trip after time limit
+        # Disabled to allow gradual cavitation scenarios for training data generation
+        # if self.state.cavitation_time > self.sustained_cavitation_time_limit:
+        #     self._trip_pump("Sustained Cavitation")
+        #     return True
             
         # Cavitation damage threshold
         if self.state.cavitation_damage > self.cavitation_damage_trip_threshold:
