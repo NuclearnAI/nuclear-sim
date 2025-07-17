@@ -386,8 +386,8 @@ ACTION_SCENARIOS = {
                 "pump_flows": {"range": [580, 590], "distribution": "uniform", "array_handling": "first_element_only"},
                 "pump_speeds": {"range": [3680, 3700], "distribution": "uniform", "array_handling": "first_element_only"},
                 
-                # Pre-existing damage that sustains moderate cavitation - REDUCED for 2+ hour delays
-                "impeller_cavitation_damage": {"range": [0.8, 2.0], "distribution": "uniform", "array_handling": "first_element_only"},
+                # Start with zero damage for gradual physics buildup
+                "impeller_cavitation_damage": {"range": [0.0, 0.0], "distribution": "uniform", "array_handling": "first_element_only"},
                 "impeller_wear": {"range": [1.5, 3.0], "distribution": "uniform", "array_handling": "first_element_only"},
                 
                 # System stress for moderate hydraulic load
@@ -445,8 +445,8 @@ ACTION_SCENARIOS = {
                 "pump_flows": {"range": [575, 585], "distribution": "uniform", "array_handling": "first_element_only"},
                 "pump_speeds": {"range": [3670, 3690], "distribution": "uniform", "array_handling": "first_element_only"},
                 
-                # Pre-existing damage that sustains mild cavitation - REDUCED for 2+ hour delays
-                "impeller_cavitation_damage": {"range": [0.5, 1.5], "distribution": "uniform", "array_handling": "first_element_only"},
+                # Start with zero damage for gradual physics buildup
+                "impeller_cavitation_damage": {"range": [0.0, 0.0], "distribution": "uniform", "array_handling": "first_element_only"},
                 "impeller_wear": {"range": [1.0, 2.5], "distribution": "uniform", "array_handling": "first_element_only"},
                 
                 # System stress for mild hydraulic load
@@ -670,8 +670,8 @@ ACTION_SCENARIOS = {
                 # === CAVITATION PHYSICS PACKAGE ===
                 "cavitation_intensity": {"range": [0.06, 0.10], "distribution": "uniform", "array_handling": "first_element_only"},
                 
-                # Pre-existing damage to increase NPSH requirements - REDUCED for 2+ hour delays
-                "impeller_cavitation_damage": {"range": [0.6, 1.2], "distribution": "uniform", "array_handling": "first_element_only"},
+                # Start with zero damage for gradual physics buildup
+                "impeller_cavitation_damage": {"range": [0.0, 0.0], "distribution": "uniform", "array_handling": "first_element_only"},
                 "impeller_wear": {"range": [1.2, 2.5], "distribution": "uniform", "array_handling": "first_element_only"},
                 "motor_bearing_wear": {"range": [3.0, 4.0], "distribution": "uniform", "array_handling": "first_element_only"},
                 "pump_bearing_wear": {"range": [2.0, 3.0], "distribution": "uniform", "array_handling": "first_element_only"},
@@ -723,8 +723,8 @@ ACTION_SCENARIOS = {
                 # === CAVITATION PHYSICS PACKAGE ===
                 "cavitation_intensity": {"range": [0.05, 0.08], "distribution": "uniform", "array_handling": "first_element_only"},
                 
-                # Pre-existing damage to increase NPSH requirements - REDUCED for 2+ hour delays
-                "impeller_cavitation_damage": {"range": [0.5, 1.0], "distribution": "uniform", "array_handling": "first_element_only"},
+                # Start with zero damage for gradual physics buildup
+                "impeller_cavitation_damage": {"range": [0.0, 0.0], "distribution": "uniform", "array_handling": "first_element_only"},
                 "impeller_wear": {"range": [1.0, 2.0], "distribution": "uniform", "array_handling": "first_element_only"},
                 "motor_bearing_wear": {"range": [2.5, 3.5], "distribution": "uniform", "array_handling": "first_element_only"},
                 "pump_bearing_wear": {"range": [1.5, 2.5], "distribution": "uniform", "array_handling": "first_element_only"},
