@@ -13,7 +13,7 @@ import copy
 def add_randomness_to_conditions(
     conditions_dict: Dict[str, Any],
     parameter_rules: Optional[Dict[str, Dict]] = None,
-    scaling_factor: float = 0.13,  # Increased from 0.07 for more aggressive randomization
+    scaling_factor: float = 0.18,  # Increased from 0.13 for ultra-aggressive randomization
     seed: Optional[int] = None
 ) -> Dict[str, Any]:
     """
@@ -170,9 +170,9 @@ def get_default_parameter_rules() -> Dict[str, Dict]:
             "threshold_type": "safety"
         },
         "npsh_available": {
-            "scale_factor": 0.02,  # VERY CONSERVATIVE - reduced from 0.03
-            "min_value": 16.0,     # Well above 12.0 safety limit
-            "max_value": 25.0,
+            "scale_factor": 0.08,  # AGGRESSIVE - increased from 0.02 for NPSH exploration
+            "min_value": 13.0,     # Closer to danger zone (1m from 12.0 safety limit)
+            "max_value": 16.5,     # Reasonable upper bound
             "safety_limit": 12.0,
             "threshold_type": "safety",
             "safety_direction": "less_than"  # NPSH below 12m is dangerous

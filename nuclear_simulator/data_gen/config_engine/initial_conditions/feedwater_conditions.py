@@ -31,44 +31,35 @@ from typing import Dict, Any
 # Physics-based pump 1 conditions - ALL SCENARIOS WITH PROPER CALCULATIONS
 FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
     
-    # === OIL CHANGE SCENARIO ===
-    # SEAL WEAR → OIL CONTAMINATION PHYSICS:
-    # - Seal wear allows external contaminants to enter oil system
-    # - Leakage rate: seal_wear_percentage × 0.002 L/min per % wear
-    # - 8% seal wear → 0.016 L/min leakage → contamination increase
-    # - Contamination rate: base_rate + (seal_wear × 0.001 ppm/hour)
-    # - Target: 120 minutes = 0.010 ppm/hour × 2.0 hours = 2.2 ppm increase needed
+    # === OIL CHANGE SCENARIO - THERMAL RUNAWAY CHAIN ===
+    # Multi-system cascade: Heat → oil breakdown → contamination → seal wear → more contamination
     "oil_change": {
-        # === TARGET PARAMETER ===
-        "pump_oil_contamination": 14.5,                  # 15.2 - 0.7 = 14.5 (aggressive 30min buffer)
+        # === BASE DEGRADATION LAYER ===
+        "pump_oil_contamination": 12.8,                    # Moderate start, will accelerate via thermal/seal coupling
+        "seal_face_wear": [10.5, 0.1, 0.1, 0.1],         # High seal wear drives contamination
+        "motor_bearing_wear": [4.5, 0.1, 0.1, 0.0],      # Moderate wear creates heat
+        "pump_bearing_wear": [3.2, 0.1, 0.1, 0.0],       # Moderate wear creates vibration
+        "thrust_bearing_wear": [2.1, 0.1, 0.1, 0.0],     # Moderate wear contributes to system stress
         
-        # === SEAL WEAR CONTAMINATION DRIVER ===
-        "seal_face_wear": [12.0, 0.1, 0.1, 0.1],        # FWP-1 aggressive seal wear drives contamination
+        # === ACCELERATING CONDITIONS LAYER ===
+        "oil_temperature": 72.0,                          # High temp accelerates breakdown + seal wear
+        "motor_temperature": [95.0, 30.0, 30.0, 25.0],   # High electrical load creates heat (35°C safety margin)
+        "bearing_temperatures": [82.0, 30.0, 30.0, 25.0], # Heat from friction (38°C safety margin)
+        "pump_oil_water_content": 0.072,                  # Moisture accelerates oil breakdown
+        "pump_oil_acid_number": 1.48,                     # Acidity accelerates seal + bearing wear
+        "pump_vibrations": [12.5, 1.0, 1.0, 0.0],        # Vibration from bearing wear
         
-        # Supporting conditions that accelerate both seal wear AND contamination
-        "pump_oil_water_content": 0.075,                 # Moisture accelerates both seal wear and contamination
-        "pump_oil_acid_number": 1.5,                     # Acidity accelerates both processes
-        "oil_temperature": 58.0,                         # Heat accelerates both seal degradation and oil breakdown
+        # === NPSH CHALLENGE LAYER ===
+        "npsh_available": [14.2, 20.0, 20.0, 20.0],      # 2.2m from danger zone - moderate cavitation potential
+        "feedwater_temperature": 242.0,                   # Higher vapor pressure reduces NPSH margin
+        "suction_pressure": 0.38,                         # Lower suction pressure
+        "discharge_pressure": 8.3,                        # Higher discharge pressure
+        "pump_flows": [585.0, 500.0, 500.0, 0.0],        # Higher flow increases NPSH requirement
         
-        # Conditions that create seal wear (leading to contamination increase)
-        "pump_vibrations": [8.0, 1.0, 1.0, 0.0],        # Vibration wears seals → contamination
-        "motor_temperature": [80.0, 30.0, 30.0, 25.0],   # Heat affects seal materials
-        "bearing_temperatures": [65.0, 30.0, 30.0, 25.0], # Heat from bearing friction
-        
-        # Supporting mechanical conditions
-        "motor_bearing_wear": [2.0, 0.1, 0.1, 0.0],      # Moderate wear contributing to vibration
-        "pump_bearing_wear": [1.5, 0.1, 0.1, 0.0],       # Moderate wear contributing to vibration
-        "thrust_bearing_wear": [1.0, 0.1, 0.1, 0.0],     # Moderate wear contributing to vibration
-        
-        # Oil system conditions
-        "pump_oil_levels": [88.0, 98.0, 98.0, 100.0],    # FWP-1 slightly lower from seal leakage
-        
-        # Hydraulic conditions (normal - not cavitation-driven)
-        "cavitation_intensity": [0.05, 0.01, 0.01, 0.01], # Low cavitation
-        "npsh_available": [27.0, 20.0, 20.0, 20.0],       # Increased NPSH margin for FWP-1 (12m+ safety margin)
-        "suction_pressure": 0.45,                          # Normal suction pressure
-        "discharge_pressure": 8.0,                         # Normal discharge pressure
-        "feedwater_temperature": 230.0,                    # Normal temperature
+        # === PHYSICS COUPLING EFFECTS ===
+        "cavitation_intensity": [0.12, 0.01, 0.01, 0.01], # Moderate cavitation accelerates seal wear
+        "impeller_wear": [1.8, 0.3, 0.3, 0.3],           # Pre-existing damage increases NPSH requirement
+        "pump_oil_levels": [86.5, 98.0, 98.0, 100.0],    # Lower from seal leakage
         
         # Steam generator conditions
         "sg_levels": [12.5, 12.5, 12.5],                  # Normal SG levels
@@ -76,10 +67,10 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
         "sg_steam_flows": [500.0, 500.0, 500.0],          # Normal steam flows
         "sg_steam_qualities": [0.99, 0.99, 0.99],         # Normal steam qualities
         
-        "description": "Oil contamination increase driven by seal wear - 120 min target",
+        "description": "Thermal runaway chain: Heat → oil breakdown → contamination → seal wear → more contamination",
         "expected_action": "oil_change",
         "target_pump": "FWP-1",
-        "physics_calculation": "8% seal wear → 0.016 L/min leakage → 0.010 ppm/hour contamination increase"
+        "physics_calculation": "Multi-system thermal cascade with 2.2m NPSH challenge"
     },
     
     # === OIL TOP-OFF SCENARIO ===
@@ -126,31 +117,46 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
         "physics_calculation": "0.5°C/hour × 1.67 hours = 0.8°C distance"
     },
     
-    # === MOTOR BEARING REPLACEMENT ===
-    # Base rate: 0.004%/hour (from code analysis)
-    # With electrical_load_factor^1.8 = 1.1^1.8 = 1.20x
-    # With speed_factor^2.0 = 1.05^2.0 = 1.10x
-    # Actual rate: 0.004 × 1.20 × 1.10 = 0.0053%/hour
-    # Target: 120 minutes = 0.0053 × 2.0 hours = 2.5% distance needed
+    # === MOTOR BEARING REPLACEMENT - ELECTRICAL STRESS CASCADE ===
+    # Multi-system cascade: High electrical load → heat → bearing wear → vibration → more wear
     "motor_bearing_replacement": {
-        "motor_bearing_wear": [7.8, 0.1, 0.1, 0.0],      # 8.5 - 0.7 = 7.8 (aggressive 30min buffer)
+        # === BASE DEGRADATION LAYER ===
+        "motor_bearing_wear": [6.8, 0.1, 0.1, 0.0],      # Moderate start, will accelerate via electrical stress
+        "pump_bearing_wear": [4.1, 0.1, 0.1, 0.0],       # Supporting wear creates vibration coupling
+        "thrust_bearing_wear": [2.3, 0.1, 0.1, 0.0],     # Supporting wear creates system stress
+        "seal_face_wear": [9.2, 0.1, 0.1, 0.1],          # Moderate seal wear
         
-        # Conditions that create electrical load acceleration
-        "motor_temperature": [82.0, 30.0, 30.0, 25.0],   # Elevated electrical load
-        "bearing_temperatures": [68.0, 30.0, 30.0, 25.0], # Heat from electrical losses
-        "pump_vibrations": [9.0, 1.0, 1.0, 0.0],         # Vibration from motor bearing wear (below 10.0 trip)
+        # === ACCELERATING CONDITIONS LAYER ===
+        "motor_temperature": [98.0, 30.0, 30.0, 25.0],   # High electrical load accelerates bearing wear 2x (32°C safety margin)
+        "bearing_temperatures": [85.0, 30.0, 30.0, 25.0], # Heat from electrical losses (35°C safety margin)
+        "oil_temperature": 74.0,                          # Heat reduces lubrication effectiveness
+        "pump_oil_contamination": 13.2,                   # Contamination reduces lubrication quality
+        "pump_vibrations": [14.8, 1.0, 1.0, 0.0],        # Vibration from bearing wear
         
-        # Safe values for other components
-        "pump_bearing_wear": [1.0, 0.1, 0.1, 0.0],       # Only FWP-1 has wear
-        "thrust_bearing_wear": [0.5, 0.1, 0.1, 0.0],     # Only FWP-1 has wear
-        "pump_oil_contamination": 10.0,                   # Safe system-wide
-        "pump_oil_levels": [90.0, 98.0, 98.0, 100.0],    # Only FWP-1 lower
+        # === NPSH CHALLENGE LAYER ===
+        "npsh_available": [13.9, 20.0, 20.0, 20.0],      # 1.9m from danger zone - creates cavitation stress
+        "feedwater_temperature": 244.0,                   # High temperature
+        "suction_pressure": 0.37,                         # Low suction pressure
+        "pump_flows": [592.0, 500.0, 500.0, 0.0],        # High flow creates hydraulic stress
+        "pump_speeds": [3720.0, 3600.0, 3600.0, 0.0],    # Overspeed creates electrical + mechanical stress
         
-        "description": "Motor bearing wear with electrical load acceleration - 100 min target",
+        # === PHYSICS COUPLING EFFECTS ===
+        "cavitation_intensity": [0.14, 0.01, 0.01, 0.01], # Cavitation creates additional vibration
+        "pump_oil_water_content": 0.068,                  # Moisture reduces lubrication effectiveness
+        "pump_oil_acid_number": 1.44,                     # Acidity accelerates bearing wear
+        "discharge_pressure": 8.4,                        # Higher discharge pressure
+        
+        # Steam generator conditions
+        "sg_levels": [12.5, 12.5, 12.5],                  # Normal SG levels
+        "sg_pressures": [6.895, 6.895, 6.895],            # Normal SG pressures
+        "sg_steam_flows": [500.0, 500.0, 500.0],          # Normal steam flows
+        "sg_steam_qualities": [0.99, 0.99, 0.99],         # Normal steam qualities
+        
+        "description": "Electrical stress cascade: High load → heat → bearing wear → vibration → more wear",
         "expected_action": "bearing_replacement",
         "component_id": "motor_bearings",
         "target_pump": "FWP-1",
-        "physics_calculation": "0.0015 × 1.32 × 1.09 = 0.0022%/hour × 1.67h = 0.004% distance"
+        "physics_calculation": "Multi-system electrical cascade with 1.9m NPSH challenge"
     },
     
     # === PUMP BEARING REPLACEMENT ===
