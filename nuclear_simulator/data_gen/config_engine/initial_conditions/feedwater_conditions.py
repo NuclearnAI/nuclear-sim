@@ -40,7 +40,7 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
     # - Target: 120 minutes = 0.010 ppm/hour × 2.0 hours = 2.2 ppm increase needed
     "oil_change": {
         # === TARGET PARAMETER ===
-        "pump_oil_contamination": 9.0,                   # 15.2 - 6.2 = 9.0 (balanced 2.5+ hour buffer)
+        "pump_oil_contamination": 14.5,                  # 15.2 - 0.7 = 14.5 (aggressive 30min buffer)
         
         # === SEAL WEAR CONTAMINATION DRIVER ===
         "seal_face_wear": [12.0, 0.1, 0.1, 0.1],        # FWP-1 aggressive seal wear drives contamination
@@ -88,7 +88,7 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
     # 4.32 L / 150 L reservoir × 100% = 2.88% oil level loss
     # Initial level needed: 60.0% + 2.88% = 62.88%
     "oil_top_off": {
-        "pump_oil_levels": [60.9, 98.0, 98.0, 100.0],    # 60.0 + 2.9 buffer for 180 min
+        "pump_oil_levels": [60.3, 98.0, 98.0, 100.0],    # 60.0 + 0.3 = 60.3 (aggressive 15min buffer)
         "seal_face_wear": [12.0, 0.1, 0.1, 0.1],         # Moderate seal wear causing leakage
         
         # Safe values for other parameters
@@ -133,7 +133,7 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
     # Actual rate: 0.004 × 1.20 × 1.10 = 0.0053%/hour
     # Target: 120 minutes = 0.0053 × 2.0 hours = 2.5% distance needed
     "motor_bearing_replacement": {
-        "motor_bearing_wear": [3.0, 0.1, 0.1, 0.0],      # 8.5 - 5.5 = 3.0 (balanced 2.5+ hour buffer)
+        "motor_bearing_wear": [7.8, 0.1, 0.1, 0.0],      # 8.5 - 0.7 = 7.8 (aggressive 30min buffer)
         
         # Conditions that create electrical load acceleration
         "motor_temperature": [82.0, 30.0, 30.0, 25.0],   # Elevated electrical load
@@ -158,7 +158,7 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
     # Target: Physics-driven wear progression from initial conditions to 6.5% threshold
     "pump_bearing_replacement": {
         # === TARGET PARAMETER - Below threshold, will increase via physics ===
-        "pump_bearing_wear": [1.5, 0.1, 0.1, 0.0],         # 6.0 - 4.5 = 1.5 (balanced 3+ hour buffer)
+        "pump_bearing_wear": [5.2, 0.1, 0.1, 0.0],         # 6.0 - 0.8 = 5.2 (aggressive 45min buffer)
         
         # === SUSTAINABLE CAVITATION SUPPORT CONDITIONS ===
         # DO NOT set cavitation_intensity directly - let physics calculate it
@@ -220,7 +220,7 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
     # Actual rate: 0.008 × 1.38 = 0.011%/hour
     # Target: 120 minutes = 0.011 × 2.0 hours = 1.5% distance needed
     "thrust_bearing_replacement": {
-        "thrust_bearing_wear": [1.2, 0.1, 0.1, 0.0],     # 4.0 - 2.8 = 1.2 (balanced 2+ hour buffer)
+        "thrust_bearing_wear": [3.4, 0.1, 0.1, 0.0],     # 4.0 - 0.6 = 3.4 (aggressive 30min buffer)
         
         # Conditions that create high axial loads
         "pump_flows": [580.0, 500.0, 500.0, 0.0],        # High flow = high axial thrust for FWP-1
@@ -265,7 +265,7 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
     # Target: cavitation_intensity = 0.20 → 6.0x seal acceleration → 150 min trigger
     "seal_replacement": {
         # === TARGET PARAMETER ===
-        "seal_face_wear": [15.7, 0.1, 0.1, 0.1],         # 16.0 - 0.3 = 15.7 (close to threshold)
+        "seal_face_wear": [15.85, 0.1, 0.1, 0.1],        # 16.0 - 0.15 = 15.85 (aggressive 15min buffer)
         
         # === CAVITATION PHYSICS PACKAGE ===
         "cavitation_intensity": [0.20, 0.05, 0.05, 0.05], # Target intensity for FWP-1

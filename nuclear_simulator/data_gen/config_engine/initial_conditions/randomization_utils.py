@@ -13,7 +13,7 @@ import copy
 def add_randomness_to_conditions(
     conditions_dict: Dict[str, Any],
     parameter_rules: Optional[Dict[str, Dict]] = None,
-    scaling_factor: float = 0.07,  # Reduced from 0.1 for more conservative randomization
+    scaling_factor: float = 0.13,  # Increased from 0.07 for more aggressive randomization
     seed: Optional[int] = None
 ) -> Dict[str, Any]:
     """
@@ -126,9 +126,9 @@ def get_default_parameter_rules() -> Dict[str, Dict]:
     return {
         # === MAINTENANCE PARAMETERS (we want to trigger these) ===
         "pump_oil_contamination": {
-            "scale_factor": 0.05,
-            "min_value": 12.0,
-            "max_value": 18.0,
+            "scale_factor": 0.03,  # Tight - close to threshold
+            "min_value": 13.5,
+            "max_value": 15.1,     # Just below 15.2 threshold
             "target_threshold": 15.2,
             "threshold_type": "maintenance"
         },
@@ -170,8 +170,8 @@ def get_default_parameter_rules() -> Dict[str, Dict]:
             "threshold_type": "safety"
         },
         "npsh_available": {
-            "scale_factor": 0.03,
-            "min_value": 13.0,  # 1m above 12m CRITICAL TRIP
+            "scale_factor": 0.02,  # VERY CONSERVATIVE - reduced from 0.03
+            "min_value": 16.0,     # Well above 12.0 safety limit
             "max_value": 25.0,
             "safety_limit": 12.0,
             "threshold_type": "safety",
@@ -269,7 +269,7 @@ ACTION_SCENARIOS = {
     "motor_bearing_replacement": [
         {
             "name": "critical_wear",
-            "probability": 0.5,
+            "probability": 0.65,  # Increased from 0.5
             "description": "Very high wear with high stress - almost certain 12hr trigger (targets 8.5 threshold)",
             "parameters": {
                 "motor_bearing_wear": {"range": [8.45, 8.49], "distribution": "uniform", "array_handling": "first_element_only"},
@@ -926,7 +926,7 @@ except ImportError:
 def get_randomized_feedwater_conditions(
     action: str,
     seed: Optional[int] = None,
-    scaling_factor: float = 0.07  # Reduced from 0.1 for more conservative randomization
+    scaling_factor: float = 0.13  # Increased from 0.07 for more aggressive randomization
 ) -> Dict[str, Any]:
     """
     Get randomized conditions for a specific feedwater action using scenario-based approach
