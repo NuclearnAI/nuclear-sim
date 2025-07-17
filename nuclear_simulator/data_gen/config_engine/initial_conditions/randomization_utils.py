@@ -612,7 +612,7 @@ ACTION_SCENARIOS = {
                 "seal_face_wear": {"range": [15.6, 15.8], "distribution": "uniform", "array_handling": "first_element_only"},
                 
                 # === CAVITATION PHYSICS PACKAGE ===
-                "cavitation_intensity": {"range": [0.18, 0.22], "distribution": "uniform", "array_handling": "first_element_only"},
+                "cavitation_intensity": {"range": [0.08, 0.12], "distribution": "uniform", "array_handling": "first_element_only"},
                 
                 # Pre-existing damage to increase NPSH requirements - REDUCED for 2+ hour delays
                 "impeller_cavitation_damage": {"range": [0.8, 1.5], "distribution": "uniform", "array_handling": "first_element_only"},
@@ -665,7 +665,7 @@ ACTION_SCENARIOS = {
                 "seal_face_wear": {"range": [15.4, 15.6], "distribution": "uniform", "array_handling": "first_element_only"},
                 
                 # === CAVITATION PHYSICS PACKAGE ===
-                "cavitation_intensity": {"range": [0.15, 0.20], "distribution": "uniform", "array_handling": "first_element_only"},
+                "cavitation_intensity": {"range": [0.06, 0.10], "distribution": "uniform", "array_handling": "first_element_only"},
                 
                 # Pre-existing damage to increase NPSH requirements - REDUCED for 2+ hour delays
                 "impeller_cavitation_damage": {"range": [0.6, 1.2], "distribution": "uniform", "array_handling": "first_element_only"},
@@ -718,7 +718,7 @@ ACTION_SCENARIOS = {
                 "seal_face_wear": {"range": [15.2, 15.4], "distribution": "uniform", "array_handling": "first_element_only"},
                 
                 # === CAVITATION PHYSICS PACKAGE ===
-                "cavitation_intensity": {"range": [0.12, 0.18], "distribution": "uniform", "array_handling": "first_element_only"},
+                "cavitation_intensity": {"range": [0.05, 0.08], "distribution": "uniform", "array_handling": "first_element_only"},
                 
                 # Pre-existing damage to increase NPSH requirements - REDUCED for 2+ hour delays
                 "impeller_cavitation_damage": {"range": [0.5, 1.0], "distribution": "uniform", "array_handling": "first_element_only"},

@@ -57,7 +57,7 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
         "pump_flows": [585.0, 500.0, 500.0, 0.0],        # Higher flow increases NPSH requirement
         
         # === PHYSICS COUPLING EFFECTS ===
-        "cavitation_intensity": [0.12, 0.01, 0.01, 0.01], # Moderate cavitation accelerates seal wear
+        "cavitation_intensity": [0.08, 0.01, 0.01, 0.01], # Conservative cavitation accelerates seal wear (safe from trips)
         "impeller_wear": [1.8, 0.3, 0.3, 0.3],           # Pre-existing damage increases NPSH requirement
         "pump_oil_levels": [86.5, 98.0, 98.0, 100.0],    # Lower from seal leakage
         
@@ -141,7 +141,7 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
         "pump_speeds": [3720.0, 3600.0, 3600.0, 0.0],    # Overspeed creates electrical + mechanical stress
         
         # === PHYSICS COUPLING EFFECTS ===
-        "cavitation_intensity": [0.14, 0.01, 0.01, 0.01], # Cavitation creates additional vibration
+        "cavitation_intensity": [0.06, 0.01, 0.01, 0.01], # Conservative cavitation creates additional vibration (safe from trips)
         "pump_oil_water_content": 0.068,                  # Moisture reduces lubrication effectiveness
         "pump_oil_acid_number": 1.44,                     # Acidity accelerates bearing wear
         "discharge_pressure": 8.4,                        # Higher discharge pressure
@@ -274,7 +274,7 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
         "seal_face_wear": [15.85, 0.1, 0.1, 0.1],        # 16.0 - 0.15 = 15.85 (aggressive 15min buffer)
         
         # === CAVITATION PHYSICS PACKAGE ===
-        "cavitation_intensity": [0.20, 0.05, 0.05, 0.05], # Target intensity for FWP-1
+        "cavitation_intensity": [0.12, 0.05, 0.05, 0.05], # Conservative intensity for FWP-1 (safe from trips)
         
         # Pre-existing damage to increase NPSH requirements
         "impeller_cavitation_damage": [1.0, 0.1, 0.1, 0.1], # Reduced damage for proper 2+ hour timing
