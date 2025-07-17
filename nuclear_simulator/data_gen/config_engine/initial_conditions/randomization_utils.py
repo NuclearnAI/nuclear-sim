@@ -170,9 +170,9 @@ def get_default_parameter_rules() -> Dict[str, Dict]:
             "threshold_type": "safety"
         },
         "npsh_available": {
-            "scale_factor": 0.08,  # AGGRESSIVE - increased from 0.02 for NPSH exploration
-            "min_value": 13.0,     # Closer to danger zone (1m from 12.0 safety limit)
-            "max_value": 16.5,     # Reasonable upper bound
+            "scale_factor": 0.03,  # CONSERVATIVE - reduced from 0.08 to prevent trips
+            "min_value": 18.0,     # Much safer - 6m above 12.0 safety limit
+            "max_value": 22.0,     # Conservative upper bound
             "safety_limit": 12.0,
             "threshold_type": "safety",
             "safety_direction": "less_than"  # NPSH below 12m is dangerous
