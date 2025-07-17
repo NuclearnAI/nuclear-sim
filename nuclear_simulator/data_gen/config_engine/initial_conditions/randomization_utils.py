@@ -312,8 +312,8 @@ ACTION_SCENARIOS = {
                 "pump_bearing_wear": {"range": [5.6, 5.8], "distribution": "uniform", "array_handling": "first_element_only"},
                 
                 # === SUSTAINABLE CAVITATION SUPPORT CONDITIONS ===
-                # Safe NPSH margin to avoid immediate trips
-                "npsh_available": {"range": [19.0, 21.0], "distribution": "uniform", "array_handling": "first_element_only"},
+                # Cavitation-inducing NPSH range (matches motor_bearing_replacement approach)
+                "npsh_available": {"range": [13.5, 14.5], "distribution": "uniform", "array_handling": "first_element_only"},
                 
                 # System conditions that create moderate NPSH deficit
                 "suction_pressure": {"range": [0.39, 0.41], "distribution": "uniform"},
@@ -374,8 +374,8 @@ ACTION_SCENARIOS = {
                 "pump_bearing_wear": {"range": [5.5, 5.7], "distribution": "uniform", "array_handling": "first_element_only"},
                 
                 # === SUSTAINABLE CAVITATION SUPPORT CONDITIONS ===
-                # Moderate NPSH margin for sustained cavitation
-                "npsh_available": {"range": [15.8, 16.2], "distribution": "uniform", "array_handling": "first_element_only"},
+                # Moderate NPSH margin for sustained cavitation (cavitation-inducing range)
+                "npsh_available": {"range": [14.0, 15.0], "distribution": "uniform", "array_handling": "first_element_only"},
                 
                 # System conditions that create moderate NPSH deficit
                 "suction_pressure": {"range": [0.40, 0.42], "distribution": "uniform"},
@@ -433,8 +433,8 @@ ACTION_SCENARIOS = {
                 "pump_bearing_wear": {"range": [5.4, 5.6], "distribution": "uniform", "array_handling": "first_element_only"},
                 
                 # === SUSTAINABLE CAVITATION SUPPORT CONDITIONS ===
-                # Mild NPSH margin for sustained cavitation
-                "npsh_available": {"range": [16.2, 16.8], "distribution": "uniform", "array_handling": "first_element_only"},
+                # Mild NPSH margin for sustained cavitation (still cavitation-inducing)
+                "npsh_available": {"range": [15.0, 16.0], "distribution": "uniform", "array_handling": "first_element_only"},
                 
                 # System conditions that create mild NPSH deficit
                 "suction_pressure": {"range": [0.41, 0.43], "distribution": "uniform"},

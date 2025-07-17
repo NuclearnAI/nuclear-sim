@@ -179,7 +179,7 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
         "cavitation_intensity": [0.12, 0.02, 0.02, 0.02],   # Moderate intensity for gradual buildup
         
         # NPSH conditions for sustained cavitation calculation
-        "npsh_available": [20.0, 22.0, 22.0, 22.0],         # Increased NPSH margin for FWP-1 (5m+ safety margin)
+        "npsh_available": [13.9, 20.0, 20.0, 20.0],         # Reduced NPSH for FWP-1 to enable cavitation (matches motor_bearing_replacement)
         
         # System conditions that reduce NPSH available and promote cavitation
         "suction_pressure": 0.40,                           # Reduced suction pressure
