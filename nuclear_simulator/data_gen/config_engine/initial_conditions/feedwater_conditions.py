@@ -164,17 +164,19 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
     # Target: Physics-driven wear progression from initial conditions to 6.5% threshold
     "pump_bearing_replacement": {
         # === TARGET PARAMETER - Below threshold, will increase via physics ===
-        "pump_bearing_wear": [5.2, 0.1, 0.1, 0.0],         # 6.0 - 0.8 = 5.2 (aggressive 45min buffer)
+        "pump_bearing_wear": [4.0, 0.1, 0.1, 0.0],         # Further from threshold for gradual buildup
         
         # === SUSTAINABLE CAVITATION SUPPORT CONDITIONS ===
-        # DO NOT set cavitation_intensity directly - let physics calculate it
-        # Instead, create conditions that will result in sustained cavitation
+        # Start with zero cavitation damage for gradual physics buildup
         
-        # Pre-existing damage that increases NPSH requirements and sustains cavitation
-        "impeller_cavitation_damage": [0.2, 0.1, 0.1, 0.1], # Conservative damage for balanced timing
+        # Start with zero damage that will build up via cavitation physics
+        "impeller_cavitation_damage": [0.0, 0.1, 0.1, 0.1], # Start clean - let physics build it up
         "impeller_wear": [1.2, 0.3, 0.3, 0.3],              # Conservative wear for balanced timing
         "motor_bearing_wear": [3.5, 0.1, 0.1, 0.0],         # Moderate motor bearing wear
         "thrust_bearing_wear": [1.8, 0.1, 0.1, 0.0],        # Moderate thrust bearing wear
+        
+        # Set moderate cavitation intensity for gradual damage buildup
+        "cavitation_intensity": [0.12, 0.02, 0.02, 0.02],   # Moderate intensity for gradual buildup
         
         # NPSH conditions for sustained cavitation calculation
         "npsh_available": [20.0, 22.0, 22.0, 22.0],         # Increased NPSH margin for FWP-1 (5m+ safety margin)
@@ -271,13 +273,13 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
     # Target: cavitation_intensity = 0.20 → 6.0x seal acceleration → 150 min trigger
     "seal_replacement": {
         # === TARGET PARAMETER ===
-        "seal_face_wear": [15.85, 0.1, 0.1, 0.1],        # 16.0 - 0.15 = 15.85 (aggressive 15min buffer)
+        "seal_face_wear": [12.0, 0.1, 0.1, 0.1],         # Further from 16.0 threshold for gradual buildup
         
         # === CAVITATION PHYSICS PACKAGE ===
-        "cavitation_intensity": [0.12, 0.05, 0.05, 0.05], # Conservative intensity for FWP-1 (safe from trips)
+        "cavitation_intensity": [0.15, 0.05, 0.05, 0.05], # Increased intensity for faster seal acceleration
         
-        # Pre-existing damage to increase NPSH requirements
-        "impeller_cavitation_damage": [1.0, 0.1, 0.1, 0.1], # Reduced damage for proper 2+ hour timing
+        # Start with zero damage for gradual physics buildup
+        "impeller_cavitation_damage": [0.0, 0.1, 0.1, 0.1], # Start clean - let physics build it up
         "impeller_wear": [3.0, 0.3, 0.3, 0.3],              # Reduced wear for proper 2+ hour timing
         "motor_bearing_wear": [4.0, 0.1, 0.1, 0.0],         # +0.2m NPSH penalty
         "pump_bearing_wear": [3.0, 0.1, 0.1, 0.0],          # +0.15m NPSH penalty

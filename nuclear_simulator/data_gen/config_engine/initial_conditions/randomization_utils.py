@@ -308,14 +308,14 @@ ACTION_SCENARIOS = {
             "probability": 0.5,
             "description": "Aggressive pump bearing wear acceleration - 6hr trigger via physics progression",
             "parameters": {
-                # === TARGET PARAMETER - Close to threshold but not there yet ===
-                "pump_bearing_wear": {"range": [5.9, 6.1], "distribution": "uniform", "array_handling": "first_element_only"},
+                # === TARGET PARAMETER - Further from threshold for gradual buildup ===
+                "pump_bearing_wear": {"range": [3.5, 4.5], "distribution": "uniform", "array_handling": "first_element_only"},
                 
                 # === SUSTAINABLE CAVITATION SUPPORT CONDITIONS ===
-                # Tight NPSH margin for sustained cavitation
-                "npsh_available": {"range": [15.2, 15.8], "distribution": "uniform", "array_handling": "first_element_only"},
+                # Safe NPSH margin to avoid immediate trips
+                "npsh_available": {"range": [19.0, 21.0], "distribution": "uniform", "array_handling": "first_element_only"},
                 
-                # System conditions that create sustained NPSH deficit
+                # System conditions that create moderate NPSH deficit
                 "suction_pressure": {"range": [0.39, 0.41], "distribution": "uniform"},
                 "feedwater_temperature": {"range": [244, 248], "distribution": "uniform"},
                 "discharge_pressure": {"range": [8.45, 8.55], "distribution": "uniform"},
@@ -324,9 +324,12 @@ ACTION_SCENARIOS = {
                 "pump_flows": {"range": [585, 595], "distribution": "uniform", "array_handling": "first_element_only"},
                 "pump_speeds": {"range": [3690, 3710], "distribution": "uniform", "array_handling": "first_element_only"},
                 
-                # Pre-existing damage that sustains cavitation and creates coupling - REDUCED for 2+ hour delays
-                "impeller_cavitation_damage": {"range": [1.0, 2.5], "distribution": "uniform", "array_handling": "first_element_only"},
-                "impeller_wear": {"range": [2.0, 4.0], "distribution": "uniform", "array_handling": "first_element_only"},
+                # Start with zero damage for gradual physics buildup
+                "impeller_cavitation_damage": {"range": [0.0, 0.0], "distribution": "uniform", "array_handling": "first_element_only"},
+                "impeller_wear": {"range": [1.0, 2.0], "distribution": "uniform", "array_handling": "first_element_only"},
+                
+                # Increased cavitation intensity for faster buildup
+                "cavitation_intensity": {"range": [0.10, 0.15], "distribution": "uniform", "array_handling": "first_element_only"},
                 
                 # System stress for hydraulic load amplification
                 "sg_levels": {"range": [12.1, 12.3], "distribution": "uniform", "array_handling": "preserve_pattern"},
@@ -614,8 +617,8 @@ ACTION_SCENARIOS = {
                 # === CAVITATION PHYSICS PACKAGE ===
                 "cavitation_intensity": {"range": [0.08, 0.12], "distribution": "uniform", "array_handling": "first_element_only"},
                 
-                # Pre-existing damage to increase NPSH requirements - REDUCED for 2+ hour delays
-                "impeller_cavitation_damage": {"range": [0.8, 1.5], "distribution": "uniform", "array_handling": "first_element_only"},
+                # Start with zero damage for gradual physics buildup
+                "impeller_cavitation_damage": {"range": [0.0, 0.0], "distribution": "uniform", "array_handling": "first_element_only"},
                 "impeller_wear": {"range": [1.5, 3.0], "distribution": "uniform", "array_handling": "first_element_only"},
                 "motor_bearing_wear": {"range": [3.5, 4.5], "distribution": "uniform", "array_handling": "first_element_only"},
                 "pump_bearing_wear": {"range": [2.5, 3.5], "distribution": "uniform", "array_handling": "first_element_only"},

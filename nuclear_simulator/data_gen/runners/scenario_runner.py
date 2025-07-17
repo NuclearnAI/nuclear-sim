@@ -164,15 +164,15 @@ class ScenarioRunner:
                 if self.verbose:
                     print(f"   📋 Action {i+1}/{len(actions)} ({action}): {len(conditions)} parameters")
             
-            # 2. Take average overlapping parameters
-            averaged_conditions = self._average_initial_conditions(individual_conditions)
+            # 2. Take maximum overlapping parameters
+            maxed_conditions = self._max_initial_conditions(individual_conditions)
             
             if self.verbose:
-                print(f"   🔀 Averaged conditions: {len(averaged_conditions)} parameters")
+                print(f"   🔀 Maxed conditions: {len(maxed_conditions)} parameters")
             
-            # 3. Create combined configuration using averaged conditions
+            # 3. Create combined configuration using maxed conditions
             combined_config = self._create_combined_config(
-                actions, averaged_conditions, duration_hours, plant_name
+                actions, maxed_conditions, duration_hours, plant_name
             )
             
             if self.verbose:
