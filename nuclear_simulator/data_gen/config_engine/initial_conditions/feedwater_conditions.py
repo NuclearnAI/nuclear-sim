@@ -164,7 +164,7 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
     # Target: Physics-driven wear progression from initial conditions to 6.5% threshold
     "pump_bearing_replacement": {
         # === TARGET PARAMETER - Below threshold, will increase via physics ===
-        "pump_bearing_wear": [5.7, 0.1, 0.1, 0.0],         # 0.8% away from 6.5% threshold for reliable triggering
+        "pump_bearing_wear": [6.3, 0.1, 0.1, 0.0],         # 0.8% away from 6.5% threshold for reliable triggering
         
         # === SUSTAINABLE CAVITATION SUPPORT CONDITIONS ===
         # Start with zero cavitation damage for gradual physics buildup
@@ -191,8 +191,8 @@ FEEDWATER_CONDITIONS: Dict[str, Dict[str, Any]] = {
         "pump_speeds": [3700.0, 3600.0, 3600.0, 0.0],      # FWP-1 higher speed = higher NPSH requirement
         
         # Supporting conditions for bearing wear acceleration
-        "oil_temperature": 68.0,                            # High oil temperature
-        "pump_oil_contamination": 14.0,                     # Below 15.2 maintenance threshold
+        "oil_temperature": 62.0,                            # High oil temperature
+        "pump_oil_contamination": 13.0,                     # Below 15.2 maintenance threshold
         "pump_oil_water_content": 0.065,                    # Moderate moisture
         "pump_oil_acid_number": 1.4,                        # Moderate acidity
         

@@ -309,7 +309,7 @@ ACTION_SCENARIOS = {
             "description": "Aggressive pump bearing wear acceleration - 6hr trigger via physics progression",
             "parameters": {
                 # === TARGET PARAMETER - 0.8% away from 6.5% threshold ===
-                "pump_bearing_wear": {"range": [5.6, 5.8], "distribution": "uniform", "array_handling": "first_element_only"},
+                "pump_bearing_wear": {"range": [6.0, 6.2], "distribution": "uniform", "array_handling": "first_element_only"},
                 
                 # === SUSTAINABLE CAVITATION SUPPORT CONDITIONS ===
                 # Cavitation-inducing NPSH range (matches motor_bearing_replacement approach)

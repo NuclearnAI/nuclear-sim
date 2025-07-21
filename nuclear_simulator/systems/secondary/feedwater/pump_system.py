@@ -580,11 +580,6 @@ class FeedwaterPump(BasePump):
             # Accumulate cavitation time (dt is in minutes)
             self.state.cavitation_time += dt * 60.0  # Convert minutes to seconds
             
-            # Calculate damage accumulation (exponential with intensity)
-            if self.state.cavitation_intensity > 0.1:
-                damage_rate = (self.state.cavitation_intensity ** 2) * dt / 60.0  # Convert minutes to hours for damage rate
-                self.state.cavitation_damage += damage_rate
-                
             # Calculate acoustic signature (noise increase)
             self.state.cavitation_noise_level = 20.0 + self.state.cavitation_intensity * 30.0
             
@@ -599,6 +594,11 @@ class FeedwaterPump(BasePump):
             
             # Cavitation time decays slowly when not cavitating
             self.state.cavitation_time = max(0.0, self.state.cavitation_time - dt * 6.0)
+        
+        # Calculate damage accumulation (continuous, no threshold)
+        # Any level of cavitation contributes to damage - matches real pump physics
+        damage_rate = (self.state.cavitation_intensity ** 2) * dt / 60.0  # Convert minutes to hours for damage rate
+        self.state.cavitation_damage += damage_rate
     
     def _simulate_mechanical_wear(self, dt: float, system_conditions: Dict):
         """
