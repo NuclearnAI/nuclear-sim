@@ -46,5 +46,8 @@ __all__ = [
     # Submodules (for advanced users)
     "simulator",
     "systems", 
-    "data_gen"
+    "data_gen",
+
+    # Sandbox (experimental features)
+    "sandbox",
 ]
