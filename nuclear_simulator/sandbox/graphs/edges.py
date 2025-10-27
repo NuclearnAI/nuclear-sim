@@ -5,88 +5,57 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from typing import Any, Optional
     from nuclear_simulator.sandbox.graphs.nodes import Node
-    from nuclear_simulator.sandbox.graphs.controllers import Signal
 
 # Import libraries
-from abc import ABC, abstractmethod
+from abc import abstractmethod
+from nuclear_simulator.sandbox.graphs.components import Component
 
 
 # Make an abstract base class for graph edges
-class Edge(ABC):
+class Edge(Component):
     """
     Abstract base class for graph edges.
-                ...
     """
 
-    # Define attributes
-    id: int
+    # Define class-level attributes
+    _BASE_FIELDS = tuple([
+        *Component._BASE_FIELDS,
+        "flows", 
+        "node_source", 
+        "node_target", 
+    ])
+
+    # Define instance attributes
     flows: dict[str, float] | None
     node_source: Node
     node_target: Node
-    signals_incoming: list[Signal]
-    signals_outgoing: list[Signal]
-
-    # Set fields that are not part of state
-    _BASE_FIELDS = [
-        "id", 
-        "flows",
-        "node_source", 
-        "node_target",
-        "signals_incoming", 
-        "signals_outgoing", 
-    ]
 
     def __init__(
             self,
-            id: int,
             node_source: Node,
             node_target: Node,
+            id: Optional[int] = None,
+            name: Optional[str] = None,
             **kwargs: Any
         ) -> None:
 
+        # Initialize base Component attributes
+        super().__init__(id=id, name=name, **kwargs)
+
         # Set attributes
-        self.id = id
+        self.flows = None  # Set to None until calculated
         self.node_source = node_source
         self.node_target = node_target
-        self.flows = None  # Set to None until calculated
-
-        # Validate extra kwargs against annotated state fields
-        required_vars = self.get_fields()
-        missing_keys = [k for k in required_vars if k not in kwargs]
-        extra_keys   = [k for k in kwargs if k not in required_vars]
-        if missing_keys:
-            raise KeyError(f"State variable(s) {missing_keys} missing in edge init kwargs")
-        if extra_keys:
-            raise KeyError(f"Edge init contains unknown variable(s) {extra_keys}")
-
-        # Set state variables as attributes
-        for k, v in kwargs.items():
-            setattr(self, k, v)
 
         # Link to nodes
         self.node_source.edges_outgoing.append(self)
         self.node_target.edges_incoming.append(self)
 
-        # Initialize signal lists
-        self.signals_incoming: list[Signal] = []
-        self.signals_outgoing: list[Signal] = []
+        # Done
+        return
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}[{self.node_source.id} -> {self.node_target.id}]"
-    
-    @property
-    def state(self) -> dict[str, Any]:
-        """Return current state as a dict of annotated fields."""
-        return {k: getattr(self, k) for k in self.get_fields()}
-
-    @classmethod
-    def get_fields(cls) -> list[str]:
-        """Return annotated state fields, excluding base attributes."""
-        fields = [f for f in cls.__annotations__.keys() if f not in cls._BASE_FIELDS]
-        return sorted(fields)
-    
-
-    # --- Step update methods ---
 
     def update(self, dt: float) -> None:
         """
@@ -98,8 +67,8 @@ class Edge(ABC):
             Updates self.flows with calculated flow values.
         """
         self.update_from_signals(dt)
-        self.update_from_state(dt)
         self.update_from_nodes(dt)
+        self.update_from_state(dt)
         return
 
     def update_from_signals(self, dt: float) -> None:
@@ -149,11 +118,11 @@ def test_file():
     # Define a test edge class
     class TestEdge(Edge):
         def calculate_flows(self, dt: float, node_source: Node, node_target: Node) -> dict[str, float]:
-            return {"a": dt * (node_source.a - node_target.a) / 2}
+            return {"a": (node_source.a - node_target.a) / 2}
     # Create nodes and edge
-    node1 = TestNode(id=1, name="Node1", a=10.0, b=5)
-    node2 = TestNode(id=2, name="Node2", a=20.0, b=10)
-    edge = TestEdge(id=1, node_source=node1, node_target=node2)
+    node1 = TestNode(name="Node1", a=10.0, b=5)
+    node2 = TestNode(name="Node2", a=20.0, b=10)
+    edge = TestEdge(node_source=node1, node_target=node2)
     # Print initial states
     print(f"Node1 state: {node1.state}")
     print(f"Node2 state: {node2.state}")

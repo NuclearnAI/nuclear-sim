@@ -10,15 +10,6 @@ if TYPE_CHECKING:
 from abc import ABC
 
 
-# Define component base fields
-COMPONENT_BASE_FIELDS = [
-    "id", 
-    "name", 
-    "signals_incoming", 
-    "signals_outgoing", 
-]
-
-
 # Make an abstract base class for graph components
 class Component(ABC):
     """
@@ -27,7 +18,12 @@ class Component(ABC):
 
     # Define class-level attributes
     _id_counter: int = 0
-    _BASE_FIELDS: list[str] = COMPONENT_BASE_FIELDS
+    _BASE_FIELDS: tuple[str, ...] = tuple([
+        "id", 
+        "name", 
+        "signals_incoming", 
+        "signals_outgoing", 
+    ])
 
     # Define instance attributes
     id: int
@@ -37,15 +33,18 @@ class Component(ABC):
 
     def __init__(
             self,
+            id: Optional[int] = None,
             name: Optional[str] = None,
             **kwargs: Any
         ) -> None:
 
-        # Add id
-        self.id = Component._id_counter
-        Component._id_counter += 1
+        # Get default id
+        if id is None:
+            id = Component._id_counter
+            Component._id_counter += 1
         
         # Set attributes
+        self.id = id
         self.name = name
 
         # Validate state variables match the state dictionary
@@ -79,7 +78,12 @@ class Component(ABC):
     @classmethod
     def get_fields(cls) -> list[str]:
         """Return annotated state fields, excluding base attributes."""
-        fields = [k for k in cls.__annotations__ if k not in cls._BASE_FIELDS and not k.startswith('_')]
+        fields: set[str] = set()
+        for base in cls.__mro__:
+            anns = getattr(base, "__annotations__", {})
+            for k in anns:
+                if not k.startswith("_") and k not in getattr(base, "_BASE_FIELDS", ()):
+                    fields.add(k)
         return sorted(fields)
 
     def update(self, dt: float) -> None:
@@ -87,3 +91,22 @@ class Component(ABC):
         raise NotImplementedError("Component update method not implemented")
 
 
+# Test
+def test_file():
+    # Create a child component class
+    class TestComponent(Component):
+        x: float
+        y: float
+        def update(self, dt: float) -> None:
+            self.x += dt
+            self.y += 2 * dt
+            return
+    # Instantiate
+    comp = TestComponent(name="test", x=0.0, y=0.0)
+    # Checks
+    print(comp.get_fields())
+    # Done
+    return
+if __name__ == "__main__":
+    test_file()
+    print("All tests passed!")

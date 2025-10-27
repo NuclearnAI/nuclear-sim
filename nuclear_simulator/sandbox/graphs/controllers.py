@@ -1,12 +1,15 @@
 
 # Annotation imports
 from __future__ import annotations
-from typing import Any
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from typing import Any, Optional
+    from nuclear_simulator.sandbox.graphs.nodes import Node
+    from nuclear_simulator.sandbox.graphs.edges import Edge
 
 # Import libraries
 from abc import ABC, abstractmethod
-from nuclear_simulator.sandbox.graphs.nodes import Node
-from nuclear_simulator.sandbox.graphs.edges import Edge
+from nuclear_simulator.sandbox.graphs.components import Component
 
 
 # Signal class
@@ -16,6 +19,7 @@ class Signal(ABC):
     """
 
     # Define attributes
+    payload: dict[str, Any]
     source_component: Node | Edge | Controller
     target_component: Node | Edge | Controller
 
@@ -25,15 +29,16 @@ class Signal(ABC):
             target_component: Node | Edge | Controller,
         ) -> None:
 
-        # Set attributes
-        self.source_component = source_component
-        self.target_component = target_component
-
         # Ensure that source xor target is a Controller
-        is_source_controller = isinstance(self.source_component, Controller)
-        is_target_controller = isinstance(self.target_component, Controller)
+        is_source_controller = isinstance(source_component, Controller)
+        is_target_controller = isinstance(target_component, Controller)
         if is_source_controller == is_target_controller:
             raise ValueError("Signal must connect a Controller to a Node or Edge")
+
+        # Set attributes
+        self.payload = {}  # Initialize empty payload
+        self.source_component = source_component
+        self.target_component = target_component
 
         # Link to endpoints
         self.source_component.signals_outgoing.append(self)
@@ -61,70 +66,46 @@ class Signal(ABC):
     
 
 # Controller class
-class Controller(ABC):
+class Controller(Component):
     """
     Special graph component that sends/receives control signals.
     """
 
-    # Add read and write lists to be defined by subclasses
-    READ_CONNECTIONS: list[str] = []
-    WRITE_CONNECTIONS: list[str] = []
+    # Define class-level attributes
+    REQUIRED_CONNECTIONS_READ: tuple[str] = tuple()
+    REQUIRED_CONNECTIONS_WRITE: tuple[str] = tuple()
+    _BASE_FIELDS = tuple([
+        *Component._BASE_FIELDS,
+        "REQUIRED_CONNECTIONS_READ",
+        "REQUIRED_CONNECTIONS_WRITE",
+        "connections_read",
+        "connections_write",
+    ])
 
-    # Define attributes
-    id: int
-    name: str | None
-    connections: dict[str, Signal]
-    signals_incoming: list[Signal]
-    signals_outgoing: list[Signal]
-
-    # Set fields that are not part of state
-    _BASE_FIELDS = [
-        "READ_CONNECTIONS",
-        "WRITE_CONNECTIONS",
-        "id", 
-        "name", 
-        "connections",
-        "signals_incoming", 
-        "signals_outgoing",
-    ]
+    # Define instance attributes
+    connections_read: dict[str, Signal]
+    connections_write: dict[str, Signal]
 
     def __init__(
             self,
-            id: int,
-            name: str | None = None,
+            id: Optional[int] = None,
+            name: Optional[str] = None,
             **kwargs: Any
         ) -> None:
 
-        # Set attributes
-        self.id = id
-        self.name = name
+        # Initialize base Component attributes
+        super().__init__(id=id, name=name, **kwargs)
 
-        # Initialize signal lists
-        self.connections: dict[str, Signal] = {k: None for k in self.READ_CONNECTIONS + self.WRITE_CONNECTIONS}
-        self.signals_incoming: list[Signal] = []
-        self.signals_outgoing: list[Signal] = []
+        # Initialize connections dictionaries
+        self.connections_read: dict[str, Signal] = {
+            k: None for k in self.REQUIRED_CONNECTIONS_READ 
+        }
+        self.connections_write: dict[str, Signal] = {
+            k: None for k in self.REQUIRED_CONNECTIONS_WRITE
+        }
 
-        # Validate state variables match the state dictionary
-        required_vars = self.get_fields()
-        missing_keys = [key for key in required_vars if key not in kwargs]
-        extra_keys   = [key for key in kwargs if key not in required_vars]
-        if missing_keys:
-            raise KeyError(f"State variable(s) {missing_keys} missing in state dictionary")
-        if extra_keys:
-            raise KeyError(f"State dictionary contains unknown variable(s) {extra_keys}")
-        
-        # Set state variables
-        for k, v in kwargs.items():
-            setattr(self, k, v)
-
-    def __repr__(self) -> str:
-        return f"{self.__class__.__name__}({self.name})"
-
-    @classmethod
-    def get_fields(cls) -> list[str]:
-        """Return annotated state fields, excluding base attributes."""
-        fields = [f for f in cls.__annotations__.keys() if f not in cls._BASE_FIELDS]
-        return sorted(fields)
+        # Done
+        return
     
     def add_read_connection(self, name: str, component: Node | Edge) -> None:
         """
@@ -136,13 +117,17 @@ class Controller(ABC):
             Adds a Signal to self.signals_incoming.
         """
         # Validate name
-        if name not in self.READ_CONNECTIONS:
-            raise KeyError(f"Signal name '{name}' not in controller's READ_CONNECTIONS list")
+        if name not in self.REQUIRED_CONNECTIONS_READ:
+            raise KeyError(f"Signal name '{name}' not in controller's REQUIRED_CONNECTIONS_READ list")
+
         # Create signal between component and self
         signal = Signal(source_component=component, target_component=self)
+
         # Add signal to connections
-        self.connections[name] = signal
-        return
+        self.connections_read[name] = signal
+
+        # Return self for chaining
+        return self
     
     def add_write_connection(self, name: str, component: Node | Edge) -> None:
         """
@@ -153,16 +138,21 @@ class Controller(ABC):
         Modifies:
             Adds a Signal to self.signals_outgoing.
         """
+
         # Validate name
-        if name not in self.WRITE_CONNECTIONS:
-            raise KeyError(f"Signal name '{name}' not in controller's WRITE_CONNECTIONS list")
+        if name not in self.REQUIRED_CONNECTIONS_WRITE:
+            raise KeyError(f"Signal name '{name}' not in controller's CONNECTIONS_WRITE list")
+        
         # Create signal between self and component
         signal = Signal(source_component=self, target_component=component)
+
         # Add signal to connections
-        self.connections[name] = signal
-        return
+        self.connections_write[name] = signal
+
+        # Return self for chaining
+        return self
     
-    def add_connections(self, **connections: Node | Edge) -> None:
+    def add_connections(self, **connections: dict[str, Node | Edge]) -> None:
         """
         Add multiple connections at once using keyword arguments.
         Args:
@@ -170,16 +160,20 @@ class Controller(ABC):
         Modifies:
             Adds Signals to self.signals_incoming and self.signals_outgoing.
         """
+
         # Loop over components
         for name, component in connections.items():
+
             # Check which type of connection to add
-            if name in self.READ_CONNECTIONS:
+            if name in self.REQUIRED_CONNECTIONS_READ:
                 self.add_read_connection(name, component)
-            elif name in self.WRITE_CONNECTIONS:
+            elif name in self.REQUIRED_CONNECTIONS_WRITE:
                 self.add_write_connection(name, component)
             else:
                 raise KeyError(f"Signal name '{name}' not in controller's connection lists")
-        return
+
+        # Return self for chaining
+        return self
 
     @abstractmethod
     def update(self, dt: float) -> None:
@@ -202,18 +196,18 @@ def test_file():
             self.b += 1 * dt
             return
         def update_from_signals(self, dt):
-            increase_a_amount = sum([s.payload['a_increase'] for s in self.signals_incoming])
+            increase_a_amount = sum([s.payload.get('a_increase', 0) for s in self.signals_incoming])
             self.a += increase_a_amount * dt
             return
     # Define dummy controller
     class TestController(Controller):
-        READ_CONNECTIONS = ['read_node']
-        WRITE_CONNECTIONS = ['write_node']
+        REQUIRED_CONNECTIONS_READ = ['read_node']
+        REQUIRED_CONNECTIONS_WRITE = ['write_node']
         def update(self, dt: float) -> None:
             # Read b from source node
-            b_source = self.connections['read_node'].read()['b']
+            b_source = self.connections_read['read_node'].read()['b']
             # Write to target node
-            self.connections['write_node'].write({'a_increase': (1 if b_source > 5 else 0)})
+            self.connections_write['write_node'].write({'a_increase': (1 if b_source > 5 else 0)})
             return
     # Create nodes and controller
     node1 = TestNode(id=1, name="Node1", a=0.0, b=0)
