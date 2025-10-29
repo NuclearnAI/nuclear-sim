@@ -1,6 +1,5 @@
 
 # Import libraries
-from abc import abstractmethod
 from typing import Any, Optional
 from nuclear_simulator.sandbox.graphs import Node, Edge, Controller, Signal, Graph
 
@@ -21,8 +20,12 @@ class ThermoNode(Node):
     """
 
     # Define instance attributes
+    m: float  # Mass / Effective mass for temperature calculation
+    cp: float  # Specific heat capacity
     T: float  # Temperature
     U: float  # Internal energy
+
+    # Define flow attributes (for use during updates)
     dQ: float  # Heat transferred in/out
     dW: float  # Work done on/by system
     dH: float  # Enthalpy increase/decrease
@@ -31,14 +34,19 @@ class ThermoNode(Node):
             self,
             id: Optional[int] = None,
             name: Optional[str] = None,
-            **kwargs: dict[str, Any]
+            **kwargs: Any
         ) -> None:
         # Add thermodynamic state variables to required fields
         kwargs['dQ'] = 0.0
         kwargs['dW'] = 0.0
         kwargs['dH'] = 0.0
+        kwargs.setdefault('U', None)  # Temporary default to None
         # Initialize base Node attributes
         super().__init__(id=id, name=name, **kwargs)
+        # Set internal energy
+        if self.U is None:
+            self.U = self.calculate_energy_from_temperature(self.T)
+        # Done
         return
 
     def update(self, dt: float) -> None:
@@ -71,23 +79,34 @@ class ThermoNode(Node):
         dU = dQ - dW + dH
         self.U += dU * dt
         # Update temperature from internal energy
-        self.T = self.calculate_temperature_from_U(self.U)
+        self.T = self.calculate_temperature_from_energy(self.U)
         # Reset flows for next tick
         self.dQ = 0.0
         self.dW = 0.0
         self.dH = 0.0
         return
     
-    @abstractmethod
-    def calculate_temperature_from_U(self, U: float) -> float:
+    def calculate_temperature_from_energy(self, U: float) -> float:
         """
         Calculate temperature from internal energy.
+            T = U / (m * cp)
         Args:
             U: Internal energy.
         Returns:
             Temperature corresponding to internal energy U.
         """
-        raise NotImplementedError("Subclasses must implement calculate_temperature_from_U method")
+        return U / (max(self.m, 1e-6) * max(self.cp, 1e-6))
+    
+    def calculate_energy_from_temperature(self, T: float) -> float:
+        """
+        Calculate internal energy from temperature.
+            U = T * m * cp
+        Args:
+            T: Temperature.
+        Returns:
+            Internal energy corresponding to temperature T.
+        """
+        return T * max(self.m, 1e-6) * max(self.cp, 1e-6)
 
 
 # Make edge class for thermodynamic simulations
@@ -104,8 +123,12 @@ class ThermoEdge(Edge):
         """
         # Update as normal
         super().update(dt)
-        # Ensure no thermodynamic flows are set directly
+        # Validate flows
+        if self.flows is None:
+            # Ensure flows is not None
+            raise ValueError("ThermoEdge flows have not been calculated")
         if ('T' in self.flows.keys()) or ('U' in self.flows.keys()):
+            # Ensure no thermodynamic flows are set directly
             raise ValueError("Thermodynamic flows (U & T) cannot be set directly on ThermoEdge")
         # Done
         return

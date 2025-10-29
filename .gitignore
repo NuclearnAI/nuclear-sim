@@ -9,6 +9,9 @@ wheels/
 # Virtual environments
 .venv
 
+# Environment variables
+.env
+
 # runs
 runs/
 
@@ -20,3 +23,4 @@ sim_env
 examples
 .DS_Store
 .vscode
+

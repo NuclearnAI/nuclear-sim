@@ -9,11 +9,12 @@ if TYPE_CHECKING:
     from nuclear_simulator.sandbox.graphs.controllers import Controller
 
 # Import libraries
+from abc import ABC
 from nuclear_simulator.sandbox.graphs.components import Component
 
 
-# Define abstract base class for graph graphs
-class Graph:
+# Define abstract base class for graphs
+class Graph(ABC):
     """
     Abstract base class for graphs containing nodes and edges.
     """
@@ -286,7 +287,7 @@ class Graph:
         # Done
         return controller
     
-    def update(self, dt: float, steps=1) -> None:
+    def update(self, dt: float = None, steps=1) -> None:
         """
         Update the entire graph over a timestep dt.
         Args:
@@ -294,6 +295,9 @@ class Graph:
         Modifies:
             Updates all nodes, edges, and controllers in the graph.
         """
+
+        # Get dt
+        dt = dt or self.dt
 
         # Loop over steps
         for _ in range(steps):

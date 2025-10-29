@@ -7,6 +7,7 @@ if TYPE_CHECKING:
     from nuclear_simulator.sandbox.graphs.controllers import Signal
 
 # Import libraries
+import copy
 from abc import ABC
 
 
@@ -38,14 +39,21 @@ class Component(ABC):
             **kwargs: Any
         ) -> None:
 
-        # Get default id
+        # Set id attribute for component and update class counter
         if id is None:
             id = Component._id_counter
             Component._id_counter += 1
+        else:
+            Component._id_counter = max(Component._id_counter, id + 1)
         
         # Set attributes
         self.id = id
         self.name = name
+
+        # Fill in missing state variables with defaults
+        default_vars = self.get_defaults()
+        for k, v in default_vars.items():
+            kwargs.setdefault(k, copy.deepcopy(v))
 
         # Validate state variables match the state dictionary
         required_vars = self.get_fields()
@@ -78,13 +86,39 @@ class Component(ABC):
     @classmethod
     def get_fields(cls) -> list[str]:
         """Return annotated state fields, excluding base attributes."""
+        # Initialize set for fields
         fields: set[str] = set()
+        # Walk MRO (method resolution order) to gather annotations from all bases
         for base in cls.__mro__:
+            # Loop over annotations
             anns = getattr(base, "__annotations__", {})
             for k in anns:
+                # Check if field is not private and not in base fields
                 if not k.startswith("_") and k not in getattr(base, "_BASE_FIELDS", ()):
+                    # Add field to set
                     fields.add(k)
-        return sorted(fields)
+        # Sort fields
+        fields = sorted(fields)
+        # Return output
+        return fields
+    
+    @classmethod
+    def get_defaults(cls) -> dict[str, Any]:
+        """Return default values for annotated state fields."""
+        # Initialize defaults dictionary
+        defaults: dict[str, Any] = {}
+        # Walk MRO (method resolution order) to gather defaults from all bases
+        for base in reversed(cls.__mro__):
+            # Loop over annotations
+            anns = getattr(base, "__annotations__", {})
+            for k in anns:
+                # Check if field is not private and not in base fields
+                if not k.startswith("_") and k not in getattr(base, "_BASE_FIELDS", ()):
+                    if hasattr(base, k):
+                        # Set value in defaults if not already set
+                        defaults.setdefault(k, getattr(base, k))
+        # Return output
+        return defaults
 
     def update(self, dt: float) -> None:
         """Update component state over timestep dt."""

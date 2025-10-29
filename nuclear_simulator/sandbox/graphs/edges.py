@@ -60,7 +60,6 @@ class Edge(Component):
     def update(self, dt: float) -> None:
         """
         Update the edge's internal state (if any) and compute flows for this tick.
-        Flows are stored in `self.flows` with a fixed vocabulary (e.g., m_dot, H_dot, Q_dot).
         Args:
             dt: Time step size (s).
         Modifies:
