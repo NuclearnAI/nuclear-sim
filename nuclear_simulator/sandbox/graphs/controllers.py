@@ -1,27 +1,21 @@
-
 # Annotation imports
 from __future__ import annotations
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar, Any, Optional
 if TYPE_CHECKING:
-    from typing import Any, Optional
-    from nuclear_simulator.sandbox.graphs.nodes import Node
-    from nuclear_simulator.sandbox.graphs.edges import Edge
+    from nuclear_simulator.sandbox.graphs_v2.nodes import Node
+    from nuclear_simulator.sandbox.graphs_v2.edges import Edge
 
 # Import libraries
 from abc import ABC, abstractmethod
-from nuclear_simulator.sandbox.graphs.base import Component
+from pydantic import PrivateAttr
+from nuclear_simulator.sandbox.graphs_v2.base import Component
 
 
 # Signal class
-class Signal(ABC):
+class Signal:
     """
     Special connector that carries information (not mass/energy).
     """
-
-    # Define attributes
-    payload: dict[str, Any]
-    source_component: Node | Edge | Controller
-    target_component: Node | Edge | Controller
 
     def __init__(
             self,
@@ -76,41 +70,38 @@ class Controller(Component):
     Special graph component that sends/receives control signals.
     """
 
-    # Define instance attributes
-    connections_read: dict[str, Signal]
-    connections_write: dict[str, Signal]
-
     # Define class-level attributes
-    REQUIRED_CONNECTIONS_READ: tuple[str] = tuple()
-    REQUIRED_CONNECTIONS_WRITE: tuple[str] = tuple()
-    BASE_FIELDS: tuple[str, ...] = (
-        *Component.BASE_FIELDS,
-        "REQUIRED_CONNECTIONS_READ",
-        "REQUIRED_CONNECTIONS_WRITE",
-        "connections_read",
-        "connections_write",
-    )
+    REQUIRED_CONNECTIONS_READ: ClassVar[tuple[str, ...] | None] = None
+    REQUIRED_CONNECTIONS_WRITE: ClassVar[tuple[str, ...] | None] = None
 
-    def __init__(
-            self,
-            id: Optional[int] = None,
-            name: Optional[str] = None,
-            **kwargs: Any
-        ) -> None:
-
-        # Initialize base Component attributes
-        super().__init__(id=id, name=name, **kwargs)
-
-        # Initialize connections dictionaries
-        self.connections_read: dict[str, Signal] = {
-            k: None for k in self.REQUIRED_CONNECTIONS_READ 
-        }
-        self.connections_write: dict[str, Signal] = {
-            k: None for k in self.REQUIRED_CONNECTIONS_WRITE
-        }
-
+    def __init__(self, **data: Any) -> None:
+        """Initialize Controller and add private attributes."""
+        # Initialize base Component attributes (Pydantic fields)
+        super().__init__(**data)
+        # Initialize connection dictionaries
+        self.connections_read: dict[str, Signal] = {}
+        self.connections_write: dict[str, Signal] = {}
         # Done
         return
+    
+    def __init_subclass__(cls, **kwargs):
+        """Ensure that subclasses define required connection lists."""
+        super().__init_subclass__(**kwargs)
+        for name in ("REQUIRED_CONNECTIONS_READ", "REQUIRED_CONNECTIONS_WRITE"):
+            val = getattr(cls, name, None)
+            if val is None:
+                raise TypeError(f"{cls.__name__} must define {name}")
+            if not (isinstance(val, tuple) and all(isinstance(s, str) for s in val)):
+                raise TypeError(f"{name} on {cls.__name__} must be a tuple[str, ...]")
+    
+    def get_nonstate_fields(self) -> list[str]:
+        """Return list of non-state field names."""
+        return super().get_nonstate_fields() + [
+            "REQUIRED_CONNECTIONS_READ",
+            "REQUIRED_CONNECTIONS_WRITE",
+            "connections_read",
+            "connections_write",
+        ]
     
     def add_read_connection(self, name: str, component: Node | Edge) -> None:
         """
@@ -192,7 +183,7 @@ class Controller(Component):
 # Test
 def test_file():
     # Import libraries
-    from nuclear_simulator.sandbox.graphs.nodes import Node
+    from nuclear_simulator.sandbox.graphs_v2.nodes import Node
     # Define dummy node
     class TestNode(Node):
         a: float
@@ -206,8 +197,8 @@ def test_file():
             return
     # Define dummy controller
     class TestController(Controller):
-        REQUIRED_CONNECTIONS_READ = ['read_node']
-        REQUIRED_CONNECTIONS_WRITE = ['write_node']
+        REQUIRED_CONNECTIONS_READ = ('read_node',)
+        REQUIRED_CONNECTIONS_WRITE = ('write_node',)
         def update(self, dt: float) -> None:
             # Read b from source node
             b_source = self.connections_read['read_node'].read()['b']

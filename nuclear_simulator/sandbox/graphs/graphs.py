@@ -1,41 +1,26 @@
-
 # Annotation imports
 from __future__ import annotations
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Optional, Type
 if TYPE_CHECKING:
-    from typing import Any, Optional, Type
-    from nuclear_simulator.sandbox.graphs.nodes import Node
-    from nuclear_simulator.sandbox.graphs.edges import Edge
-    from nuclear_simulator.sandbox.graphs.controllers import Controller
+    from nuclear_simulator.sandbox.graphs_v2.nodes import Node
+    from nuclear_simulator.sandbox.graphs_v2.edges import Edge
+    from nuclear_simulator.sandbox.graphs_v2.controllers import Controller
 
 # Import libraries
-from abc import ABC
-from nuclear_simulator.sandbox.graphs.base import Component
+from nuclear_simulator.sandbox.graphs_v2.base import Component
 
 
 # Define abstract base class for graphs
-class Graph(ABC):
+class Graph:
     """
     Abstract base class for graphs containing nodes and edges.
     """
 
-    # Define instance attributes
-    id_counter: int
-    nodes: dict[int, Node]
-    edges: dict[int, Edge]
-    controllers: dict[int, Controller]
-
-    def __init__(self, id_counter=None) -> None:
-
-        # Set attributes
-        self.id_counter = id_counter or 0
-
-        # Set components
+    def __init__(self, id_counter=0) -> None:
+        self.id_counter = id_counter
         self.nodes: dict[int, Node] = {}
         self.edges: dict[int, Edge] = {}
         self.controllers: dict[int, Controller] = {}
-
-        # Done
         return
     
     def __repr__(self) -> str:
@@ -277,7 +262,7 @@ class Graph(ABC):
         # Done
         return controller
     
-    def update(self, dt: float = None, steps=1) -> None:
+    def update(self, dt: float) -> None:
         """
         Update the entire graph over a timestep dt.
         Args:
@@ -286,26 +271,17 @@ class Graph(ABC):
             Updates all nodes, edges, and controllers in the graph.
         """
 
-        # Get dt
-        dt = dt or self.dt
+        # Update edges
+        for edge in self.edges.values():
+            edge.update(dt)
 
-        # Loop over steps
-        for _ in range(steps):
+        # Update nodes
+        for node in self.nodes.values():
+            node.update(dt)
 
-            # Update edges
-            for edge in self.edges.values():
-                edge.update(dt)
-
-            # Update nodes
-            for node in self.nodes.values():
-                node.update(dt)
-
-            # Update controllers
-            for controller in self.controllers.values():
-                controller.update(dt)
-
-            # Update time
-            self.time += dt
+        # Update controllers
+        for controller in self.controllers.values():
+            controller.update(dt)
 
         # Done
         return
@@ -314,9 +290,9 @@ class Graph(ABC):
 # Test
 def test_file():
     # Import libraries
-    from nuclear_simulator.sandbox.graphs.nodes import Node
-    from nuclear_simulator.sandbox.graphs.edges import Edge
-    from nuclear_simulator.sandbox.graphs.controllers import Controller
+    from nuclear_simulator.sandbox.graphs_v2.nodes import Node
+    from nuclear_simulator.sandbox.graphs_v2.edges import Edge
+    from nuclear_simulator.sandbox.graphs_v2.controllers import Controller
     # Create minimial graph components
     # - Node with one state variable 'a'
     class TestNode(Node):
@@ -350,7 +326,8 @@ def test_file():
         "TestController": TestController,
     }
     # Build graph
-    g = Graph(dt=0.1)
+    dt = 0.1
+    g = Graph()
     n1 = g.add_node(TestNode, name="N1", a=10.0)
     n2 = g.add_node(TestNode, name="N2", a=0.0)
     e  = g.add_edge(PipeEdge, node_source_id=n1.id, node_target_id=n2.id, name="E", g=0.0)
@@ -361,11 +338,11 @@ def test_file():
     )
     # Test 1: controller latency means no flow yet (g set AFTER edges/nodes this tick)
     a1_0, a2_0 = n1.a, n2.a
-    g.update(g.dt)
+    g.update(dt)
     assert n1.a == a1_0 and n2.a == a2_0, "State should not change on first tick due to control latency"
     assert e.flows is not None and abs(e.flows["a"]) < 1e-12, "Flow should be zero with g=0 on first tick"
-    # Test 1: controller’s command applied; flow moves 'a' from N1 -> N2
-    g.update(g.dt)
+    # Test 1: controller's command applied; flow moves 'a' from N1 -> N2
+    g.update(dt)
     # Expected delta: rate = g*(10-0)=10; dt=0.1 => delta = 1.0
     assert abs(n1.a - (a1_0 - 1.0)) < 1e-9, f"n1.a expected {a1_0 - 1.0}, got {n1.a}"
     assert abs(n2.a - (a2_0 + 1.0)) < 1e-9, f"n2.a expected {a2_0 + 1.0}, got {n2.a}"
@@ -374,10 +351,10 @@ def test_file():
     g2 = Graph.from_dict(blob, registry=registry)
     # One more tick on deserialized graph should continue transferring 'a'
     a1_prev, a2_prev = g2.nodes[n1.id].a, g2.nodes[n2.id].a
-    g2.update(g2.dt)
+    g2.update(dt)
     assert g2.edges[e.id].flows is not None
     rate = g2.edges[e.id].flows["a"]
-    expected_delta = rate * g2.dt  # flows are rates
+    expected_delta = rate * dt  # flows are rates
     assert abs(g2.nodes[n1.id].a - (a1_prev - expected_delta)) < 1e-9
     assert abs(g2.nodes[n2.id].a - (a2_prev + expected_delta)) < 1e-9
     # Done
@@ -385,4 +362,3 @@ def test_file():
 if __name__ == "__main__":
     test_file()
     print("All tests passed.")
-

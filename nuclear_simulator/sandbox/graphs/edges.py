@@ -1,14 +1,13 @@
-
 # Annotation imports
 from __future__ import annotations
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Optional
 if TYPE_CHECKING:
-    from typing import Any, Optional
-    from nuclear_simulator.sandbox.graphs.nodes import Node
+    from nuclear_simulator.sandbox.graphs_v2.nodes import Node
 
 # Import libraries
 from abc import abstractmethod
-from nuclear_simulator.sandbox.graphs.base import Component
+from pydantic import PrivateAttr
+from nuclear_simulator.sandbox.graphs_v2.base import Component
 
 
 # Make an abstract base class for graph edges
@@ -17,42 +16,31 @@ class Edge(Component):
     Abstract base class for graph edges.
     """
 
-    # Define instance attributes
-    flows: dict[str, float] | None
-    node_source: Node
-    node_target: Node
-
-    # Define class-level attributes
-    BASE_FIELDS = (
-        *Component.BASE_FIELDS,
-        "flows", 
-        "node_source", 
-        "node_target", 
-    )
-
-    def __init__(
-            self,
+    def __init__(self,
             node_source: Node,
             node_target: Node,
-            id: Optional[int] = None,
-            name: Optional[str] = None,
-            **kwargs: Any
+            **data: Any
         ) -> None:
-
-        # Initialize base Component attributes
-        super().__init__(id=id, name=name, **kwargs)
-
-        # Set attributes
-        self.flows = None  # Set to None until calculated
+        """Initialize Edge and add private attributes."""
+        # Initialize base Component attributes (Pydantic fields)
+        super().__init__(**data)
+        # Set private attributes
+        self.flows: dict[str, Any] = {}
+        # Link to nodes
         self.node_source = node_source
         self.node_target = node_target
-
-        # Link to nodes
         self.node_source.edges_outgoing.append(self)
         self.node_target.edges_incoming.append(self)
-
         # Done
         return
+    
+    def get_nonstate_fields(self) -> list[str]:
+        """Return list of non-state field names."""
+        return super().get_nonstate_fields() + [
+            "flows",
+            "node_source",
+            "node_target",
+        ]
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}[{self.node_source.id} -> {self.node_target.id}]"
@@ -80,7 +68,7 @@ class Edge(Component):
 # Test
 def test_file():
     # Import node
-    from nuclear_simulator.sandbox.graphs.nodes import Node
+    from nuclear_simulator.sandbox.graphs_v2.nodes import Node
     # Define a test node class
     class TestNode(Node):
         a: float

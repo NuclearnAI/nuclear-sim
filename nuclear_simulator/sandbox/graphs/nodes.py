@@ -1,13 +1,12 @@
-
 # Annotation imports
 from __future__ import annotations
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Optional
 if TYPE_CHECKING:
-    from typing import Any, Optional
-    from nuclear_simulator.sandbox.graphs.edges import Edge
+    from nuclear_simulator.sandbox.graphs_v2.edges import Edge
 
 # Import libraries
-from nuclear_simulator.sandbox.graphs.base import Component
+from pydantic import PrivateAttr
+from nuclear_simulator.sandbox.graphs_v2.base import Component
 
 
 # Make an abstract base class for graph nodes
@@ -16,36 +15,24 @@ class Node(Component):
     Abstract base class for graph nodes.
     """
 
-    # Set class level attributes
-    BASE_FIELDS: tuple[str, ...] = tuple([
-        *Component.BASE_FIELDS,
-        "flows",
-        "edges_incoming", 
-        "edges_outgoing", 
-    ])
-
-    # Define instance attributes
-    flows: dict[str, float]
-    edges_incoming: list[Edge]
-    edges_outgoing: list[Edge]
-
-    def __init__(
-            self,
-            id: Optional[int] = None,
-            name: Optional[str] = None,
-            **kwargs: Any
-        ) -> None:
-
-        # Initialize base Component attributes
-        super().__init__(id=id, name=name, **kwargs)
-
-        # Set attributes
-        self.flows = {}
+    def __init__(self, **data: Any) -> None:
+        """Initialize Node and add private attributes."""
+        # Initialize base Component attributes (Pydantic fields)
+        super().__init__(**data)
+        # Define private attributes
+        self.flows: dict[str, Any] = {}
         self.edges_incoming: list[Edge] = []
         self.edges_outgoing: list[Edge] = []
-
         # Done
         return
+
+    def get_nonstate_fields(self) -> list[str]:
+        """Return list of non-state field names."""
+        return super().get_nonstate_fields() + [
+            "flows",
+            "edges_incoming",
+            "edges_outgoing",
+        ]
 
     def update_from_graph(self, dt: float) -> None:
         """
@@ -57,7 +44,7 @@ class Node(Component):
         """
 
         # Initialize flows
-        flows = {key: 0.0 for key in self.get_fields()}
+        flows = {key: 0.0 for key in self.get_state_fields()}
 
         # Validate flows are not None
         for edge in self.edges_incoming + self.edges_outgoing:
