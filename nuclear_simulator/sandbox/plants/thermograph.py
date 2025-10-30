@@ -1,135 +1,134 @@
 
-# Import libraries
+# Annotation imports
 from typing import Any, Optional
+
+# Import libraries
+import copy
 from nuclear_simulator.sandbox.graphs import Node, Edge, Controller, Signal, Graph
+from nuclear_simulator.sandbox.plants.physics import (
+    calc_energy_from_temperature, 
+    calc_temperature_from_energy,
+    calc_pressure_change_from_mass_energy,
+)
 
 # Expose classes for easy import
-__all__ = ["ThermoNode", "ThermoEdge", "Controller", "Signal", "Graph"]
+__all__ = ["ThermoNode", "Node", "Edge", "Controller", "Signal", "Graph"]
 
 
 # Create node class for thermodynamic simulations
 class ThermoNode(Node):
     """
-    Node with methods for updating thermodynamic state variables.
-    State variables:
-        T: Temperature
-        U: Internal energy
-        dQ: Heat transferred in/out at an instantaneous time step
-        dW: Work done on/by system at an instantaneous time step
-        dH: Enthalpy increase/decrease at an instantaneous time step
+    Node that will automatically convert temperature into energy.
     """
 
-    # Define instance attributes
-    m: float  # Mass / Effective mass for temperature calculation
-    cp: float  # Specific heat capacity
-    T: float  # Temperature
-    U: float  # Internal energy
+    def __init__(self, **kwargs: Any) -> None:
+        """
+        Initialize ThermoNode attributes.
+        Args:
+            **kwargs: Keyword arguments for base Node class.
+        Modifies:
+            Initializes Node as normal. Also automatically initializes any
+            state variables ending in _U (internal energy) based on corresponding
+            _T (temperature), _m (mass), and _cp (specific heat) variables.
+        """
 
-    # Define flow attributes (for use during updates)
-    dQ: float  # Heat transferred in/out
-    dW: float  # Work done on/by system
-    dH: float  # Enthalpy increase/decrease
-
-    def __init__(
-            self,
-            id: Optional[int] = None,
-            name: Optional[str] = None,
-            **kwargs: Any
-        ) -> None:
-        # Add thermodynamic state variables to required fields
-        kwargs['dQ'] = 0.0
-        kwargs['dW'] = 0.0
-        kwargs['dH'] = 0.0
-        kwargs.setdefault('U', None)  # Temporary default to None
         # Initialize base Node attributes
-        super().__init__(id=id, name=name, **kwargs)
-        # Set internal energy
-        if self.U is None:
-            self.U = self.calculate_energy_from_temperature(self.T)
+        super().__init__(**kwargs)
+
+        # Loop over fields
+        for field in self.get_fields():
+
+            # Check if ends in _U
+            if field.endswith("_U"):
+
+                # Get base name
+                base_name = field[:-2]
+
+                # Check for corresponding _T, m, cp fields
+                T_field = f"{base_name}_T"
+                m_field = f"{base_name}_m"
+                cp_field = f"{base_name}_cp"
+
+                # Check if all exist
+                if all(f in self.get_fields() for f in [T_field, m_field, cp_field]):
+                    # Initialize U based on T, m, cp
+                    T = getattr(self, T_field)
+                    m = getattr(self, m_field)
+                    cp = getattr(self, cp_field)
+                    U = calc_energy_from_temperature(T=T, m=m, cv=cp)
+                    setattr(self, field, U)
+
         # Done
         return
-
-    def update(self, dt: float) -> None:
-        """
-        Update the node's state based on flows from incoming edges.
-        Args:
-            dt: Time step for the update.
-        Modifies:
-            Updates the node's state variables in place.
-        """
-        self.update_from_signals(dt)
-        self.update_from_edges(dt)
-        self.update_from_flows(dt)  # <-- Update from flows between updates from edges and state
-        self.update_from_state(dt)
-        return
-
-    def update_from_flows(self, dt: float) -> None:
-        """
-        Update temperature based on energy.
-        Args:
-            dt: Time step for the update.
-        Modifies:
-            Updates the node's temperature state variable in place.
-        """
-        # Get energy flows
-        dQ = self.dQ
-        dW = self.dW
-        dH = self.dH
-        # Update internal energy
-        dU = dQ - dW + dH
-        self.U += dU * dt
-        # Update temperature from internal energy
-        self.T = self.calculate_temperature_from_energy(self.U)
-        # Reset flows for next tick
-        self.dQ = 0.0
-        self.dW = 0.0
-        self.dH = 0.0
-        return
     
-    def calculate_temperature_from_energy(self, U: float) -> float:
+    def update_from_state(self, dt: float) -> None:
         """
-        Calculate temperature from internal energy.
-            T = U / (m * cp)
-        Args:
-            U: Internal energy.
-        Returns:
-            Temperature corresponding to internal energy U.
-        """
-        return U / (max(self.m, 1e-6) * max(self.cp, 1e-6))
-    
-    def calculate_energy_from_temperature(self, T: float) -> float:
-        """
-        Calculate internal energy from temperature.
-            U = T * m * cp
-        Args:
-            T: Temperature.
-        Returns:
-            Internal energy corresponding to temperature T.
-        """
-        return T * max(self.m, 1e-6) * max(self.cp, 1e-6)
-
-
-# Make edge class for thermodynamic simulations
-class ThermoEdge(Edge):
-
-    # Ensure that flows do not include thermodynamic quantities
-    def update(self, dt: float) -> None:
-        """
-        Update the edge's internal state (if any) and compute flows for this tick.
+        Update all thermodynamic fields.
+            - Update T based on corresponding energy.
+            - Update P based on corresponding flows.
         Args:
             dt: Time step size (s).
         Modifies:
-            Updates self.flows with calculated flow values.
+            Updates all thermodynamic state variables in place.
         """
-        # Update as normal
-        super().update(dt)
-        # Validate flows
-        if self.flows is None:
-            # Ensure flows is not None
-            raise ValueError("ThermoEdge flows have not been calculated")
-        if ('T' in self.flows.keys()) or ('U' in self.flows.keys()):
-            # Ensure no thermodynamic flows are set directly
-            raise ValueError("Thermodynamic flows (U & T) cannot be set directly on ThermoEdge")
+        
+        # Loop over fields
+        for field in self.get_fields():
+
+            # Update temperature fields to match energy
+            if field.endswith("_T"):
+                # Get base name
+                base_name = field[:-2]
+                # Get corresponding field names
+                U_field = f"{base_name}_U"
+                m_field = f"{base_name}_m"
+                cp_field = f"{base_name}_cp"
+                # Get variables
+                U = getattr(self, U_field)
+                m = getattr(self, m_field)
+                cp = getattr(self, cp_field)
+                # Update temperature
+                T = calc_temperature_from_energy(
+                    U=U, m=m, cv=cp
+                )
+                setattr(self, field, T)
+
+            # Update pressure fields based on flows
+            if field.endswith("_P"):
+                # Get base name
+                base_name = field[:-2]
+                # Get corresponding field names
+                m_field = f"{base_name}_m"
+                U_field = f"{base_name}_U"
+                T_field = f"{base_name}_T"
+                K_field = f"{base_name}_K"
+                cp_field = f"{base_name}_cp"
+                alpha_field = f"{base_name}_alpha"
+                # Get variables
+                P_old = getattr(self, field)  # Current pressure
+                m = getattr(self, m_field)
+                U = getattr(self, U_field)
+                T = getattr(self, T_field)
+                K = getattr(self, K_field)
+                cp = getattr(self, cp_field)
+                alpha = getattr(self, alpha_field)
+                dm = self.flows.get(m_field, 0.0) * dt
+                dU = self.flows.get(U_field, 0.0) * dt
+                m_old = m - dm
+                U_old = U - dU
+                T_old = calc_temperature_from_energy(U_old, m_old, cp)
+                dT = T - T_old
+                # Update pressure
+                dP = calc_pressure_change_from_mass_energy(
+                    m=m_old,
+                    dm=dm,
+                    dT=dT,
+                    K=K,
+                    alpha=alpha,
+                )
+                P = P_old + dP
+                setattr(self, field, P)
+
         # Done
         return
     

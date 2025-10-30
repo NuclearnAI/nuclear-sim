@@ -9,7 +9,7 @@ if TYPE_CHECKING:
 
 # Import libraries
 from abc import ABC, abstractmethod
-from nuclear_simulator.sandbox.graphs.components import Component
+from nuclear_simulator.sandbox.graphs.base import Component
 
 
 # Signal class
@@ -51,11 +51,16 @@ class Signal(ABC):
         """
         Set self.payload to the source component's state.
         """
-        if hasattr(self.source_component, "state"):
+        if isinstance(self.source_component, Controller):
+            # If reading a controller, assume controller already wrote payload
+            return self.payload
+        elif hasattr(self.source_component, "state"):
+            # If reading a node/edge, get its state
             self.payload = self.source_component.state
+            return self.payload
         else:
+            # Otherwise, raise error
             raise NotImplementedError("Source component has no state to read")
-        return self.payload
     
     def write(self, payload: dict[str, Any]) -> None:
         """
@@ -71,20 +76,20 @@ class Controller(Component):
     Special graph component that sends/receives control signals.
     """
 
+    # Define instance attributes
+    connections_read: dict[str, Signal]
+    connections_write: dict[str, Signal]
+
     # Define class-level attributes
     REQUIRED_CONNECTIONS_READ: tuple[str] = tuple()
     REQUIRED_CONNECTIONS_WRITE: tuple[str] = tuple()
-    _BASE_FIELDS = tuple([
-        *Component._BASE_FIELDS,
+    BASE_FIELDS: tuple[str, ...] = (
+        *Component.BASE_FIELDS,
         "REQUIRED_CONNECTIONS_READ",
         "REQUIRED_CONNECTIONS_WRITE",
         "connections_read",
         "connections_write",
-    ])
-
-    # Define instance attributes
-    connections_read: dict[str, Signal]
-    connections_write: dict[str, Signal]
+    )
 
     def __init__(
             self,

@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 
 # Import libraries
 from abc import ABC
-from nuclear_simulator.sandbox.graphs.components import Component
+from nuclear_simulator.sandbox.graphs.base import Component
 
 
 # Define abstract base class for graphs
@@ -20,18 +20,14 @@ class Graph(ABC):
     """
 
     # Define instance attributes
-    dt: float
-    time: float
+    id_counter: int
     nodes: dict[int, Node]
     edges: dict[int, Edge]
     controllers: dict[int, Controller]
-    id_counter: int
 
-    def __init__(self, dt, time=None, id_counter=None) -> None:
+    def __init__(self, id_counter=None) -> None:
 
         # Set attributes
-        self.dt = dt
-        self.time = time or 0.0
         self.id_counter = id_counter or 0
 
         # Set components
@@ -61,11 +57,7 @@ class Graph(ABC):
         """
 
         # Create graph instance
-        graph = cls(
-            dt=data["dt"],
-            time=data["time"],
-            id_counter=data["id_counter"]
-        )
+        graph = cls(id_counter=data["id_counter"])
 
         # Deserialize nodes
         for node_id_str, node_data in data["nodes"].items():
@@ -160,8 +152,6 @@ class Graph(ABC):
 
         # Combine into graph dict
         graph_dict = {
-            "dt": self.dt,
-            "time": self.time,
             "id_counter": self.id_counter,
             "nodes": nodes_dict,
             "edges": edges_dict,
@@ -169,7 +159,7 @@ class Graph(ABC):
         }
 
         # Return output
-        return  graph_dict
+        return graph_dict
 
     def get_component(self, id: int) -> Component:
         """

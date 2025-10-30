@@ -17,20 +17,20 @@ class Component(ABC):
     Abstract base class for graph components.
     """
 
+    # Define instance attributes
+    id: int
+    name: Optional[str]
+    signals_incoming: list[Signal]
+    signals_outgoing: list[Signal]
+
     # Define class-level attributes
     _id_counter: int = 0
-    _BASE_FIELDS: tuple[str, ...] = tuple([
+    BASE_FIELDS: tuple[str, ...] = (
         "id", 
         "name", 
         "signals_incoming", 
         "signals_outgoing", 
-    ])
-
-    # Define instance attributes
-    id: int
-    name: str
-    signals_incoming: list[Signal]
-    signals_outgoing: list[Signal]
+    )
 
     def __init__(
             self,
@@ -94,7 +94,7 @@ class Component(ABC):
             anns = getattr(base, "__annotations__", {})
             for k in anns:
                 # Check if field is not private and not in base fields
-                if not k.startswith("_") and k not in getattr(base, "_BASE_FIELDS", ()):
+                if not k.startswith("_") and k not in getattr(base, "BASE_FIELDS", ()):
                     # Add field to set
                     fields.add(k)
         # Sort fields
@@ -113,7 +113,7 @@ class Component(ABC):
             anns = getattr(base, "__annotations__", {})
             for k in anns:
                 # Check if field is not private and not in base fields
-                if not k.startswith("_") and k not in getattr(base, "_BASE_FIELDS", ()):
+                if not k.startswith("_") and k not in getattr(base, "BASE_FIELDS", ()):
                     if hasattr(base, k):
                         # Set value in defaults if not already set
                         defaults.setdefault(k, getattr(base, k))
@@ -121,8 +121,60 @@ class Component(ABC):
         return defaults
 
     def update(self, dt: float) -> None:
-        """Update component state over timestep dt."""
-        raise NotImplementedError("Component update method not implemented")
+        """
+        Update the edge's internal state based on the current graph state.
+        Args:
+            dt: Time step size (s).
+        Modifies:
+            Updates self.flows with calculated flow values.
+        """
+        self.update_from_signals(dt)
+        self.update_from_graph(dt)
+        self.update_from_state(dt)
+        return
+
+    def update_from_signals(self, dt: float) -> None:
+        """
+        Update reactor parameters based on incoming control signals.
+        Args:
+            dt: Time step for the update.
+        Modifies:
+            Updates state based on incoming signals.
+            Defaults to setting state variables to match incoming signal payloads.
+        """
+        
+        # Loop over incoming signals
+        for signal in self.signals_incoming:
+            payload = signal.payload
+
+            # Loop over payload items
+            for key, value in payload.items():
+
+                # Check if key is a valid state variable
+                if not hasattr(self, key):
+                    raise KeyError(f"Signal contains unknown state variable '{key}' for {self}")
+                
+                # Set state variable
+                setattr(self, key, value)
+
+        # Done
+        return
+
+    def update_from_state(self, dt: float) -> None:
+        """
+        Optional: override in subclasses if the edge has its own dynamics.
+        Example: A pipe that decays over time might update its diameter here.
+        Default: no-op.
+        """
+        return
+    
+    def update_from_graph(self, dt: float) -> None:
+        """
+        Optional: override in subclasses to update based on graph state.
+        Example: An edge that calculates flows based on node states would do so here.
+        Default: no-op.
+        """
+        pass
 
 
 # Test

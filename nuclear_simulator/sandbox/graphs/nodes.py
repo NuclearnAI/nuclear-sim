@@ -7,7 +7,7 @@ if TYPE_CHECKING:
     from nuclear_simulator.sandbox.graphs.edges import Edge
 
 # Import libraries
-from nuclear_simulator.sandbox.graphs.components import Component
+from nuclear_simulator.sandbox.graphs.base import Component
 
 
 # Make an abstract base class for graph nodes
@@ -17,16 +17,17 @@ class Node(Component):
     """
 
     # Set class level attributes
-    _BASE_FIELDS: tuple[str, ...] = tuple([
-        *Component._BASE_FIELDS,
+    BASE_FIELDS: tuple[str, ...] = tuple([
+        *Component.BASE_FIELDS,
+        "flows",
         "edges_incoming", 
         "edges_outgoing", 
     ])
 
     # Define instance attributes
+    flows: dict[str, float]
     edges_incoming: list[Edge]
     edges_outgoing: list[Edge]
-
 
     def __init__(
             self,
@@ -39,13 +40,14 @@ class Node(Component):
         super().__init__(id=id, name=name, **kwargs)
 
         # Set attributes
+        self.flows = {}
         self.edges_incoming: list[Edge] = []
         self.edges_outgoing: list[Edge] = []
 
         # Done
         return
 
-    def update(self, dt: float) -> None:
+    def update_from_graph(self, dt: float) -> None:
         """
         Update the node's state based on flows from incoming edges.
         Args:
@@ -53,55 +55,36 @@ class Node(Component):
         Modifies:
             Updates the node's state variables in place.
         """
-        self.update_from_signals(dt)
-        self.update_from_edges(dt)
-        self.update_from_state(dt)
-        return
-    
-    def update_from_signals(self, dt: float) -> None:
-        """
-        Optional: override in subclasses to modify edge state based on external signals.
-        Example: A reactor node might adjust its reactivity based on a control signal.
-        Default: no-op.
-        """
-        return
-    
-    def update_from_state(self, dt: float) -> None:
-        """
-        Optional: override in subclasses if the node has its own dynamics.
-        Example: A tank that leaks over time might update its volume here.
-        Default: no-op.
-        """
-        return
 
-    def update_from_edges(self, dt: float) -> None:
-        """
-        Update the node's state based on flows from incoming edges.
-        Args:
-            dt: Time step for the update.
-        Modifies:
-            Updates the node's state variables in place.
-        """
+        # Initialize flows
+        flows = {key: 0.0 for key in self.get_fields()}
+
+        # Validate flows are not None
+        for edge in self.edges_incoming + self.edges_outgoing:
+            if edge.flows is None:
+                raise ValueError(f"{edge} flows have not been calculated for {self}")
 
         # Add incoming flows
         for edge in self.edges_incoming:
-            if edge.flows is None:
-                raise ValueError(f"{edge} flows have not been calculated for {self}")
             for key, value in edge.flows.items():
                 if not hasattr(self, key):
                     raise KeyError(f"{edge} contains unknown flow '{key}' for {self}")
-                current_value = getattr(self, key)
-                setattr(self, key, current_value + value * dt)
+                flows[key] += value
 
         # Subtract outgoing flows
         for edge in self.edges_outgoing:
-            if edge.flows is None:
-                raise ValueError(f"{edge} flows have not been calculated for {self}")
             for key, value in edge.flows.items():
                 if not hasattr(self, key):
                     raise KeyError(f"{edge} contains unknown flow '{key}' for {self}")
-                current_value = getattr(self, key)
-                setattr(self, key, current_value - value * dt)
+                flows[key] -= value
+        
+        # Update state variables
+        for key, value in flows.items():
+            current_value = getattr(self, key)
+            setattr(self, key, current_value + value * dt)
+
+        # Set flows
+        self.flows = flows
 
         # Done
         return
