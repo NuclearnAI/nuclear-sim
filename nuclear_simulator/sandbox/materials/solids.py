@@ -1,6 +1,6 @@
 
 # Import libraries
-from nuclear_simulator.sandbox.plants.materials.base import Material
+from nuclear_simulator.sandbox.materials.base import Material
 
 
 # Define solid material class
@@ -12,18 +12,19 @@ class Solid(Material):
     # Define class attributes
     DENSITY: float = None  # [kg/m³] Reference density
     
-    def __init__(self, m: float, U: float) -> None:
+    def __init__(self, m: float, U: float, **kwargs) -> None:
         """
         Initialize solid material with automatic volume calculation.
 
         Args:
-            m: [kg] Mass
-            U: [J]  Internal energy, referenced to 0K
+            m:      [kg] Mass
+            U:      [J]  Internal energy, referenced to 0K
+            kwargs: [-]  Additional keyword arguments for base Material class
         """
         if self.DENSITY is None or self.DENSITY <= 0.0:
             raise ValueError(f"{type(self).__name__}: DENSITY must be set by subclass")
         V = m / self.DENSITY
-        super().__init__(m, U, V)
+        super().__init__(m, U, V, **kwargs)
     
     def __add__(self, other: 'Solid') -> 'Solid':
         """

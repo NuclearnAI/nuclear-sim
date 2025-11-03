@@ -1,6 +1,7 @@
 
 # Import libraries
-from nuclear_simulator.sandbox.plants.physics import (
+from numbers import Number
+from nuclear_simulator.sandbox.physics import (
     calc_temperature_from_energy,
     calc_energy_from_temperature,
 )
@@ -32,9 +33,11 @@ class Material:
         Initialize material with extrinsic properties directly.
         
         Args:
-            m: Mass [kg]
-            U: Internal energy [J], referenced to 0K
-            V: Volume [m³]
+            m:        [kg]  Mass
+            U:        [J]   Internal energy, referenced to 0K
+            V:        [m³]  Volume
+            validate: [-]   Whether to validate properties upon initialization
+                            Skip for flows where negative mass/energy/volume may occur
         
         Raises:
             ValueError: If any properties are invalid
@@ -42,60 +45,80 @@ class Material:
         self.m = m
         self.U = U
         self.V = V
-        self.validate()
     
     def __repr__(self) -> str:
-        """
-        String representation for debugging.
-        
-        Returns:
-            str: Human-readable representation showing type and key properties
-        """
         return (
             f"{type(self).__name__}(m={self.m:.2f} kg, U={self.U:.2f} J, V={self.V:.6f} m³)"
         )
     
-    def __add__(self, other: 'Material') -> 'Material':
-        """
-        Add two materials together (simulates mixing/flow).
-        Mass, energy, and volume are conserved.
-        
-        Args:
-            other: Another material instance to add
-        
-        Returns:
-            Material: New material instance with summed properties
-        """
-        if type(self) != type(other):
+    def __add__(self, other: 'Material' | float) -> 'Material':
+        if (type(self) == type(other)) or isinstance(other, Energy):
+            # Case: Same material type
+            m_new = self.m + other.m
+            U_new = self.U + other.U
+            V_new = self.V + other.V
+            return type(self)(m=m_new, U=U_new, V=V_new)
+        elif isinstance(other, Number) and (other == 0.0):
+            # Case: Adding zero (no-op)
+            return type(self)(m=self.m, U=self.U, V=self.V)
+        else:
+            # Otherwise raise error
             raise TypeError(
                 f"Cannot add materials of different types: "
                 f"{type(self).__name__} and {type(other).__name__}"
             )
-        m_new = self.m + other.m
-        U_new = self.U + other.U
-        V_new = self.V + other.V
-        return type(self)(m_new, U_new, V_new)
+        
+    def __radd__(self, other):
+        return self.__add__(other)
     
     def __sub__(self, other: 'Material') -> 'Material':
-        """
-        Subtract material (simulates outflow).
-        Mass, energy, and volume are conserved.
-        
-        Args:
-            other: Material instance to subtract
-        
-        Returns:
-            Material: New material instance with subtracted properties
-        """
-        if type(self) != type(other):
+        if (type(self) == type(other)) or isinstance(other, Energy):
+            # Case: Same material type
+            m_new = self.m - other.m
+            U_new = self.U - other.U
+            V_new = self.V - other.V
+            return type(self)(m=m_new, U=U_new, V=V_new)
+        elif isinstance(other, Number) and other == 0.0:
+            # Case: Subtracting zero (no-op)
+            return type(self)(m=self.m, U=self.U, V=self.V)
+        else:
+            # Otherwise raise error
             raise TypeError(
                 f"Cannot subtract materials of different types: "
                 f"{type(self).__name__} and {type(other).__name__}"
             )
-        m_new = self.m - other.m
-        U_new = self.U - other.U
-        V_new = self.V - other.V
-        return type(self)(m_new, U_new, V_new)
+        
+    def __rsub__(self, other):
+        if (type(self) == type(other)) or isinstance(other, Energy):
+            # Case: Same material type
+            m_new = other.m - self.m
+            U_new = other.U - self.U
+            V_new = other.V - self.V
+            return type(self)(m=m_new, U=U_new, V=V_new)
+        elif isinstance(other, Number) and other == 0.0:
+            # Case: Subtracting zero (no-op)
+            return type(self)(m=-self.m, U=-self.U, V=-self.V)
+        else:
+            # Otherwise raise error
+            raise TypeError(
+                f"Cannot subtract materials of different types: "
+                f"{type(other).__name__} and {type(self).__name__}"
+            )
+    
+    def __mul__(self, scalar: Number) -> 'Material':
+        m_new = self.m * scalar
+        U_new = self.U * scalar
+        V_new = self.V * scalar
+        return type(self)(m=m_new, U=U_new, V=V_new)
+    
+    def __rmul__(self, scalar: Number) -> 'Material':
+        return self.__mul__(scalar)
+    
+    def __truediv__(self, scalar: Number) -> 'Material':
+        m_new = self.m / scalar
+        U_new = self.U / scalar
+        V_new = self.V / scalar
+        return type(self)(m=m_new, U=U_new, V=V_new)
     
     @classmethod
     def from_temperature(cls, m: float, T: float, **kwargs) -> 'Material':
@@ -111,7 +134,7 @@ class Material:
             Material: New material instance initialized from temperature
         """
         if cls.HEAT_CAPACITY is None:
-            raise ValueError(f"{cls.__name__}: cp must be set by subclass")
+            raise ValueError(f"{cls.__name__}: HEAT_CAPACITY must be set by subclass")
         U = calc_energy_from_temperature(T=T, m=m, cv=cls.HEAT_CAPACITY)
         return cls(m, U, **kwargs)
     
@@ -145,40 +168,6 @@ class Material:
         """
         return self.m / self.V
     
-    @property
-    def P(self) -> float:
-        """
-        Pressure [Pa]. Returns None in base class; subclasses override.
-        
-        Returns:
-            None: Base class does not define pressure behavior
-        """
-        return None
-    
-    def set_temperature(self, T: float) -> None:
-        """
-        Set temperature and update energy.
-        
-        This method updates the material's temperature by computing and setting
-        the corresponding internal energy. This is the inverse operation of
-        reading the T property.
-        
-        Args:
-            T: Target temperature [K]
-        
-        Modifies:
-            self.U: Updated to correspond to target temperature
-        
-        Raises:
-            ValueError: If temperature is negative or if cp is not set
-        """
-        if T < 0:
-            raise ValueError(f"Temperature cannot be negative: {T:.2f} K")
-        if self.cv is None:
-            raise ValueError(f"{type(self).__name__}: cp must be set")
-        self.U = calc_energy_from_temperature(T=T, m=self.m, cv=self.cv)
-        return
-    
     def validate(self) -> None:
         """
         Ensure all properties are physically reasonable.
@@ -197,6 +186,27 @@ class Material:
         if self.V <= 0:
             raise ValueError(f"Volume must be positive: {self.V:.2f} m³")
         return
+    
+
+# Define Energy material class
+class Energy(Material):
+    """
+    Material that carries only internal energy (no mass or volume).
+    """
+
+    def __init__(self, U: float, **_) -> None:
+        """
+        Initialize energy-only material.
+
+        Args:
+            U: [J] Internal energy
+        """
+        super().__init__(m=0.0, U=U, V=0.0)
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}(U={self.U:.2f} J)"
+    
+
 
 
 # Test
@@ -208,11 +218,23 @@ def test_file():
     # Instantiate
     mata = DummyMaterial(m=10.0, U=1e6, V=0.01)
     matb = DummyMaterial(m=10.0, U=2e6, V=0.02)
-    # Add materials
+    # Test addition
     matc = mata + matb
     assert matc.m == 20.0
     assert matc.U == 3e6
     assert matc.V == 0.03
+    # Test subtraction
+    matd = matc - mata
+    assert matd.m == 10.0
+    assert matd.U == 2e6
+    # Test multiplication
+    mate = mata * 2.0
+    assert mate.m == 20.0
+    assert mate.U == 2e6
+    # Test division
+    matf = mate / 2.0
+    assert matf.m == 10.0
+    assert matf.U == 1e6
     # Done
     return
 if __name__ == "__main__":

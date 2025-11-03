@@ -2,11 +2,11 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Optional
 if TYPE_CHECKING:
-    from nuclear_simulator.sandbox.graphs_v2.edges import Edge
+    from nuclear_simulator.sandbox.graphs.edges import Edge
 
 # Import libraries
-from pydantic import PrivateAttr
-from nuclear_simulator.sandbox.graphs_v2.base import Component
+from nuclear_simulator.sandbox.graphs.base import Component
+from nuclear_simulator.sandbox.utils.nestedattrs import getattr_nested, setattr_nested, hasattr_nested
 
 
 # Make an abstract base class for graph nodes
@@ -16,11 +16,14 @@ class Node(Component):
     """
 
     def __init__(self, **data: Any) -> None:
-        """Initialize Node and add private attributes."""
+        """
+        Initialize Node and add private attributes.
+        """
         # Initialize base Component attributes (Pydantic fields)
         super().__init__(**data)
-        # Define private attributes
+        # Set private attributes
         self.flows: dict[str, Any] = {}
+        # Initialize edge lists
         self.edges_incoming: list[Edge] = []
         self.edges_outgoing: list[Edge] = []
         # Done
@@ -53,22 +56,22 @@ class Node(Component):
 
         # Add incoming flows
         for edge in self.edges_incoming:
-            for key, value in edge.flows.items():
-                if not hasattr(self, key):
+            for key, value in edge.get_flows_target().items():
+                if not hasattr_nested(self, key):
                     raise KeyError(f"{edge} contains unknown flow '{key}' for {self}")
                 flows[key] += value
 
         # Subtract outgoing flows
         for edge in self.edges_outgoing:
-            for key, value in edge.flows.items():
-                if not hasattr(self, key):
+            for key, value in edge.get_flows_source().items():
+                if not hasattr_nested(self, key):
                     raise KeyError(f"{edge} contains unknown flow '{key}' for {self}")
                 flows[key] -= value
         
         # Update state variables
         for key, value in flows.items():
-            current_value = getattr(self, key)
-            setattr(self, key, current_value + value * dt)
+            current_value = getattr_nested(self, key)
+            setattr_nested(self, key, current_value + value * dt)
 
         # Set flows
         self.flows = flows

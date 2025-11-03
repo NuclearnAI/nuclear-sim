@@ -2,13 +2,13 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING, ClassVar, Any, Optional
 if TYPE_CHECKING:
-    from nuclear_simulator.sandbox.graphs_v2.nodes import Node
-    from nuclear_simulator.sandbox.graphs_v2.edges import Edge
+    from nuclear_simulator.sandbox.graphs.nodes import Node
+    from nuclear_simulator.sandbox.graphs.edges import Edge
 
 # Import libraries
 from abc import ABC, abstractmethod
 from pydantic import PrivateAttr
-from nuclear_simulator.sandbox.graphs_v2.base import Component
+from nuclear_simulator.sandbox.graphs.base import Component
 
 
 # Signal class
@@ -48,13 +48,10 @@ class Signal:
         if isinstance(self.source_component, Controller):
             # If reading a controller, assume controller already wrote payload
             return self.payload
-        elif hasattr(self.source_component, "state"):
+        else:
             # If reading a node/edge, get its state
             self.payload = self.source_component.state
             return self.payload
-        else:
-            # Otherwise, raise error
-            raise NotImplementedError("Source component has no state to read")
     
     def write(self, payload: dict[str, Any]) -> None:
         """
@@ -75,24 +72,21 @@ class Controller(Component):
     REQUIRED_CONNECTIONS_WRITE: ClassVar[tuple[str, ...] | None] = None
 
     def __init__(self, **data: Any) -> None:
-        """Initialize Controller and add private attributes."""
-        # Initialize base Component attributes (Pydantic fields)
+        """
+        Initialize controller and set up connection dictionaries.
+        """
+        # Call super init
         super().__init__(**data)
+        # Ensure required connections are defined
+        if self.REQUIRED_CONNECTIONS_READ is None:
+            raise ValueError(f"Controller subclass {self.__class__.__name__} must define REQUIRED_CONNECTIONS_READ")
+        if self.REQUIRED_CONNECTIONS_WRITE is None:
+            raise ValueError(f"Controller subclass {self.__class__.__name__} must define REQUIRED_CONNECTIONS_WRITE")
         # Initialize connection dictionaries
         self.connections_read: dict[str, Signal] = {}
         self.connections_write: dict[str, Signal] = {}
         # Done
         return
-    
-    def __init_subclass__(cls, **kwargs):
-        """Ensure that subclasses define required connection lists."""
-        super().__init_subclass__(**kwargs)
-        for name in ("REQUIRED_CONNECTIONS_READ", "REQUIRED_CONNECTIONS_WRITE"):
-            val = getattr(cls, name, None)
-            if val is None:
-                raise TypeError(f"{cls.__name__} must define {name}")
-            if not (isinstance(val, tuple) and all(isinstance(s, str) for s in val)):
-                raise TypeError(f"{name} on {cls.__name__} must be a tuple[str, ...]")
     
     def get_nonstate_fields(self) -> list[str]:
         """Return list of non-state field names."""
@@ -183,7 +177,7 @@ class Controller(Component):
 # Test
 def test_file():
     # Import libraries
-    from nuclear_simulator.sandbox.graphs_v2.nodes import Node
+    from nuclear_simulator.sandbox.graphs.nodes import Node
     # Define dummy node
     class TestNode(Node):
         a: float
@@ -206,9 +200,9 @@ def test_file():
             self.connections_write['write_node'].write({'a_increase': (1 if b_source > 5 else 0)})
             return
     # Create nodes and controller
-    node1 = TestNode(id=1, name="Node1", a=0.0, b=0)
-    node2 = TestNode(id=2, name="Node2", a=0.0, b=10)
-    controller = TestController(id=1, name="Controller1")
+    node1 = TestNode(name="Node1", a=0.0, b=0)
+    node2 = TestNode(name="Node2", a=0.0, b=10)
+    controller = TestController(name="Controller1")
     controller.add_connections(
         read_node=node1,
         write_node=node2,

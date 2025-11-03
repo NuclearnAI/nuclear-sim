@@ -1,152 +1,122 @@
+
 # Annotation imports
 from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Optional, Type
 if TYPE_CHECKING:
-    from nuclear_simulator.sandbox.graphs_v2.nodes import Node
-    from nuclear_simulator.sandbox.graphs_v2.edges import Edge
-    from nuclear_simulator.sandbox.graphs_v2.controllers import Controller
+    from nuclear_simulator.sandbox.graphs.nodes import Node
+    from nuclear_simulator.sandbox.graphs.edges import Edge
+    from nuclear_simulator.sandbox.graphs.controllers import Controller
 
 # Import libraries
-from nuclear_simulator.sandbox.graphs_v2.base import Component
+from itertools import count
+from threading import Lock
+from pydantic import BaseModel
+from nuclear_simulator.sandbox.graphs.base import Component
+
+
+# ID allocator class for thread-safe unique ID generation
+class IdCounter:
+    def __init__(self, start=1):
+        self._ctr = count(start)
+        self._lock = Lock()
+    def next(self) -> int:
+        with self._lock:
+            return next(self._ctr)
 
 
 # Define abstract base class for graphs
-class Graph:
+class Graph(BaseModel):
     """
-    Abstract base class for graphs containing nodes and edges.
+    Abstract base class for graphs containing nodes, edges, controllers, and sub-graphs.
     """
 
-    def __init__(self, id_counter=0) -> None:
+    # Model configuration
+    model_config = {
+        "extra": "allow",                 # Allow extra fields (for private attributes)
+        "arbitrary_types_allowed": True,  # Allow non-Pydantic values for fields
+    }
+
+    # Set class attributes
+    id: Optional[int] = None
+    name: Optional[str] = None
+
+    def __init__(
+            self, 
+            id_counter: IdCounter | None = None, 
+            name: Optional[str] = None,
+            **data: Any
+        ) -> None:
+        """
+        Initialize graph and set up component registries.
+        """
+
+        # Initialize ID counter
+        if id_counter is None:
+            id_counter = IdCounter()
+        _id = id_counter.next()
+
+        # Call super init
+        super().__init__(id=_id, name=name, **data)
+
+        # Set private attributes
         self.id_counter = id_counter
+        self.graphs: dict[int, Graph] = {}
         self.nodes: dict[int, Node] = {}
         self.edges: dict[int, Edge] = {}
         self.controllers: dict[int, Controller] = {}
+        
+        # Done
         return
     
     def __repr__(self) -> str:
-        return f"Graph[Nodes: {len(self.nodes)}, Edges: {len(self.edges)}, Controllers: {len(self.controllers)}]"
+        return f"Graph[Nodes: {len(self.get_nodes())} | Edges: {len(self.get_edges())}]"
     
-    @classmethod
-    def from_dict(
-            cls, 
-            data: dict[str, Any], 
-            registry: dict[str, Type[Component]]
-        ) -> Graph:
+    def get_nodes(self) -> dict[int, Node]:
+        """Return dict of nodes in the graph, recursively including sub-graphs."""
+        nodes = self.nodes
+        for g in self.graphs.values():
+            g_nodes = g.get_nodes()
+            if any(id in nodes for id in g_nodes):
+                raise ValueError("Duplicate node IDs found in sub-graphs")
+            nodes.update(g_nodes)
+        return nodes
+    
+    def get_edges(self) -> dict[int, Edge]:
+        """Return dict of edges in the graph, recursively including sub-graphs."""
+        edges = self.edges
+        for g in self.graphs.values():
+            g_edges = g.get_edges()
+            if any(id in edges for id in g_edges):
+                raise ValueError("Duplicate edge IDs found in sub-graphs")
+            edges.update(g_edges)
+        return edges
+    
+    def get_controllers(self) -> dict[int, Controller]:
+        """Return dict of controllers in the graph, recursively including sub-graphs."""
+        controllers = self.controllers
+        for g in self.graphs.values():
+            g_controllers = g.get_controllers()
+            if any(id in controllers for id in g_controllers):
+                raise ValueError("Duplicate controller IDs found in sub-graphs")
+            controllers.update(g_controllers)
+        return controllers
+    
+    def get_component(self, identifier: int | str) -> Component:
         """
-        Deserialize the graph from a dictionary.
+        Get a component (node, edge, or controller) by its id or name.
         Args:
-            data:     The dictionary representation of the graph.
-            registry: A mapping from component type names to their classes.
+            identifier: The id (int) or name (str) of the component to retrieve.
         Returns:
-            The deserialized Graph instance.
+            The component with the specified id or name.
         """
-
-        # Create graph instance
-        graph = cls(id_counter=data["id_counter"])
-
-        # Deserialize nodes
-        for node_id_str, node_data in data["nodes"].items():
-            node_id = int(node_id_str)
-            # Get parameters
-            node_type = registry[node_data["type"]]
-            node_name = node_data["name"]
-            node_state = node_data["state"]
-            # Initialize and add to graph
-            graph.nodes[node_id] = node_type(id=node_id, name=node_name, **node_state)
-
-        # Deserialize edges
-        for edge_id_str, edge_data in data["edges"].items():
-            edge_id = int(edge_id_str)
-            # Get parameters
-            edge_type = registry[edge_data["type"]]
-            edge_name = edge_data["name"]
-            edge_state = edge_data["state"]
-            node_source = graph.nodes[edge_data["node_source_id"]]
-            node_target = graph.nodes[edge_data["node_target_id"]]
-            # Initialize and add to graph
-            graph.edges[edge_id] = edge_type(
-                node_source=node_source,
-                node_target=node_target,
-                id=edge_id,
-                name=edge_name,
-                **edge_state
-            )
-
-        # Deserialize controllers
-        for controller_id_str, controller_data in data["controllers"].items():
-            controller_id = int(controller_id_str)
-            # Get parameters
-            controller_type = registry[controller_data["type"]]
-            controller_name = controller_data["name"]
-            controller_state = controller_data["state"]
-            controller_connection_ids = controller_data["connection_ids"]
-            # Initialize controller
-            controller = controller_type(id=controller_id, name=controller_name, **controller_state)
-            # Add connections
-            connections = {k: graph.get_component(v) for k, v in controller_connection_ids.items()}
-            controller.add_connections(**connections)
-            # Add to graph
-            graph.controllers[controller_id] = controller
-
-        # Done
-        return graph
+        if isinstance(identifier, int):
+            return self.get_component_from_id(identifier)
+        elif isinstance(identifier, str):
+            return self.get_component_from_name(identifier)
+        else:
+            raise TypeError("Identifier must be an int (id) or str (name)")
     
-    def to_dict(self) -> dict[str, Any]:
-        """
-        Serialize the graph to a dictionary.
-        Returns:
-            A dictionary representation of the graph.
-        """
-
-        # Serialize nodes
-        nodes_dict = {
-            node_id: {
-                "type": node.__class__.__name__,
-                "name": node.name,
-                "state": node.state,
-            }
-            for node_id, node in self.nodes.items()
-        }
-
-        # Serialize edges
-        edges_dict = {
-            edge_id: {
-                "type": edge.__class__.__name__,
-                "name": edge.name,
-                "state": edge.state,
-                "node_source_id": edge.node_source.id,
-                "node_target_id": edge.node_target.id,
-            }
-            for edge_id, edge in self.edges.items()
-        }
-
-        # Serialize controllers
-        controllers_dict = {}
-        for controller_id, controller in self.controllers.items():
-            connection_ids = {}
-            for key, signal in controller.connections_read.items():
-                connection_ids[key] = signal.source_component.id
-            for name, signal in controller.connections_write.items():
-                connection_ids[name] = signal.target_component.id
-            controllers_dict[controller_id] = {
-                "type": controller.__class__.__name__,
-                "name": controller.name,
-                "state": controller.state,
-                "connection_ids": connection_ids,
-            }
-
-        # Combine into graph dict
-        graph_dict = {
-            "id_counter": self.id_counter,
-            "nodes": nodes_dict,
-            "edges": edges_dict,
-            "controllers": controllers_dict, 
-        }
-
-        # Return output
-        return graph_dict
-
-    def get_component(self, id: int) -> Component:
+    def get_component_from_id(self, id: int) -> Component:
         """
         Get a component (node, edge, or controller) by its id.
         Args:
@@ -154,113 +124,156 @@ class Graph:
         Returns:
             The component with the specified id.
         """
-
-        # Search in nodes
-        if id in self.nodes:
+        if id in self.get_nodes():
             return self.nodes[id]
-        
-        # Search in edges
-        if id in self.edges:
+        elif id in self.get_edges():
             return self.edges[id]
-        
-        # Search in controllers
-        if id in self.controllers:
+        elif id in self.get_controllers():
             return self.controllers[id]
+        else:
+            raise KeyError(f"No component with id {id} found in graph")
         
-        # If not found, raise error
-        raise KeyError(f"No component with id {id} found in graph")
+    def get_component_from_name(self, name: str) -> Component:
+        """
+        Get a component (node, edge, or controller) by its name.
+        Args:
+            name: The name of the component to retrieve.
+        Returns:
+            The component with the specified name.
+        """
+        all_components = (
+            list(self.get_nodes().values()) 
+            + list(self.get_edges().values()) 
+            + list(self.get_controllers().values())
+        )
+        for comp in all_components:
+            if comp.name == name:
+                return comp
+        raise KeyError(f"No component with name '{name}' found in graph")
     
     def add_node(
             self, 
             node_type: Type[Node], 
             name: Optional[str] = None,
-            **state
+            **kwargs
         ) -> Node:
         """
         Add a node to the graph.
         Args:
-            node_cls: The node class instance to add.
+            node_type: The node class instance to add.
+            name:      Optional name for the node.
+            **kwargs:  Additional keyword arguments for the node.
         Modifies:
             Updates self.nodes with the new node.
         """
         
         # Get node id
-        id = self.id_counter
-        self.id_counter += 1
+        id = self.id_counter.next()
 
         # Create node instance
-        node = node_type(id=id, name=name, **state)
+        node = node_type(id=id, name=name, **kwargs)
         self.nodes[id] = node
 
-        # Done
+        # Return node
         return node
     
     def add_edge(
             self,
             edge_type: Type[Edge],
-            node_source_id: int,
-            node_target_id: int,
+            node_source: Node,
+            node_target: Node,
             name: Optional[str] = None,
-            **state
+            **kwargs
         ) -> Edge:
         """
         Add an edge to the graph.
         Args:
-            edge_cls:       The edge class instance to add.
-            node_source_id: The source node id for the edge.
-            node_target_id: The target node id for the edge.
+            edge_type:      The edge class instance to add.
+            node_source:    The source node for the edge.
+            node_target:    The target node for the edge.
+            name:           Optional name for the edge.
+            **kwargs:       Additional keyword arguments for the edge.
         Modifies:
             Updates self.edges with the new edge.
         """
 
+        # Check that nodes exist in graph
+        if node_source not in self.get_nodes().values():
+            raise ValueError("Source node not found in graph")
+        if node_target not in self.get_nodes().values():
+            raise ValueError("Target node not found in graph")
+
         # Get edge id
-        id = self.id_counter
-        self.id_counter += 1
+        id = self.id_counter.next()
 
         # Create edge instance
         edge = edge_type(
-            node_source=self.nodes[node_source_id],
-            node_target=self.nodes[node_target_id],
+            node_source=node_source,
+            node_target=node_target,
             id=id,
             name=name,
-            **state
+            **kwargs
         )
         self.edges[id] = edge
 
-        # Done
+        # Return edge
         return edge
 
     def add_controller(
             self,
             controller_type: type[Controller],
-            connection_ids: dict[str, int],
+            connections: dict[str, Node | Edge],
             name: Optional[str] = None,
-            **state
+            **kwargs
         ) -> Controller:
         """
         Add a controller to the graph.
         Args:
-            controller_cls: The controller class instance to add.
-            read_connection_ids: The read connection ids for the controller.
-            write_connection_ids: The write connection ids for the controller.
+            controller_type: The controller class instance to add.
+            connections:     Dict of connection names to Node/Edge instances.
+            name:            Optional name for the controller.
+            **kwargs:        Additional keyword arguments for the controller.
         Modifies:
             Updates self.controllers with the new controller.
         """
 
         # Get controller id
-        id = self.id_counter
-        self.id_counter += 1
-
-        # Get components by ids
-        components = {k: self.get_component(v) for k, v in connection_ids.items()}
+        id = self.id_counter.next()
 
         # Create controller instance
-        controller = controller_type(id=id, name=name, **state)
-        controller.add_connections(**components)
+        controller = controller_type(id=id, name=name, **kwargs)
+        controller.add_connections(**connections)
         self.controllers[id] = controller
 
-        # Done
+        # Return controller
         return controller
+    
+    def add_graph(
+            self,
+            graph_type: type[Graph],
+            name: Optional[str] = None,
+            **kwargs
+        ):
+        """
+        Add a sub-graph to the graph.
+        Args:
+            graph_type: The graph class instance to add.
+            name:       Optional name for the sub-graph.
+            **kwargs:   Additional keyword arguments for the sub-graph.
+        Modifies:
+            Updates self.graphs with the new sub-graph.
+        """
+
+        # Create graph instance
+        graph = graph_type(
+            id_counter=self.id_counter, 
+            name=name, 
+            **kwargs
+        )
+        self.graphs[graph.id] = graph
+
+        # Return sub-graph
+        return graph
     
     def update(self, dt: float) -> None:
         """
@@ -272,15 +285,15 @@ class Graph:
         """
 
         # Update edges
-        for edge in self.edges.values():
+        for edge in self.get_edges().values():
             edge.update(dt)
 
         # Update nodes
-        for node in self.nodes.values():
+        for node in self.get_nodes().values():
             node.update(dt)
 
         # Update controllers
-        for controller in self.controllers.values():
+        for controller in self.get_controllers().values():
             controller.update(dt)
 
         # Done
@@ -290,9 +303,9 @@ class Graph:
 # Test
 def test_file():
     # Import libraries
-    from nuclear_simulator.sandbox.graphs_v2.nodes import Node
-    from nuclear_simulator.sandbox.graphs_v2.edges import Edge
-    from nuclear_simulator.sandbox.graphs_v2.controllers import Controller
+    from nuclear_simulator.sandbox.graphs.nodes import Node
+    from nuclear_simulator.sandbox.graphs.edges import Edge
+    from nuclear_simulator.sandbox.graphs.controllers import Controller
     # Create minimial graph components
     # - Node with one state variable 'a'
     class TestNode(Node):

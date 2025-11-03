@@ -1,13 +1,13 @@
+
 # Annotation imports
 from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Optional
 if TYPE_CHECKING:
-    from nuclear_simulator.sandbox.graphs_v2.nodes import Node
+    from nuclear_simulator.sandbox.graphs.nodes import Node
 
 # Import libraries
 from abc import abstractmethod
-from pydantic import PrivateAttr
-from nuclear_simulator.sandbox.graphs_v2.base import Component
+from nuclear_simulator.sandbox.graphs.base import Component
 
 
 # Make an abstract base class for graph edges
@@ -33,6 +33,9 @@ class Edge(Component):
         self.node_target.edges_incoming.append(self)
         # Done
         return
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}[{self.node_source.id} -> {self.node_target.id}]"
     
     def get_nonstate_fields(self) -> list[str]:
         """Return list of non-state field names."""
@@ -41,9 +44,20 @@ class Edge(Component):
             "node_source",
             "node_target",
         ]
-
-    def __repr__(self) -> str:
-        return f"{self.__class__.__name__}[{self.node_source.id} -> {self.node_target.id}]"
+    
+    def get_flows_source(self) -> dict[str, Any]:
+        """Return flows with tags for source node."""
+        flows = self.flows
+        flows = {k: v for k, v in flows.items() if (k != "_target") and (k != "_source")}
+        flows.update(self.flows.get("_source", {}))
+        return flows
+    
+    def get_flows_target(self) -> dict[str, Any]:
+        """Return flows with tags for target node."""
+        flows = self.flows
+        flows = {k: v for k, v in flows.items() if (k != "_target") and (k != "_source")}
+        flows.update(self.flows.get("_target", {}))
+        return flows
     
     def update_from_graph(self, dt: float) -> None:
         """
@@ -57,10 +71,15 @@ class Edge(Component):
         return
 
     @abstractmethod
-    def calculate_flows(self, dt: float, node_source: Node, node_target: Node) -> dict[str, float]:
+    def calculate_flows(
+            self, 
+            dt: float, 
+            node_source: Node, 
+            node_target: Node
+        ) -> tuple[dict[str, float], dict[str, float]]:
         """
         Compute instantaneous flows for this edge based on current node states.
-        Must return a dict of flow quantities (e.g., {"m": ..., "H": ..., "Q": ...}).
+        Must return a dict of flow quantities (e.g., {"m": ..., "U": ..., }).
         """
         raise NotImplementedError("calculate_flows must be implemented by Edge subclasses.")
     
@@ -68,7 +87,7 @@ class Edge(Component):
 # Test
 def test_file():
     # Import node
-    from nuclear_simulator.sandbox.graphs_v2.nodes import Node
+    from nuclear_simulator.sandbox.graphs.nodes import Node
     # Define a test node class
     class TestNode(Node):
         a: float

@@ -1,12 +1,14 @@
+
 # Annotation imports
 from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Optional
 if TYPE_CHECKING:
-    from nuclear_simulator.sandbox.graphs_v2.controllers import Signal
+    from nuclear_simulator.sandbox.graphs.controllers import Signal
 
 # Import libraries
 import time
-from pydantic import BaseModel, Field, PrivateAttr
+from pydantic import BaseModel, Field
+from nuclear_simulator.sandbox.utils.nestedattrs import getattr_nested, setattr_nested, hasattr_nested
 
 
 # Make an abstract base class for graph components
@@ -15,18 +17,23 @@ class Component(BaseModel):
     Abstract base class for graph components.
     """
 
-    # Allow extra fields (for private attributes)
-    model_config = {"extra": "allow"}
+    # Model configuration
+    model_config = {
+        "extra": "allow",                 # Allow extra fields (for private attributes)
+        "arbitrary_types_allowed": True,  # Allow non-Pydantic values for fields
+    }
     
     # Define base fields
-    id: int = Field(default_factory=lambda: int(time.time() * 1000000))
+    id: Optional[int] = None
     name: Optional[str] = None
 
     def __init__(self, **data: Any) -> None:
-        """Initialize Component and add private attributes."""
-        # Initialize base Pydantic model
+        """
+        Initialize component and set up signal lists.
+        """
+        # Call super init
         super().__init__(**data)
-        # Add private attributes
+        # Initialize signal lists
         self.signals_incoming: list[Signal] = []
         self.signals_outgoing: list[Signal] = []
         # Done
@@ -57,12 +64,9 @@ class Component(BaseModel):
         fields = [f for f in fields if f not in self.get_nonstate_fields()]
         # Return output
         return fields
+    
 
-    def model_dump(self, **kwargs) -> dict[str, Any]:
-        """Override to use custom to_dict for serialization."""
-        if hasattr(self, 'to_dict'):
-            return self.to_dict()
-        return super().model_dump(**kwargs)
+    # --- Update methods ---
 
     def update(self, dt: float) -> None:
         """
@@ -95,11 +99,11 @@ class Component(BaseModel):
             for key, value in payload.items():
 
                 # Check if key is a valid state variable
-                if not hasattr(self, key):
+                if not hasattr_nested(self, key):
                     raise KeyError(f"Signal contains unknown state variable '{key}' for {self}")
                 
                 # Set state variable
-                setattr(self, key, value)
+                setattr_nested(self, key, value)
 
         # Done
         return
@@ -132,7 +136,7 @@ def test_file():
             self.y += 2 * dt
             return
     # Instantiate
-    comp = TestComponent(name="test", x=0.0, y=0.0)
+    comp = TestComponent(id=0, name="test", x=0.0, y=0.0)
     # Checks
     print(list(comp.model_fields.keys()))
     # Done
