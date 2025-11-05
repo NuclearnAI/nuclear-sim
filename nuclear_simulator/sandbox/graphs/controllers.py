@@ -41,7 +41,7 @@ class Signal:
     def __repr__(self) -> str:
         return f"Signal[{self.source_component} -> {self.target_component}]"
 
-    def read(self) -> None:
+    def read(self) -> dict[str, Any]:
         """
         Set self.payload to the source component's state.
         """
@@ -131,7 +131,7 @@ class Controller(Component):
 
         # Validate name
         if name not in self.REQUIRED_CONNECTIONS_WRITE:
-            raise KeyError(f"Signal name '{name}' not in controller's CONNECTIONS_WRITE list")
+            raise KeyError(f"Signal name '{name}' not in controller's REQUIRED_CONNECTIONS_WRITE list")
         
         # Create signal between self and component
         signal = Signal(source_component=self, target_component=component)

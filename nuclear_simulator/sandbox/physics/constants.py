@@ -1,3 +1,3 @@
 
 # Physical constants
-UNIVERSAL_GAS_CONSTANT      = 8.3145  # [J/(mol*K)] Universal gas constant
+UNIVERSAL_GAS_CONSTANT  = 8.314462618  # [J/(mol*K)] Universal gas constant

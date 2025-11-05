@@ -7,11 +7,18 @@ from nuclear_simulator.sandbox.materials.base import Material
 class Liquid(Material):
     """
     Incompressible liquid material with fixed volume based on reference density.
+    Attributes:
+        DENSITY:          [kg/m³]  Reference density for volume calculation
+        P0:               [Pa]     Reference pressure for calculations
+        T0:               [K]      Reference temperature for calculations
+        LATENT_HEAT:      [J/kg]   Latent heat of vaporization at reference T0 and P0
+        MOLECULAR_WEIGHT: [kg/mol] Molecular weight
     """
 
     # Define class attributes
-    DENSITY: float = None  # [kg/m³] Reference density
+    DENSITY: float | None = None
     
+
     def __init__(self, m: float, U: float, **kwargs) -> None:
         """
         Initialize liquid material with automatic volume calculation.
@@ -20,45 +27,27 @@ class Liquid(Material):
             m: [kg] Mass
             U: [J]  Internal energy, referenced to 0K
         """
+
+        # Check that density is set
         if self.DENSITY is None or self.DENSITY <= 0.0:
             raise ValueError(f"{type(self).__name__}: DENSITY must be set by subclass")
+        
+        # Calculate volume
         V = m / self.DENSITY
-        super().__init__(m, U, **{**kwargs, 'V': V})
-    
-    # def __add__(self, other: 'Liquid') -> 'Liquid':
-    #     """
-    #     Add two liquids together. Conserves mass and energy.
-    #     Args:
-    #         other: Another liquid instance
-    #     Returns:
-    #         Liquid: New liquid with combined properties
-    #     """
-    #     if type(self) != type(other):
-    #         raise TypeError(
-    #             f"Cannot add materials of different types: "
-    #             f"{type(self).__name__} and {type(other).__name__}"
-    #         )
-    #     m_new = self.m + other.m
-    #     U_new = self.U + other.U
-    #     return type(self)(m_new, U_new)
-    
-    # def __sub__(self, other: 'Liquid') -> 'Liquid':
-    #     """
-    #     Subtract liquid material (simulates outflow). Conserves mass and energy.
-    #     Args:
-    #         other: Another liquid instance to subtract
-    #     Returns:
-    #         Liquid: New liquid with subtracted properties
-    #     """
-    #     if type(self) != type(other):
-    #         raise TypeError(
-    #             f"Cannot subtract materials of different types: "
-    #             f"{type(self).__name__} and {type(other).__name__}"
-    #         )
-    #     m_new = self.m - other.m
-    #     U_new = self.U - other.U
-    #     return type(self)(m_new, U_new)
-    
+
+        # Add volume to kwargs
+        if 'V' in kwargs and abs(kwargs['V'] - V) > 1e-9:
+            raise ValueError(
+                f"Volume argument V={kwargs['V']:.6f} m³ does not match calculated volume from mass and density."
+            )
+        else:
+            kwargs['V'] = V
+
+        # Initialize base class
+        super().__init__(m, U, **kwargs)
+
+        # Done 
+        return
 
 
 # Test

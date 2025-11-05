@@ -6,7 +6,7 @@ if TYPE_CHECKING:
 
 # Import libraries
 from nuclear_simulator.sandbox.graphs.base import Component
-from nuclear_simulator.sandbox.utils.nestedattrs import getattr_nested, setattr_nested, hasattr_nested
+from nuclear_simulator.sandbox.graphs.utils import getattr_nested, setattr_nested, hasattr_nested
 
 
 # Make an abstract base class for graph nodes
@@ -47,7 +47,8 @@ class Node(Component):
         """
 
         # Initialize flows
-        flows = {key: 0.0 for key in self.get_state_fields()}
+        # flows = {key: 0.0 for key in self.get_state_fields()}
+        flows = {}
 
         # Validate flows are not None
         for edge in self.edges_incoming + self.edges_outgoing:
@@ -59,14 +60,22 @@ class Node(Component):
             for key, value in edge.get_flows_target().items():
                 if not hasattr_nested(self, key):
                     raise KeyError(f"{edge} contains unknown flow '{key}' for {self}")
-                flows[key] += value
+                # Incomping flows are positive
+                if key in flows:
+                    flows[key] += value
+                else:
+                    flows[key] = +value
 
         # Subtract outgoing flows
         for edge in self.edges_outgoing:
             for key, value in edge.get_flows_source().items():
                 if not hasattr_nested(self, key):
                     raise KeyError(f"{edge} contains unknown flow '{key}' for {self}")
-                flows[key] -= value
+                # Outgoing flows are negative
+                if key in flows:
+                    flows[key] -= value
+                else:
+                    flows[key] = -value
         
         # Update state variables
         for key, value in flows.items():

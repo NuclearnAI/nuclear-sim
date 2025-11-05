@@ -6,9 +6,8 @@ if TYPE_CHECKING:
     from nuclear_simulator.sandbox.graphs.controllers import Signal
 
 # Import libraries
-import time
 from pydantic import BaseModel, Field
-from nuclear_simulator.sandbox.utils.nestedattrs import getattr_nested, setattr_nested, hasattr_nested
+from nuclear_simulator.sandbox.graphs.utils import getattr_nested, setattr_nested, hasattr_nested
 
 
 # Make an abstract base class for graph components
@@ -70,11 +69,11 @@ class Component(BaseModel):
 
     def update(self, dt: float) -> None:
         """
-        Update the edge's internal state based on the current graph state.
+        Update the component's internal state based on the current graph state.
         Args:
             dt: Time step size (s).
         Modifies:
-            Updates self.flows with calculated flow values.
+            Updates component state based on signals, graph context, and internal dynamics.
         """
         self.update_from_signals(dt)
         self.update_from_graph(dt)
@@ -83,7 +82,7 @@ class Component(BaseModel):
 
     def update_from_signals(self, dt: float) -> None:
         """
-        Update reactor parameters based on incoming control signals.
+        Update component parameters based on incoming control signals.
         Args:
             dt: Time step for the update.
         Modifies:
@@ -110,8 +109,8 @@ class Component(BaseModel):
 
     def update_from_state(self, dt: float) -> None:
         """
-        Optional: override in subclasses if the edge has its own dynamics.
-        Example: A pipe that decays over time might update its diameter here.
+        Optional: override in subclasses if the component has its own dynamics.
+        Example: A component that decays over time might update its properties here.
         Default: no-op.
         """
         return
@@ -119,7 +118,7 @@ class Component(BaseModel):
     def update_from_graph(self, dt: float) -> None:
         """
         Optional: override in subclasses to update based on graph state.
-        Example: An edge that calculates flows based on node states would do so here.
+        Example: A component that calculates values based on connected components would do so here.
         Default: no-op.
         """
         pass

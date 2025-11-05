@@ -21,44 +21,27 @@ class Solid(Material):
             U:      [J]  Internal energy, referenced to 0K
             kwargs: [-]  Additional keyword arguments for base Material class
         """
+
+        # Check that density is set
         if self.DENSITY is None or self.DENSITY <= 0.0:
             raise ValueError(f"{type(self).__name__}: DENSITY must be set by subclass")
+        
+        # Calculate volume
         V = m / self.DENSITY
-        super().__init__(m, U, V, **kwargs)
-    
-    def __add__(self, other: 'Solid') -> 'Solid':
-        """
-        Add two solid materials together. Conserves mass and energy.
-        Args:
-            other: Another solid material instance
-        Returns:
-            Solid: New solid with combined properties
-        """
-        if type(self) != type(other):
-            raise TypeError(
-                f"Cannot add materials of different types: "
-                f"{type(self).__name__} and {type(other).__name__}"
+
+        # Add volume to kwargs
+        if 'V' in kwargs and abs(kwargs['V'] - V) > 1e-9:
+            raise ValueError(
+                f"Volume argument V={kwargs['V']:.6f} m³ does not match calculated volume from mass and density."
             )
-        m_new = self.m + other.m
-        U_new = self.U + other.U
-        return type(self)(m_new, U_new)
-    
-    def __sub__(self, other: 'Solid') -> 'Solid':
-        """
-        Subtract solid material (simulates outflow). Conserves mass and energy.
-        Args:
-            other: Another solid material instance to subtract
-        Returns:
-            Solid: New solid with subtracted properties
-        """
-        if type(self) != type(other):
-            raise TypeError(
-                f"Cannot subtract materials of different types: "
-                f"{type(self).__name__} and {type(other).__name__}"
-            )
-        m_new = self.m - other.m
-        U_new = self.U - other.U
-        return type(self)(m_new, U_new)
+        else:
+            kwargs['V'] = V
+
+        # Initialize base class
+        super().__init__(m, U, **kwargs)
+
+        # Done 
+        return
     
 
 

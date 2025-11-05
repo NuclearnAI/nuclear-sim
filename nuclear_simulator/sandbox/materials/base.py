@@ -1,46 +1,49 @@
 
-# Import libraries
+# Annotation imports
+from __future__ import annotations
 from numbers import Number
+
+# Import libraries
 from nuclear_simulator.sandbox.physics import (
     calc_temperature_from_energy,
     calc_energy_from_temperature,
+    calc_saturation_temperature,
+    calc_saturation_pressure,
 )
 
 
 # Define base Material class
 class Material:
     """
-    Base class for all materials in the nuclear simulation.
-    
-    This class defines the fundamental thermodynamic properties and operations that all
-    materials must support. Subclasses implement specific material behaviors (solid,
-    liquid, gas) by overriding the pressure property and providing material constants.
-    
-    Class Variables (Material Constants):
-        cp: Specific heat capacity [J/(kg·K)], must be set by subclasses
-    
-    Instance Variables (Extrinsic Properties):
-        m: Mass [kg]
-        U: Internal energy [J], referenced to 0K
-        V: Volume [m³]
+    Base class for all materials.
+    Attributes:
+        m:                [kg]       Mass
+        U:                [J]        Internal energy, referenced to 0K
+        V:                [m³]       Volume
+        HEAT_CAPACITY:    [J/(kg·K)] Specific heat capacity
+        P0:               [Pa]       Reference pressure for calculations
+        T0:               [K]        Reference temperature for calculations
+        LATENT_HEAT:      [J/kg]     Latent heat of vaporization at reference T0 and P0
+        MOLECULAR_WEIGHT: [kg/mol]   Molecular weight
+
     """
     
     # Class variables - Material constants (must be set by subclasses)
-    HEAT_CAPACITY: float = None
+    HEAT_CAPACITY: float | None = None
+
+    # Optional attributes for saturation calculations
+    P0: float | None = None
+    T0: float | None = None
+    LATENT_HEAT: float | None = None
+    MOLECULAR_WEIGHT: float | None = None
     
     def __init__(self, m: float, U: float, V: float) -> None:
         """
         Initialize material with extrinsic properties directly.
-        
         Args:
             m:        [kg]  Mass
             U:        [J]   Internal energy, referenced to 0K
             V:        [m³]  Volume
-            validate: [-]   Whether to validate properties upon initialization
-                            Skip for flows where negative mass/energy/volume may occur
-        
-        Raises:
-            ValueError: If any properties are invalid
         """
         self.m = m
         self.U = U
@@ -51,77 +54,106 @@ class Material:
             f"{type(self).__name__}(m={self.m:.2f} kg, U={self.U:.2f} J, V={self.V:.6f} m³)"
         )
     
-    def __add__(self, other: 'Material' | float) -> 'Material':
+    def __add__(self, other) -> Material:
         if (type(self) == type(other)) or isinstance(other, Energy):
-            # Case: Same material type
-            m_new = self.m + other.m
-            U_new = self.U + other.U
-            V_new = self.V + other.V
-            return type(self)(m=m_new, U=U_new, V=V_new)
-        elif isinstance(other, Number) and (other == 0.0):
-            # Case: Adding zero (no-op)
-            return type(self)(m=self.m, U=self.U, V=self.V)
+            m = self.m + other.m
+            U = self.U + other.U
+            V = self.V + other.V
+            return type(self)(m=m, U=U, V=V)
         else:
-            # Otherwise raise error
-            raise TypeError(
-                f"Cannot add materials of different types: "
-                f"{type(self).__name__} and {type(other).__name__}"
-            )
+            return NotImplemented
         
     def __radd__(self, other):
-        return self.__add__(other)
-    
-    def __sub__(self, other: 'Material') -> 'Material':
-        if (type(self) == type(other)) or isinstance(other, Energy):
-            # Case: Same material type
-            m_new = self.m - other.m
-            U_new = self.U - other.U
-            V_new = self.V - other.V
-            return type(self)(m=m_new, U=U_new, V=V_new)
-        elif isinstance(other, Number) and other == 0.0:
-            # Case: Subtracting zero (no-op)
-            return type(self)(m=self.m, U=self.U, V=self.V)
+        if isinstance(other, Material):
+            return self.__add__(other)
+        elif isinstance(other, Number) and (other == 0):
+            return self
         else:
-            # Otherwise raise error
-            raise TypeError(
-                f"Cannot subtract materials of different types: "
-                f"{type(self).__name__} and {type(other).__name__}"
-            )
+            return NotImplemented
+    
+    def __sub__(self, other: Material) -> Material:
+        if isinstance(other, Material):
+            return self.__add__(-other)
+        else:
+            return NotImplemented
         
     def __rsub__(self, other):
-        if (type(self) == type(other)) or isinstance(other, Energy):
-            # Case: Same material type
-            m_new = other.m - self.m
-            U_new = other.U - self.U
-            V_new = other.V - self.V
-            return type(self)(m=m_new, U=U_new, V=V_new)
-        elif isinstance(other, Number) and other == 0.0:
-            # Case: Subtracting zero (no-op)
-            return type(self)(m=-self.m, U=-self.U, V=-self.V)
+        if isinstance(other, Material):
+            return other.__add__(-self)
         else:
-            # Otherwise raise error
-            raise TypeError(
-                f"Cannot subtract materials of different types: "
-                f"{type(other).__name__} and {type(self).__name__}"
+            return NotImplemented
+
+    def __mul__(self, other) -> Material:
+        if isinstance(other, Number):
+            m = self.m * other
+            U = self.U * other
+            V = self.V * other
+            return type(self)(m=m, U=U, V=V)
+        else:
+            return NotImplemented
+    
+    def __rmul__(self, other):
+        return self.__mul__(other)
+
+    def __truediv__(self, other) -> Material:
+        if isinstance(other, Number):
+            return self.__mul__(1.0 / other)
+        else:
+            return NotImplemented
+
+    def __neg__(self) -> Material:
+        m = - self.m
+        U = - self.U
+        V = - self.V
+        return type(self)(m=m, U=U, V=V)
+    
+    def __pos__(self) -> Material: 
+        m = self.m
+        U = self.U
+        V = self.V
+        return type(self)(m=m, U=U, V=V)
+    
+    def __abs__(self) -> Material: 
+        m = abs(self.m)
+        U = abs(self.U)
+        V = abs(self.V)
+        return type(self)(m=m, U=U, V=V)
+    
+    def _validate(self) -> None:
+        """
+        Ensure all base properties are physically reasonable.
+        """
+        if self.HEAT_CAPACITY is None:
+            raise ValueError(f"{type(self).__name__}: HEAT_CAPACITY must be set by subclass")
+        if self.m < 0:
+            raise ValueError(f"Mass must be positive: {self.m:.2f} kg")
+        if self.U < 0:
+            raise ValueError(f"Internal energy must be non-negative: {self.U:.2f} J")
+        if self.V < 0:
+            raise ValueError(f"Volume must be positive: {self.V:.2f} m³")
+        if any(x==0 for x in [self.m, self.U, self.V]) and any(x!=0 for x in [self.m, self.U, self.V]):
+            raise ValueError(
+                f"Mass, internal energy, and volume must all be zero or all be positive: "
+                f"m={self.m:.2f} kg, U={self.U:.2f} J, V={self.V:.6f} m³"
             )
+        return
     
-    def __mul__(self, scalar: Number) -> 'Material':
-        m_new = self.m * scalar
-        U_new = self.U * scalar
-        V_new = self.V * scalar
-        return type(self)(m=m_new, U=U_new, V=V_new)
-    
-    def __rmul__(self, scalar: Number) -> 'Material':
-        return self.__mul__(scalar)
-    
-    def __truediv__(self, scalar: Number) -> 'Material':
-        m_new = self.m / scalar
-        U_new = self.U / scalar
-        V_new = self.V / scalar
-        return type(self)(m=m_new, U=U_new, V=V_new)
-    
+    def _validate_saturation(self) -> None:
+        """
+        Ensure saturation calculation parameters are set.
+        """
+        if self.LATENT_HEAT is None:
+            raise ValueError(f"{type(self).__name__}: LATENT_HEAT must be set.")
+        if self.P0 is None:
+            raise ValueError(f"{type(self).__name__}: P0 must be set.")
+        if self.T0 is None:
+            raise ValueError(f"{type(self).__name__}: T0 must be set.")
+        if self.MOLECULAR_WEIGHT is None:
+            raise ValueError(f"{type(self).__name__}: MOLECULAR_WEIGHT must be set.")
+        return
+
     @classmethod
-    def from_temperature(cls, m: float, T: float, **kwargs) -> 'Material':
+    def from_temperature(cls, m: float, T: float, **kwargs) -> Material:
         """
         Initialize from temperature instead of energy.
         
@@ -134,8 +166,10 @@ class Material:
             Material: New material instance initialized from temperature
         """
         if cls.HEAT_CAPACITY is None:
-            raise ValueError(f"{cls.__name__}: HEAT_CAPACITY must be set by subclass")
-        U = calc_energy_from_temperature(T=T, m=m, cv=cls.HEAT_CAPACITY)
+            raise ValueError(f"{cls.__name__}: HEAT_CAPACITY must be set.")
+        cv = cls.HEAT_CAPACITY
+        T0 = cls.T0 or 0.0
+        U = calc_energy_from_temperature(T=T, m=m, cv=cv, T0=T0)
         return cls(m, U, **kwargs)
     
     @property
@@ -146,6 +180,8 @@ class Material:
         Returns:
             float: Specific heat capacity of the material
         """
+        if self.HEAT_CAPACITY is None:
+            raise ValueError(f"{type(self).__name__}: HEAT_CAPACITY must be set.")
         return self.HEAT_CAPACITY
 
     @property
@@ -156,8 +192,12 @@ class Material:
         Returns:
             float: Temperature computed from U, m, and cp
         """
-        return calc_temperature_from_energy(self.U, self.m, self.cv)
-    
+        U = self.U
+        m = self.m
+        cv = self.cv
+        T0 = self.T0 or 0.0
+        return calc_temperature_from_energy(U, m, cv, T0=T0)
+
     @property
     def rho(self) -> float:
         """
@@ -168,25 +208,56 @@ class Material:
         """
         return self.m / self.V
     
-    def validate(self) -> None:
+    def T_saturation(self, P: float) -> float:
         """
-        Ensure all properties are physically reasonable.
-        
-        This method checks that the material's state is physically valid:
-        - Mass must be positive (can't have negative matter)
-        - Internal energy must be non-negative (referenced to 0K)
-        - Volume must be positive (can't have negative space)
+        Saturation temperature [K] at current pressure.
+        Args:
+            P: Pressure [Pa]
+        Returns:
+            float: Saturation temperature
         """
-        if self.HEAT_CAPACITY is None:
-            raise ValueError(f"{type(self).__name__}: HEAT_CAPACITY must be set by subclass")
-        if self.m <= 0:
-            raise ValueError(f"Mass must be positive: {self.m:.2f} kg")
-        if self.U < 0:
-            raise ValueError(f"Internal energy must be non-negative: {self.U:.2f} J")
-        if self.V <= 0:
-            raise ValueError(f"Volume must be positive: {self.V:.2f} m³")
-        return
+        self._validate_saturation()
+        T_sat = calc_saturation_temperature(
+            P=P,
+            L=self.LATENT_HEAT,
+            P0=self.P0,
+            T0=self.T0,
+            M=self.MOLECULAR_WEIGHT,
+        )
+        return T_sat
     
+    def P_saturation(self, T: float) -> float:
+        """
+        Saturation pressure [Pa] at current temperature.
+        Args:
+            T: Temperature [K]
+        Returns:
+            float: Saturation pressure
+        """
+        self._validate_saturation()
+        P_sat = calc_saturation_pressure(
+            T=T,
+            L=self.LATENT_HEAT,
+            P0=self.P0,
+            T0=self.T0,
+            M=self.MOLECULAR_WEIGHT,
+        )
+        return P_sat
+
+    def u_sie(self, T: float, P: float) -> float:
+        """
+        Specific internal energy [J/kg] at given T, P.
+        Args:
+            T: Temperature [K]
+            P: Pressure [Pa]
+        Returns:
+            float: Specific internal energy [J/kg]
+        """
+        T0 = self.T0 or 0.0
+        cv = self.cv
+        u = cv * (T - T0)
+        return u
+
 
 # Define Energy material class
 class Energy(Material):
@@ -205,6 +276,58 @@ class Energy(Material):
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}(U={self.U:.2f} J)"
+    
+    def __neg__(self):
+        return Energy(U=-self.U)
+    
+    def __pos__(self):
+        return Energy(U=+self.U)
+    
+    def __abs__(self):
+        return Energy(U=abs(self.U))
+
+    def __add__(self, other):
+        if isinstance(other, Energy):
+            return Energy(U=self.U + other.U)
+        else:
+            return NotImplemented
+
+    def __radd__(self, other):
+        if isinstance(other, Energy):
+            return Energy(U=self.U + other.U)
+        elif isinstance(other, Number) and (other == 0):
+            return self
+        else:
+            return NotImplemented
+
+    def __sub__(self, other):
+        if isinstance(other, Energy):
+            return Energy(U=self.U - other.U)
+        else:
+            return NotImplemented
+
+    def __rsub__(self, other):
+        if isinstance(other, Energy):
+            return Energy(U=other.U - self.U)
+        elif isinstance(other, Number) and (other == 0):
+            return Energy(U=-self.U)
+        else:
+            return NotImplemented
+
+    def __mul__(self, k): 
+        if isinstance(k, Number):
+            return Energy(U=self.U * k)
+        else:
+            return NotImplemented
+        
+    def __rmul__(self, k):
+        return self.__mul__(k)
+
+    def __truediv__(self, k):
+        if isinstance(k, Number):
+            return Energy(U=self.U / k)
+        else:
+            return NotImplemented
     
 
 

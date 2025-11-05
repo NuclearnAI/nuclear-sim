@@ -1,165 +1,89 @@
-
 # Import libraries
-from pydantic import Field, ConfigDict
-from nuclear_simulator.sandbox.plants.thermograph import Node
-from nuclear_simulator.sandbox.materials.nuclear import Coolant
-from nuclear_simulator.sandbox.physics import calc_pipe_mass_flow
+from pydantic import Field
+from nuclear_simulator.sandbox.graphs import Graph, Node
+from nuclear_simulator.sandbox.plants.pipes import LiquidPipe
+from nuclear_simulator.sandbox.plants.thermo import ThermalCoupling, BoilingEdge
+from nuclear_simulator.sandbox.plants.containers import LiquidVessel
+from nuclear_simulator.sandbox.materials.nuclear import PWRPrimaryWater, PWRSecondaryWater, PWRSecondarySteam
 
 
-# Helper
-def _coolant(m: float, T: float) -> Coolant:
-    return Coolant.from_temperature(m=m, T=T)
+# ... Define nodes here
 
 
-class SGHotLeg(Node):
-    """
-    Small control volume representing the hot outlet header from the reactor.
-    """
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+class SteamGenerator(Graph):
 
-    # Material
-    coolant: Coolant = Field(default_factory=lambda: _coolant(m=500.0, T=580.0))
+    def __init__(self, conductance: float = 2.0e7, **data) -> None:
+        super().__init__(**data)
 
-    # Coolant pressure parameters
-    coolant_P: float = 15.4e6
-    coolant_P0: float | None = None
-    coolant_V0: float | None = None
-    coolant_dPdV: float = 1.0e9
+        # Add nodes
+        primary_hot_leg  = self.add_node(SGPrimaryHotLeg,  name="SG:Primary:HotLeg")
+        primary_cold_leg = self.add_node(SGPrimaryColdLeg, name="SG:Primary:ColdLeg")
+        primary_bundle = self.add_node(SGPrimaryBundle, name="SG:Primary:Bundle")
+        secondary_water = self.add_node(SGSecondaryWater, name="SG:Secondary:Water")
+        secondary_steam = self.add_node(SGSecondarySteam, name="SG:Secondary:Steam")
 
-    def model_post_init(self, __context) -> None:
-        if self.coolant_P0 is None:
-            self.coolant_P0 = self.coolant_P
-        if self.coolant_V0 is None:
-            self.coolant_V0 = self.coolant.V
-        self.coolant_P = self.coolant_P0 + self.coolant_dPdV * (self.coolant.V - self.coolant_V0)
+        # Add pipes along primary
+        self.add_edge(
+            edge_type=LiquidPipe,
+            node_source=primary_hot_leg,
+            node_target=primary_bundle,
+            name="SG:Primary:HotLeg→BundleIn",
+        )
+        self.add_edge(
+            edge_type=LiquidPipe,
+            node_source=primary_bundle,
+            node_target=primary_cold_leg,
+            name="SG:Primary:BundleOut→ColdLeg",
+        )
+
+        # Add thermal coupling between primary bundle and secondary side
+        self.add_edge(
+            edge_type=ThermalCoupling,
+            node_source=primary_bundle,
+            node_target=secondary_water,
+            name="SG:ThermalCoupling:Primary→Secondary",
+            conductance=conductance,
+        )
+
+        # Add boiling edge along secondary side of bundle
+        self.add_edge(
+            edge_type=BoilingEdge,
+            node_source=secondary_water,
+            node_target=secondary_steam,
+            name="SG:Secondary:Water→Steam",
+        )
+
+        # Done
         return
 
-    def update_from_state(self, dt: float) -> None:
-        # Update pressure from cushion model (absolute, not incremental)
-        self.coolant_P = self.coolant_P0 + self.coolant_dPdV * (self.coolant.V - self.coolant_V0)
-        return
+    # Convenience accessors
+    @property
+    def primary_in(self) -> 'Node':
+        return self.get_component_from_name("SG:Primary:HotLeg")
 
-
-class SGPrimHot(Node):
-    """
-    Steam generator primary-side inlet plenum (hot header).
-    """
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    # Material
-    coolant: Coolant = Field(default_factory=lambda: _coolant(m=600.0, T=575.0))
-
-    # Coolant pressure parameters
-    coolant_P: float = 15.3e6
-    coolant_P0: float | None = None
-    coolant_V0: float | None = None
-    coolant_dPdV: float = 1.0e9
-
-    def model_post_init(self, __context) -> None:
-        if self.coolant_P0 is None:
-            self.coolant_P0 = self.coolant_P
-        if self.coolant_V0 is None:
-            self.coolant_V0 = self.coolant.V
-        self.coolant_P = self.coolant_P0 + self.coolant_dPdV * (self.coolant.V - self.coolant_V0)
-        return
-
-    def update_from_state(self, dt: float) -> None:
-        self.coolant_P = self.coolant_P0 + self.coolant_dPdV * (self.coolant.V - self.coolant_V0)
-        return
-
-
-class SGPrimCold(Node):
-    """
-    Steam generator primary-side outlet plenum (cold header).
-    """
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    # Material
-    coolant: Coolant = Field(default_factory=lambda: _coolant(m=700.0, T=540.0))
-
-    # Coolant pressure parameters
-    coolant_P: float = 15.1e6
-    coolant_P0: float | None = None
-    coolant_V0: float | None = None
-    coolant_dPdV: float = 1.0e9
-
-    def model_post_init(self, __context) -> None:
-        if self.coolant_P0 is None:
-            self.coolant_P0 = self.coolant_P
-        if self.coolant_V0 is None:
-            self.coolant_V0 = self.coolant.V
-        self.coolant_P = self.coolant_P0 + self.coolant_dPdV * (self.coolant.V - self.coolant_V0)
-        return
-
-    def update_from_state(self, dt: float) -> None:
-        self.coolant_P = self.coolant_P0 + self.coolant_dPdV * (self.coolant.V - self.coolant_V0)
-        return
-
-
-class SGColdLeg(Node):
-    """
-    Small control volume representing the return header to the reactor.
-    """
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    # Material
-    coolant: Coolant = Field(default_factory=lambda: _coolant(m=500.0, T=545.0))
-
-    # Coolant pressure parameters
-    coolant_P: float = 15.0e6
-    coolant_P0: float | None = None
-    coolant_V0: float | None = None
-    coolant_dPdV: float = 1.0e9
-
-    def model_post_init(self, __context) -> None:
-        if self.coolant_P0 is None:
-            self.coolant_P0 = self.coolant_P
-        if self.coolant_V0 is None:
-            self.coolant_V0 = self.coolant.V
-        self.coolant_P = self.coolant_P0 + self.coolant_dPdV * (self.coolant.V - self.coolant_V0)
-        return
-
-    def update_from_state(self, dt: float) -> None:
-        self.coolant_P = self.coolant_P0 + self.coolant_dPdV * (self.coolant.V - self.coolant_V0)
-        return
+    @property
+    def primary_out(self) -> 'Node':
+        return self.get_component_from_name("SG:Primary:ColdLeg")
     
+    @property
+    def water_in(self) -> 'Node':
+        return self.get_component_from_name("SG:Secondary:Water")
+    
+    @property
+    def steam_out(self) -> 'Node':
+        return self.get_component_from_name("SG:Secondary:Steam")
+
 
 # Test
 def test_file():
-    # Import libraries
-    from nuclear_simulator.sandbox.graphs import Graph
-    from nuclear_simulator.sandbox.plants.pipes import Pipe, Pump
-    from nuclear_simulator.sandbox.plants.reactor import Reactor
-    # Create graph
-    graph = Graph()
-    # Create components
-    reactor = graph.add_node(Reactor, name="Reactor")
-    sg_hot_leg = graph.add_node(SGHotLeg, name="SG Hot Leg")
-    sg_prim_hot = graph.add_node(SGPrimHot, name="SG Primary Hot")
-    sg_prim_cold = graph.add_node(SGPrimCold, name="SG Primary Cold")
-    sg_cold_leg = graph.add_node(SGColdLeg, name="SG Cold Leg")
-    pump_cl_r = graph.add_edge(
-        Pump, 
-        node_source_id=sg_cold_leg.id, 
-        node_target_id=reactor.id, 
-        name="Reactor Feed Pump",
-    )
-    pump_r_hl = graph.add_edge(
-        Pipe, 
-        node_source_id=reactor.id, 
-        node_target_id=sg_hot_leg.id, 
-        name="Reactor Outlet Pipe"
-    )
-    pipe_hl_ph = graph.add_edge(
-        Pipe, 
-        node_source_id=sg_hot_leg.id, 
-        node_target_id=sg_prim_hot.id, 
-        name="SG Hot Leg Pipe"
-    )
-    pipe_pc_cl = graph.add_edge(
-        Pipe, 
-        node_source_id=sg_prim_cold.id, 
-        node_target_id=sg_cold_leg.id, 
-        name="SG Cold Leg Pipe"
-    )
+    """
+    Smoke test for SteamGenerator construction and a single update tick.
+    """
+    sg = SteamGenerator()
+    dt = 1.0  # [s]
+    sg.update(dt)
     return
+if __name__ == "__main__":
+    test_file()
+    print("All tests passed.")
+

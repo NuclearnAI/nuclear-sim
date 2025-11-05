@@ -3,6 +3,7 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Optional, Type
 if TYPE_CHECKING:
+    from nuclear_simulator.sandbox.graphs.base import Component
     from nuclear_simulator.sandbox.graphs.nodes import Node
     from nuclear_simulator.sandbox.graphs.edges import Edge
     from nuclear_simulator.sandbox.graphs.controllers import Controller
@@ -11,7 +12,6 @@ if TYPE_CHECKING:
 from itertools import count
 from threading import Lock
 from pydantic import BaseModel
-from nuclear_simulator.sandbox.graphs.base import Component
 
 
 # ID allocator class for thread-safe unique ID generation
@@ -101,6 +101,28 @@ class Graph(BaseModel):
             controllers.update(g_controllers)
         return controllers
     
+    def get_all_components(self) -> dict[int, Component]:
+        """Return dict of all components (nodes, edges, controllers) in the graph."""
+        # Initialize component dictionary
+        components: dict[int, Component] = {}
+        # Add nodes
+        nodes = self.get_nodes()
+        if any(id in components for id in nodes):
+            raise ValueError("Duplicate node IDs found in graph components")
+        components.update(nodes)
+        # Add edges
+        edges = self.get_edges()
+        if any(id in components for id in edges):
+            raise ValueError("Duplicate edge IDs found in graph components")
+        components.update(edges)
+        # Add controllers
+        controllers = self.get_controllers()
+        if any(id in components for id in controllers):
+            raise ValueError("Duplicate controller IDs found in graph components")
+        components.update(controllers)
+        # Return output
+        return components
+    
     def get_component(self, identifier: int | str) -> Component:
         """
         Get a component (node, edge, or controller) by its id or name.
@@ -124,14 +146,11 @@ class Graph(BaseModel):
         Returns:
             The component with the specified id.
         """
-        if id in self.get_nodes():
-            return self.nodes[id]
-        elif id in self.get_edges():
-            return self.edges[id]
-        elif id in self.get_controllers():
-            return self.controllers[id]
+        all_components: dict[int, Component] = self.get_all_components()
+        if id in all_components:
+            return all_components[id]
         else:
-            raise KeyError(f"No component with id {id} found in graph")
+            raise KeyError(f"No component with id '{id}' found in graph")
         
     def get_component_from_name(self, name: str) -> Component:
         """
@@ -141,12 +160,8 @@ class Graph(BaseModel):
         Returns:
             The component with the specified name.
         """
-        all_components = (
-            list(self.get_nodes().values()) 
-            + list(self.get_edges().values()) 
-            + list(self.get_controllers().values())
-        )
-        for comp in all_components:
+        all_components: dict[int, Component] = self.get_all_components()
+        for comp in all_components.values():
             if comp.name == name:
                 return comp
         raise KeyError(f"No component with name '{name}' found in graph")
@@ -306,7 +321,7 @@ def test_file():
     from nuclear_simulator.sandbox.graphs.nodes import Node
     from nuclear_simulator.sandbox.graphs.edges import Edge
     from nuclear_simulator.sandbox.graphs.controllers import Controller
-    # Create minimial graph components
+    # Create minimal graph components
     # - Node with one state variable 'a'
     class TestNode(Node):
         a: float  # generic state variable
@@ -318,9 +333,9 @@ def test_file():
             for s in self.signals_incoming:
                 if "g" in s.payload:
                     self.g = float(s.payload["g"])
-        def calculate_flows(self, dt: float, node_source: Node, node_target: Node) -> dict[str, float]:
+        def calculate_flows(self, dt: float) -> dict[str, float]:
             # Flows are RATES by convention
-            return {"a": self.g * (node_source.a - node_target.a)}
+            return {"a": self.g * (self.node_source.a - self.node_target.a)}
     # - Controller that reads 'a' from two nodes and sets edge 'g' accordingly
     class TestController(Controller):
         # Read two nodes; write to the edge
@@ -332,21 +347,15 @@ def test_file():
             # Simple control: open fully if gradient exists, else close
             new_g = 1.0 if abs(a1 - a2) > 0 else 0.0
             self.connections_write["set_g"].write({"g": new_g})
-    # - Registry for deserialization
-    registry = {
-        "TestNode": TestNode,
-        "PipeEdge": PipeEdge,
-        "TestController": TestController,
-    }
     # Build graph
     dt = 0.1
     g = Graph()
     n1 = g.add_node(TestNode, name="N1", a=10.0)
     n2 = g.add_node(TestNode, name="N2", a=0.0)
-    e  = g.add_edge(PipeEdge, node_source_id=n1.id, node_target_id=n2.id, name="E", g=0.0)
+    e  = g.add_edge(PipeEdge, node_source=n1, node_target=n2, name="E", g=0.0)
     cntrl = g.add_controller(
         TestController,
-        connection_ids={"n1": n1.id, "n2": n2.id, "set_g": e.id},
+        connections={"n1": n1, "n2": n2, "set_g": e},
         name="C"
     )
     # Test 1: controller latency means no flow yet (g set AFTER edges/nodes this tick)
@@ -354,22 +363,24 @@ def test_file():
     g.update(dt)
     assert n1.a == a1_0 and n2.a == a2_0, "State should not change on first tick due to control latency"
     assert e.flows is not None and abs(e.flows["a"]) < 1e-12, "Flow should be zero with g=0 on first tick"
-    # Test 1: controller's command applied; flow moves 'a' from N1 -> N2
+    # Test 2: controller's command applied; flow moves 'a' from N1 -> N2
     g.update(dt)
     # Expected delta: rate = g*(10-0)=10; dt=0.1 => delta = 1.0
     assert abs(n1.a - (a1_0 - 1.0)) < 1e-9, f"n1.a expected {a1_0 - 1.0}, got {n1.a}"
     assert abs(n2.a - (a2_0 + 1.0)) < 1e-9, f"n2.a expected {a2_0 + 1.0}, got {n2.a}"
-    # Test 3: Round-trip serialize/deserialize and continue stepping
-    blob = g.to_dict()
-    g2 = Graph.from_dict(blob, registry=registry)
-    # One more tick on deserialized graph should continue transferring 'a'
-    a1_prev, a2_prev = g2.nodes[n1.id].a, g2.nodes[n2.id].a
-    g2.update(dt)
-    assert g2.edges[e.id].flows is not None
-    rate = g2.edges[e.id].flows["a"]
-    expected_delta = rate * dt  # flows are rates
-    assert abs(g2.nodes[n1.id].a - (a1_prev - expected_delta)) < 1e-9
-    assert abs(g2.nodes[n2.id].a - (a2_prev + expected_delta)) < 1e-9
+    # Test 3: continue stepping and verify flow continues
+    a1_prev, a2_prev = n1.a, n2.a
+    g.update(dt)
+    # Flows should continue with the same rate
+    rate = e.flows["a"]
+    expected_delta = rate * dt
+    assert abs(n1.a - (a1_prev - expected_delta)) < 1e-9, f"n1.a expected {a1_prev - expected_delta}, got {n1.a}"
+    assert abs(n2.a - (a2_prev + expected_delta)) < 1e-9, f"n2.a expected {a2_prev + expected_delta}, got {n2.a}"
+    # Test 4: verify component access by id and name
+    assert g.get_component(n1.id) == n1, "Should retrieve node by id"
+    assert g.get_component("N1") == n1, "Should retrieve node by name"
+    assert g.get_component(e.id) == e, "Should retrieve edge by id"
+    assert g.get_component(cntrl.id) == cntrl, "Should retrieve controller by id"
     # Done
     return
 if __name__ == "__main__":

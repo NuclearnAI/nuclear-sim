@@ -8,6 +8,7 @@ if TYPE_CHECKING:
 # Import libraries
 from abc import abstractmethod
 from nuclear_simulator.sandbox.graphs.base import Component
+from nuclear_simulator.sandbox.graphs.utils import getattr_nested, setattr_nested, hasattr_nested
 
 
 # Make an abstract base class for graph edges
@@ -19,6 +20,8 @@ class Edge(Component):
     def __init__(self,
             node_source: Node,
             node_target: Node,
+            alias_source: Optional[dict[str, str]] = None,
+            alias_target: Optional[dict[str, str]] = None,
             **data: Any
         ) -> None:
         """Initialize Edge and add private attributes."""
@@ -31,6 +34,9 @@ class Edge(Component):
         self.node_target = node_target
         self.node_source.edges_outgoing.append(self)
         self.node_target.edges_incoming.append(self)
+        # Set up alias dictionaries
+        self.alias_source = dict(alias_source or {})
+        self.alias_target = dict(alias_target or {})
         # Done
         return
 
@@ -49,6 +55,7 @@ class Edge(Component):
         """Return flows with tags for source node."""
         flows = self.flows
         flows = {k: v for k, v in flows.items() if (k != "_target") and (k != "_source")}
+        flows = {self.alias_source.get(k, k): v for k, v in flows.items()}
         flows.update(self.flows.get("_source", {}))
         return flows
     
@@ -56,8 +63,29 @@ class Edge(Component):
         """Return flows with tags for target node."""
         flows = self.flows
         flows = {k: v for k, v in flows.items() if (k != "_target") and (k != "_source")}
+        flows = {self.alias_target.get(k, k): v for k, v in flows.items()}
         flows.update(self.flows.get("_target", {}))
         return flows
+    
+    def get_field_source(self, key: Optional[str] = None) -> Any:
+        """
+        Get source node state field for a given state key.
+        Args:
+            key: State variable key.
+        Returns:
+            Field value for key on source node.
+        """
+        return getattr_nested(self.node_source, self.alias_source.get(key, key))
+    
+    def get_field_target(self, key: Optional[str] = None) -> Any:
+        """
+        Get target node state field for a given state key.
+        Args:
+            key: State variable key.
+        Returns:
+            Field value for key on target node.
+        """
+        return getattr_nested(self.node_target, self.alias_target.get(key, key))
     
     def update_from_graph(self, dt: float) -> None:
         """
@@ -67,16 +95,11 @@ class Edge(Component):
         Modifies:
             Updates self.flows with calculated flow values.
         """
-        self.flows = self.calculate_flows(dt, self.node_source, self.node_target)
+        self.flows = self.calculate_flows(dt)
         return
 
     @abstractmethod
-    def calculate_flows(
-            self, 
-            dt: float, 
-            node_source: Node, 
-            node_target: Node
-        ) -> tuple[dict[str, float], dict[str, float]]:
+    def calculate_flows(self, dt: float) -> dict[str, Any]:
         """
         Compute instantaneous flows for this edge based on current node states.
         Must return a dict of flow quantities (e.g., {"m": ..., "U": ..., }).
@@ -94,8 +117,8 @@ def test_file():
         b: int
     # Define a test edge class
     class TestEdge(Edge):
-        def calculate_flows(self, dt: float, node_source: Node, node_target: Node) -> dict[str, float]:
-            return {"a": (node_source.a - node_target.a) / 2}
+        def calculate_flows(self, dt: float) -> dict[str, float]:
+            return {"a": (self.node_source.a - self.node_target.a) / 2}
     # Create nodes and edge
     node1 = TestNode(name="Node1", a=10.0, b=5)
     node2 = TestNode(name="Node2", a=20.0, b=10)

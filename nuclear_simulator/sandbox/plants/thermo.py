@@ -11,33 +11,28 @@ if TYPE_CHECKING:
 from nuclear_simulator.sandbox.graphs.edges import Edge
 from nuclear_simulator.sandbox.materials.base import Energy
 from nuclear_simulator.sandbox.materials.liquids import Liquid
-from nuclear_simulator.sandbox.utils.nestedattrs import getattr_nested, setattr_nested, hasattr_nested
 
 
 # Define thermal coupling edge
 class ThermalCoupling(Edge):
     """
     Exchanges heat between two node materials.
+
+    Attributes:
+        conductance:   [W/K]  Heat transfer conductance between the two nodes
+        tag:           str    Tag of the material on each node to exchange heat between
     """
 
     # Heat transfer conductance
-    G: float = 1.0e6  # [W/K] (J/s/K)
-    tag_source: str
-    tag_target: str
+    conductance: float
+    tag: str
 
-    def calculate_flows(
-            self,
-            dt: float,
-            node_source: Node,
-            node_target: Node,
-        ) -> dict[str, Any]:
+    def calculate_flows(self, dt: float) -> dict[str, Any]:
         """
         Calculates energy exchange between node_source.tag_a and node_target.tag_b.
 
         Args:
-            dt:          [s]  Time step (used only by caller; we return per-second flows)
-            node_source: Source node (side A)
-            node_target: Target node (side B)
+            dt:  [s]  Time step (used only by caller; we return per-second flows)
 
         Returns:
             flows: Dict with two entries (tag_a, tag_b), each a Material-like object
@@ -45,18 +40,16 @@ class ThermalCoupling(Edge):
         """
 
         # Get materials
-        mat_src: Material = getattr_nested(node_source, self.tag_source)
-        mat_tgt: Material = getattr_nested(node_target, self.tag_target)
+        mat_src: Material = self.get_field_source(self.tag)
+        mat_tgt: Material = self.get_field_target(self.tag)
         T_src = mat_src.T
         T_tgt = mat_tgt.T
 
         # Heat rate (positive means A -> B)
-        dU = self.G * (T_src - T_tgt)
+        dU = self.conductance * (T_src - T_tgt)
 
-        # Package flows to be applied to their respective node attributes
-        flows = {'_source': {}, '_target': {}}
-        flows['_source'][self.tag_source] = Energy(U=dU)
-        flows['_target'][self.tag_target] = Energy(U=dU)
+        # Package flows
+        flows = {self.tag: Energy(U=dU)}
 
         # Return flows
         return flows
@@ -65,7 +58,6 @@ class ThermalCoupling(Edge):
 # Test
 def test_file():
     # Import libraries
-    from pydantic import Field
     from nuclear_simulator.sandbox.graphs.nodes import Node
     from nuclear_simulator.sandbox.materials.liquids import Liquid
     # Dummy materials & node
@@ -86,7 +78,13 @@ def test_file():
         fuel=DummyLiquid(m=0.0, U=0.0), 
         coolant=DummyLiquid(m=10.0, U=1.0e6)
     )
-    edge = ThermalCoupling(node_a, node_b, id=3, tag_source="fuel", tag_target="coolant", G=5.0e5)
+    edge = ThermalCoupling(
+        node_a, 
+        node_b, 
+        tag_source="fuel",
+        tag_target="coolant", 
+        conductance=5.0e5
+    )
     # Update graph
     dt = 0.1
     edge.update(dt)
