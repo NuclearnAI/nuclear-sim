@@ -244,7 +244,7 @@ class Material:
         )
         return P_sat
 
-    def u_sie(self, T: float, P: float) -> float:
+    def u_saturation(self, T: float) -> float:
         """
         Specific internal energy [J/kg] at given T, P.
         Args:
