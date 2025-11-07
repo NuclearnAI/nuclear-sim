@@ -4,7 +4,7 @@ import math
 from nuclear_simulator.sandbox.physics.constants import UNIVERSAL_GAS_CONSTANT
 
 
-def calc_pipe_mass_flow(
+def calc_incompressible_mass_flow(
         P_up: float,
         P_dn: float,
         rho: float,
@@ -17,8 +17,8 @@ def calc_pipe_mass_flow(
     """
     Compute mass flow through a pipe from pressure drop using Darcy-Weisbach.
     Args:
-        P_up:    [Pa]    Upstream static pressure
-        P_dn:    [Pa]    Downstream static pressure
+        P_up:    [Pa]    Upstream pressure
+        P_dn:    [Pa]    Downstream pressure
         rho:     [kg/m3] Fluid density (assumed constant/incompressible)
         D:       [m]     Pipe inner diameter
         L:       [m]     Pipe length
@@ -29,45 +29,97 @@ def calc_pipe_mass_flow(
         m_dot:   [kg/s]  Mass flow rate (positive from upstream → downstream)
     """
 
-    # Get pressure drop
-    dP = P_up - P_dn
-    if dP <= 0.0:
-        return 0.0
+    # Handle signs
+    if P_up < P_dn:
+        P_up, P_dn = P_dn, P_up
+        sign = -1.0
+    else:
+        sign = 1.0
 
-    # Calculate mass flow
+    # Calculate flow
+    dP = P_up - P_dn
     A = math.pi * (D**2) / 4.0
     K = f * (L / max(D, eps)) + K_minor
     v = math.sqrt( (2.0 * dP) / (max(rho, eps) * max(K, eps)) )
     m_dot = rho * A * v
 
-    # Return mass flow
+    # Apply sign
+    m_dot *= sign
+
+    # Return flow
     return m_dot
 
 
-def calc_pressure_change_from_mass_temperature(
-        m: float,
-        dm: float,
-        dT: float,
-        K: float,
-        alpha: float,
-        eps: float = 1e-6,
+def calc_compressible_mass_flow(
+        P_up: float,
+        P_dn: float,
+        T_up: float,
+        T_dn: float,
+        gamma: float,
+        R: float,
+        D: float,
+        Cd: float = 0.8,
+        eps: float = 1e-9,
     ) -> float:
     """
-    Calculate pressure change for an incompressible fluid node
-    from changes in mass and temperature.
+    Compute gas mass flow through a short element (orifice/valve/nozzle) with automatic choking.
+    Symmetric in endpoints: chooses upstream by higher pressure and returns signed flow.
+
     Args:
-        m:     [kg]     Current mass
-        dm:    [kg]     Change in mass over the timestep
-        dT:    [K]      Change in temperature over the timestep
-        K:     [Pa]     Bulk modulus (stiffness of fluid)
-        alpha: [1/K]    Volumetric thermal expansion coefficient
-        eps:   [-]      Small value to prevent divide-by-zero
+        P_up:    [Pa]       Upstream pressure
+        P_dn:    [Pa]       Downstream pressure
+        T_up:    [K]        Upstream temperature
+        T_dn:    [K]        Downstream temperature
+        gamma:   [-]        Heat capacity ratio (cp/cv)
+        R:       [J/(kg·K)] Specific gas constant
+        D:       [m]        Effective throat/port diameter (area = π D²/4)
+        Cd:      [-]        Discharge coefficient (default 0.8)
+        eps:     [-]        Small number to avoid divide-by-zero
+
     Returns:
-        dP:    [Pa]     Pressure change for this timestep
+        m_dot:   [kg/s]   Positive from end 1 → end 2
     """
-    dm_frac = dm / max(m, eps)
-    dP = K * (dm_frac - alpha * dT)
-    return dP
+
+    # Handle signs
+    if P_up < P_dn:
+        P_up, P_dn = P_dn, P_up
+        T_up, T_dn = T_dn, T_up
+        sign = -1.0
+    else:
+        sign = 1.0
+
+    # Clamp to avoid non-physical ratios
+    P_up = max(P_up, eps)
+    P_dn = max(P_dn, eps)
+    T_up = max(T_up, eps)
+
+    # Geometry
+    A = math.pi * (D * D) * 0.25
+
+    # Critical pressure ratios
+    P_ratio_critical = (2.0 / (gamma + 1.0)) ** (gamma / (gamma - 1.0))
+    P_ratio = max(eps, P_dn / P_up)
+
+    # Check for choking
+    if P_ratio <= P_ratio_critical:
+        # Choked isentropic
+        m_dot = (
+            Cd * A * P_up
+            * math.sqrt(gamma / (R * T_up))
+            * (2.0 / (gamma + 1.0)) ** ((gamma + 1.0) / (2.0 * (gamma - 1.0)))
+        )
+    else:
+        # Subcritical isentropic
+        term = (2.0 * gamma / (gamma - 1.0)) * (
+            P_ratio ** (2.0 / gamma) - P_ratio ** ((gamma + 1.0) / gamma)
+        )
+        m_dot = Cd * A * P_up * math.sqrt(max(term, 0.0) / (R * T_up))
+
+    # Apply sign
+    m_dot *=  sign
+
+    # Return flow
+    return m_dot
 
 
 def calc_saturation_temperature(

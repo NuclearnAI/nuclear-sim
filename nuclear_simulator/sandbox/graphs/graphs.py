@@ -53,10 +53,10 @@ class Graph(BaseModel):
         # Initialize ID counter
         if id_counter is None:
             id_counter = IdCounter()
-        _id = id_counter.next()
+        id = id_counter.next()
 
         # Call super init
-        super().__init__(id=_id, name=name, **data)
+        super().__init__(id=id, name=name, **data)
 
         # Set private attributes
         self.id_counter = id_counter
@@ -69,11 +69,14 @@ class Graph(BaseModel):
         return
     
     def __repr__(self) -> str:
-        return f"Graph[Nodes: {len(self.get_nodes())} | Edges: {len(self.get_edges())}]"
-    
+        n_nodes = len(self.get_nodes())
+        n_edges = len(self.get_edges())
+        n_graphs = len(self.graphs)
+        return f"{self.__class__.__name__}[Nodes: {len(self.get_nodes())} | Edges: {len(self.get_edges())} | Graphs: {n_graphs}]"
+
     def get_nodes(self) -> dict[int, Node]:
         """Return dict of nodes in the graph, recursively including sub-graphs."""
-        nodes = self.nodes
+        nodes = {i: n for i, n in self.nodes.items()}
         for g in self.graphs.values():
             g_nodes = g.get_nodes()
             if any(id in nodes for id in g_nodes):
@@ -83,7 +86,7 @@ class Graph(BaseModel):
     
     def get_edges(self) -> dict[int, Edge]:
         """Return dict of edges in the graph, recursively including sub-graphs."""
-        edges = self.edges
+        edges = {i: e for i, e in self.edges.items()}
         for g in self.graphs.values():
             g_edges = g.get_edges()
             if any(id in edges for id in g_edges):
@@ -93,7 +96,7 @@ class Graph(BaseModel):
     
     def get_controllers(self) -> dict[int, Controller]:
         """Return dict of controllers in the graph, recursively including sub-graphs."""
-        controllers = self.controllers
+        controllers = {i: c for i, c in self.controllers.items()}
         for g in self.graphs.values():
             g_controllers = g.get_controllers()
             if any(id in controllers for id in g_controllers):
@@ -237,7 +240,7 @@ class Graph(BaseModel):
     def add_controller(
             self,
             controller_type: type[Controller],
-            connections: dict[str, Node | Edge],
+            connections: Optional[dict[str, Node | Edge]] = None,
             name: Optional[str] = None,
             **kwargs
         ) -> Controller:
@@ -245,7 +248,7 @@ class Graph(BaseModel):
         Add a controller to the graph.
         Args:
             controller_type: The controller class instance to add.
-            connections:     Dict of connection names to Node/Edge instances.
+            connections:     Optional dict of connection names to Node/Edge instances.
             name:            Optional name for the controller.
             **kwargs:        Additional keyword arguments for the controller.
         Modifies:
@@ -257,8 +260,11 @@ class Graph(BaseModel):
 
         # Create controller instance
         controller = controller_type(id=id, name=name, **kwargs)
-        controller.add_connections(**connections)
         self.controllers[id] = controller
+
+        # Add connections if provided
+        if connections is not None:
+            controller.add_connections(**connections)
 
         # Return controller
         return controller
@@ -290,26 +296,34 @@ class Graph(BaseModel):
         # Return sub-graph
         return graph
     
-    def update(self, dt: float) -> None:
+    def update(
+            self, 
+            dt: float, 
+            steps: int = 1
+        ) -> None:
         """
         Update the entire graph over a timestep dt.
         Args:
-            dt: Time step for the update.
+            dt:    Time step for the update.
+            steps: Number of sub-steps to divide dt into.
         Modifies:
             Updates all nodes, edges, and controllers in the graph.
         """
 
-        # Update edges
-        for edge in self.get_edges().values():
-            edge.update(dt)
+        # Loop over steps
+        for i in range(steps):
 
-        # Update nodes
-        for node in self.get_nodes().values():
-            node.update(dt)
+            # Update edges
+            for edge in self.get_edges().values():
+                edge.update(dt)
 
-        # Update controllers
-        for controller in self.get_controllers().values():
-            controller.update(dt)
+            # Update nodes
+            for node in self.get_nodes().values():
+                node.update(dt)
+
+            # Update controllers
+            for controller in self.get_controllers().values():
+                controller.update(dt)
 
         # Done
         return

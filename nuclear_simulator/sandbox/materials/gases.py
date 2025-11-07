@@ -1,7 +1,9 @@
 # Import libraries
 from nuclear_simulator.sandbox.materials.base import Material
 from nuclear_simulator.sandbox.physics import (
+    UNIVERSAL_GAS_CONSTANT,
     calc_volume_ideal_gas,
+    calc_pressure_ideal_gas,
     calc_energy_from_temperature,
 )
 
@@ -43,16 +45,29 @@ class Gas(Material):
         if cls.MOLECULAR_WEIGHT is None:
             raise ValueError(f"{cls.__name__}: MOLECULAR_WEIGHT must be set for ideal gas calculations.")
         
-
         # Calculate variables
         cv = cls.HEAT_CAPACITY
         T0 = cls.T0 or 0.0
+        u0 = cls.u0 or 0.0
         n = m / cls.MOLECULAR_WEIGHT
         V = calc_volume_ideal_gas(n=n, T=T, P=P)
-        U = calc_energy_from_temperature(T=T, m=m, cv=cv, T0=T0)
-        
+        U = calc_energy_from_temperature(T=T, m=m, cv=cv, T0=T0, u0=u0)
+
         # Create and return instance
-        return cls(m, U, V, **kwargs)
+        kwargs['V'] = V
+        return cls(m, U, **kwargs)
+    
+    @property
+    def P(self) -> float:
+        """Calculate pressure using ideal gas law."""
+        n = self.m / self.MW
+        P = calc_pressure_ideal_gas(n=n, T=self.T, V=self.V)
+        return P
+    
+    @property
+    def cp(self) -> float:
+        """Specific heat at constant pressure."""
+        return self.cv + (UNIVERSAL_GAS_CONSTANT / self.MW)
 
 
 # Test

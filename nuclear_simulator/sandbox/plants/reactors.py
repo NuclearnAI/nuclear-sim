@@ -2,7 +2,7 @@
 # Import libraries
 from pydantic import Field
 from nuclear_simulator.sandbox.graphs import Graph, Node
-from nuclear_simulator.sandbox.plants.containers import LiquidVessel
+from nuclear_simulator.sandbox.plants.vessels import LiquidVessel
 from nuclear_simulator.sandbox.plants.thermo import ThermalCoupling
 from nuclear_simulator.sandbox.materials.nuclear import PWRPrimaryWater, UraniumDioxide
 
@@ -15,24 +15,35 @@ class ReactorFuel(Node):
     Attributes:
         boron_ppm:            [ppm]   Boron concentration
         boron_alpha:          [1/ppm] Boron reactivity effect per ppm
-        fission_power_gain:   [W]     Gain at rho = 1
+        fission_power_gain:   [W]     Gain factor mapping reactivity to power
         control_rod_position: [0-1]   Inserted fraction
         fuel:                 [-]     Fuel material
     """
 
     # Set attributes
-    boron_ppm: float            = 500.0
-    boron_alpha: float          = 1e-4
-    fission_power_gain: float   = 1e9
+    boron_ppm: float            = 1000.0            # typical BOC-ish value
+    boron_alpha: float          = -7e-5             # ~ -7 pcm/ppm
+    fission_power_gain: float   = 3.0e9             # ~3 GWth at rho=0
     control_rod_position: float = 0.10
     fuel: UraniumDioxide = Field(
-        default_factory=lambda:(
+        default_factory=lambda: (
             UraniumDioxide.from_temperature(
-                m=80_000.0,
-                T=600.0,
+                m=80_000.0,  # kg, whole-core effective mass (lumped)
+                T=600.0,     # K, simplified average fuel temperature
             )
         )
     )
+
+    # Add validation to update
+    def update(self, dt):
+        """
+        Update method with validation.
+        Args:
+            dt: Time step size (s).
+        """
+        super().update(dt)
+        self.fuel.validate()
+        return
 
     # Update method
     def update_from_state(self, dt: float) -> None:
@@ -62,17 +73,17 @@ class ReactorCoolant(LiquidVessel):
     """
     Simplified coolant node for reactor core.
     Attributes:
-        P0:       [Pa]    Baseline pressure for pressure calculation
-        dPdV:     [Pa/m^3] Stiffness-like coefficient (dP/dV of "tank" cushion)
-        liquid:   [-]     Liquid stored in the vessel
+        P0:       [Pa]     Baseline pressure for pressure calculation
+        dPdV:     [Pa/m^3] Effective tank stiffness (includes pressurizer compliance)
+        liquid:   [-]      Liquid stored in the vessel
     """
     P0: float = 15.5e6
-    dPdV: float = 1.0e9
+    dPdV: float = 2.0e7   # Starting point, needs calibration
     liquid: PWRPrimaryWater = Field(
-        default_factory=lambda:(
+        default_factory=lambda: (
             PWRPrimaryWater.from_temperature(
                 m=10_000.0,
-                T=550.0,    
+                T=550.0,
             )
         )
     )
@@ -84,10 +95,10 @@ class FuelCoolantThermalCoupling(ThermalCoupling):
     Thermal coupling between reactor fuel and coolant.
     Attributes:
         tag:               [str] Tag of the material to exchange heat between
-        conductance:       [W/K] Fuel-coolant conductance
+        conductance:       [W/K] Fuel-coolant conductance (lumped, whole core)
     """
     tag: str = "material"
-    conductance: float = 3e6
+    conductance: float = 5.0e7  # typical order 1e7–1e8 W/K
 
 
 # Define Reactor

@@ -1,9 +1,9 @@
 
 # Annotation imports
 from __future__ import annotations
-from numbers import Number
 
 # Import libraries
+from numbers import Number
 from nuclear_simulator.sandbox.physics import (
     calc_temperature_from_energy,
     calc_energy_from_temperature,
@@ -23,6 +23,7 @@ class Material:
         HEAT_CAPACITY:    [J/(kg·K)] Specific heat capacity
         P0:               [Pa]       Reference pressure for calculations
         T0:               [K]        Reference temperature for calculations
+        u0:               [J/kg]     Reference internal specific energy at T0
         LATENT_HEAT:      [J/kg]     Latent heat of vaporization at reference T0 and P0
         MOLECULAR_WEIGHT: [kg/mol]   Molecular weight
 
@@ -34,6 +35,7 @@ class Material:
     # Optional attributes for saturation calculations
     P0: float | None = None
     T0: float | None = None
+    u0: float | None = None
     LATENT_HEAT: float | None = None
     MOLECULAR_WEIGHT: float | None = None
     
@@ -51,7 +53,7 @@ class Material:
     
     def __repr__(self) -> str:
         return (
-            f"{type(self).__name__}(m={self.m:.2f} kg, U={self.U:.2f} J, V={self.V:.6f} m³)"
+            f"{type(self).__name__}(m={self.m:.3e} kg, U={self.U:.3e} J, V={self.V:.3e} m³)"
         )
     
     def __add__(self, other) -> Material:
@@ -119,12 +121,10 @@ class Material:
         V = abs(self.V)
         return type(self)(m=m, U=U, V=V)
     
-    def _validate(self) -> None:
+    def validate(self) -> None:
         """
         Ensure all base properties are physically reasonable.
         """
-        if self.HEAT_CAPACITY is None:
-            raise ValueError(f"{type(self).__name__}: HEAT_CAPACITY must be set by subclass")
         if self.m < 0:
             raise ValueError(f"Mass must be positive: {self.m:.2f} kg")
         if self.U < 0:
@@ -142,12 +142,16 @@ class Material:
         """
         Ensure saturation calculation parameters are set.
         """
+        if self.HEAT_CAPACITY is None:
+            raise ValueError(f"{type(self).__name__}: HEAT_CAPACITY must be set by subclass")
         if self.LATENT_HEAT is None:
             raise ValueError(f"{type(self).__name__}: LATENT_HEAT must be set.")
         if self.P0 is None:
             raise ValueError(f"{type(self).__name__}: P0 must be set.")
         if self.T0 is None:
             raise ValueError(f"{type(self).__name__}: T0 must be set.")
+        if self.u0 is None:
+            raise ValueError(f"{type(self).__name__}: u0 must be set.")
         if self.MOLECULAR_WEIGHT is None:
             raise ValueError(f"{type(self).__name__}: MOLECULAR_WEIGHT must be set.")
         return
@@ -169,7 +173,8 @@ class Material:
             raise ValueError(f"{cls.__name__}: HEAT_CAPACITY must be set.")
         cv = cls.HEAT_CAPACITY
         T0 = cls.T0 or 0.0
-        U = calc_energy_from_temperature(T=T, m=m, cv=cv, T0=T0)
+        u0 = cls.u0 or 0.0
+        U = calc_energy_from_temperature(T=T, m=m, cv=cv, T0=T0, u0=u0)
         return cls(m, U, **kwargs)
     
     @property
@@ -196,7 +201,9 @@ class Material:
         m = self.m
         cv = self.cv
         T0 = self.T0 or 0.0
-        return calc_temperature_from_energy(U, m, cv, T0=T0)
+        u0 = self.u0 or 0.0
+        T = calc_temperature_from_energy(U, m, cv, T0=T0, u0=u0)
+        return T
 
     @property
     def rho(self) -> float:
@@ -207,6 +214,17 @@ class Material:
             float: Density computed from m and V
         """
         return self.m / self.V
+    
+    @property
+    def MW(self) -> float:
+        """
+        Molecular weight [kg/mol].
+        Returns:
+            float: Molecular weight
+        """
+        if self.MOLECULAR_WEIGHT is None:
+            raise ValueError(f"{type(self).__name__}: MOLECULAR_WEIGHT must be set.")
+        return self.MOLECULAR_WEIGHT
     
     def T_saturation(self, P: float) -> float:
         """
@@ -246,17 +264,20 @@ class Material:
 
     def u_saturation(self, T: float) -> float:
         """
-        Specific internal energy [J/kg] at given T, P.
+        Specific internal energy [J/kg] at given T.
         Args:
             T: Temperature [K]
-            P: Pressure [Pa]
         Returns:
             float: Specific internal energy [J/kg]
         """
-        T0 = self.T0 or 0.0
-        cv = self.cv
-        u = cv * (T - T0)
-        return u
+        u_sat = calc_energy_from_temperature(
+            T=T,
+            m=1.0,  # unit mass for specific energy
+            cv=self.cv,
+            T0=self.T0 or 0.0,
+            u0=self.u0 or 0.0,
+        )
+        return u_sat
 
 
 # Define Energy material class
@@ -275,7 +296,7 @@ class Energy(Material):
         super().__init__(m=0.0, U=U, V=0.0)
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}(U={self.U:.2f} J)"
+        return f"{type(self).__name__}(U={self.U:.3e} J)"
     
     def __neg__(self):
         return Energy(U=-self.U)

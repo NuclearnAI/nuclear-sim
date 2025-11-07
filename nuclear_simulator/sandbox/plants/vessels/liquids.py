@@ -1,4 +1,9 @@
 
+# Define exports
+__all__ = [
+    "LiquidVessel"
+]
+
 # Import libraries
 from nuclear_simulator.sandbox.graphs import Node
 from nuclear_simulator.sandbox.materials.liquids import Liquid
@@ -23,7 +28,20 @@ class LiquidVessel(Node):
         # Set baseline volume if not provided
         if self.V0 is None:
             self.V0 = self.liquid.V
+        # Validate
+        self.liquid.validate()
         # Done
+        return
+
+    # Add validation to update
+    def update(self, dt):
+        """
+        Update method with validation.
+        Args:
+            dt: Time step size (s).
+        """
+        super().update(dt)
+        self.liquid.validate()
         return
     
     @property
@@ -35,6 +53,7 @@ class LiquidVessel(Node):
             float: Current vessel pressure
         """
         return self.P0 + self.dPdV * (self.liquid.V - self.V0)
+    
 
 
 

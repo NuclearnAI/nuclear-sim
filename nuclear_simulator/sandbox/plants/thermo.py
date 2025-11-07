@@ -27,6 +27,12 @@ class ThermalCoupling(Edge):
     conductance: float
     tag: str
 
+    def get_nonstate_fields(self) -> list[str]:
+        """Return list of non-state field names."""
+        return super().get_nonstate_fields() + [
+            "tag",
+        ]
+
     def calculate_flows(self, dt: float) -> dict[str, Any]:
         """
         Calculates energy exchange between node_source.tag_a and node_target.tag_b.

@@ -1,5 +1,4 @@
 
-
 # Import libraries
 from nuclear_simulator.sandbox.materials.gases import Gas
 from nuclear_simulator.sandbox.materials.solids import Solid
@@ -14,39 +13,62 @@ class UraniumDioxide(Solid):
         DENSITY:       [kg/m³]    Effective density
     """
     HEAT_CAPACITY = 300.0
-    DENSITY = 10970.0
+    DENSITY = 10_970.0
 
 
 class PWRPrimaryWater(Liquid):
     """
-    Pressurized water reactor (PWR) coolant. Water at 15-16 MPa and 550-600 K.
+    Pressurized water reactor (PWR) primary coolant.
+    Water at ~15.5 MPa and ~300–320 °C (≈575 K).
     Attributes:
         HEAT_CAPACITY: [J/(kg·K)] Specific heat of water
-        DENSITY:       [kg/m³]    Pressurized water density (~15.5 MPa, 550K)
+        DENSITY:       [kg/m³]    Pressurized water density (~15.5 MPa, 575 K)
     """
-    HEAT_CAPACITY = 4200.0
-    DENSITY = 700.0
+    HEAT_CAPACITY = 5000.0
+    DENSITY = 720.0
 
 
 class PWRSecondaryWater(Liquid):
     """
-    Pressurized water reactor (PWR) secondary side water. Water at ~7 MPa and 500-550 K.
+    PWR secondary-side feedwater / liquid.
+    Water near saturation at ~7 MPa (~285.8 °C, 559 K).
     Attributes:
-        HEAT_CAPACITY: [J/(kg·K)] Specific heat of water
-        DENSITY:       [kg/m³]    Pressurized water density (~7 MPa, 525K)
+        MOLECULAR_WEIGHT: [kg/mol]   Molecular weight of water
+        HEAT_CAPACITY:    [J/(kg·K)] Specific heat of water
+        DENSITY:          [kg/m³]    Saturated liquid density (~7 MPa, 559 K)
+        LATENT_HEAT:      [J/kg]     Enthalpy of vaporization (~7 MPa)
+        P0:               [Pa]       Reference state pressure
+        T0:               [K]        Reference state temperature
+        u0:               [J/kg]    Reference internal specific energy at T0
     """
-    HEAT_CAPACITY = 4200.0
-    DENSITY = 720.0
+    MOLECULAR_WEIGHT = 0.01801528  # (H₂O)
+    HEAT_CAPACITY = 5000.0
+    LATENT_HEAT = 1_500_000.0
+    DENSITY = 740.0
+    P0 = 7e6
+    T0 = 559.0
+    u0 = 1_380_000.0  # Approximate internal energy at saturation point
 
 
 class PWRSecondarySteam(Gas):
     """
-    Pressurized water reactor (PWR) secondary side steam. Steam at ~7 MPa and 550-600 K.
+    PWR secondary-side steam.
+    Steam at ~7 MPa and ~559-600 K (saturated to slightly superheated).
     Attributes:
-        HEAT_CAPACITY: [J/(kg·K)] Specific heat of steam
-        DENSITY:       [kg/m³]    Steam density (~7 MPa, 575K)
+        MOLECULAR_WEIGHT: [kg/mol]   Molecular weight of water
+        HEAT_CAPACITY:    [J/(kg·K)] Specific heat of water
+        DENSITY:          [kg/m³]    Saturated liquid density (~7 MPa, 559 K)
+        LATENT_HEAT:      [J/kg]     Enthalpy of vaporization (~7 MPa)
+        P0:               [Pa]       Reference state pressure
+        T0:               [K]        Reference state temperature
+        u0:               [J/kg]     Reference internal specific energy at T0
     """
+    MOLECULAR_WEIGHT = 0.01801528  # (H₂O)
     HEAT_CAPACITY = 2100.0
-    DENSITY = 30.0
+    LATENT_HEAT = 1_500_000.0
+    DENSITY = 36.5
+    P0 = 7e6
+    T0 = 559.0
+    u0 = 2_700_000.0  # Approximate internal energy at saturation point
 
-    
+

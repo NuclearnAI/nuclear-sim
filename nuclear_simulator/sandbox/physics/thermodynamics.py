@@ -8,6 +8,7 @@ def calc_temperature_from_energy(
         m: float, 
         cv: float, 
         T0: float = 0.0, 
+        u0: float = 0.0,
         eps: float = 1e-6,
     ) -> float:
     """
@@ -15,20 +16,22 @@ def calc_temperature_from_energy(
     Args:
         U:   [J]        Internal energy
         m:   [kg]       Mass
-        cv:  [J/(kg*K)]  Specific heat capacity
+        cv:  [J/(kg*K)] Specific heat capacity
         T0:  [K]        Reference temperature (default 0K)
+        u0:  [J/kg]     Reference internal specific energy at T0
         eps: [-]        Small value to prevent division by zero
     Returns:
         Temperature [K]
     """
-    return U / (max(m, eps) * max(cv, eps)) + T0
+    return (U - m * u0) / (max(m, eps) * max(cv, eps)) + T0
 
 
 def calc_energy_from_temperature(
         T: float, 
         m: float, 
         cv: float, 
-        T0: float = 0.0
+        T0: float = 0.0,
+        u0: float = 0.0,
     ) -> float:
     """
     Calculate internal energy from temperature, mass, and specific heat capacity.
@@ -37,8 +40,9 @@ def calc_energy_from_temperature(
         m:  [kg]       Mass
         cv: [J/(kg*K)] Specific heat capacity
         T0: [K]        Reference temperature (default 0K)
+        u0: [J/kg]     Reference internal specific energy at T0
     Returns:
         Internal energy [J]
     """
-    return m * cv * (T - T0)
+    return m * cv * (T - T0) + m * u0
 

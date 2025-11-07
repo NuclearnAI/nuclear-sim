@@ -28,14 +28,7 @@ class Solid(Material):
         
         # Calculate volume
         V = m / self.DENSITY
-
-        # Add volume to kwargs
-        if 'V' in kwargs and abs(kwargs['V'] - V) > 1e-9:
-            raise ValueError(
-                f"Volume argument V={kwargs['V']:.6f} m³ does not match calculated volume from mass and density."
-            )
-        else:
-            kwargs['V'] = V
+        kwargs['V'] = V
 
         # Initialize base class
         super().__init__(m, U, **kwargs)

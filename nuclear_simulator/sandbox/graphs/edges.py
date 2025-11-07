@@ -41,8 +41,10 @@ class Edge(Component):
         return
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}[{self.node_source.id} -> {self.node_target.id}]"
-    
+        tag_src = self.node_source.name or self.node_source.id
+        tag_tgt = self.node_target.name or self.node_target.id
+        return f"{self.__class__.__name__}[{tag_src} -> {tag_tgt}]"
+
     def get_nonstate_fields(self) -> list[str]:
         """Return list of non-state field names."""
         return super().get_nonstate_fields() + [
@@ -53,7 +55,7 @@ class Edge(Component):
     
     def get_flows_source(self) -> dict[str, Any]:
         """Return flows with tags for source node."""
-        flows = self.flows
+        flows = {k: v for (k, v) in self.flows.items()}
         flows = {k: v for k, v in flows.items() if (k != "_target") and (k != "_source")}
         flows = {self.alias_source.get(k, k): v for k, v in flows.items()}
         flows.update(self.flows.get("_source", {}))
@@ -61,7 +63,7 @@ class Edge(Component):
     
     def get_flows_target(self) -> dict[str, Any]:
         """Return flows with tags for target node."""
-        flows = self.flows
+        flows = {k: v for (k, v) in self.flows.items()}
         flows = {k: v for k, v in flows.items() if (k != "_target") and (k != "_source")}
         flows = {self.alias_target.get(k, k): v for k, v in flows.items()}
         flows.update(self.flows.get("_target", {}))
@@ -75,8 +77,9 @@ class Edge(Component):
         Returns:
             Field value for key on source node.
         """
-        return getattr_nested(self.node_source, self.alias_source.get(key, key))
-    
+        key = self.alias_source.get(key, key)
+        return getattr_nested(self.node_source, key)
+
     def get_field_target(self, key: Optional[str] = None) -> Any:
         """
         Get target node state field for a given state key.
@@ -85,8 +88,9 @@ class Edge(Component):
         Returns:
             Field value for key on target node.
         """
-        return getattr_nested(self.node_target, self.alias_target.get(key, key))
-    
+        key = self.alias_target.get(key, key)
+        return getattr_nested(self.node_target, key)
+
     def update_from_graph(self, dt: float) -> None:
         """
         Update edge flows based on current states of source and target nodes.

@@ -39,7 +39,9 @@ class Signal:
         self.target_component.signals_incoming.append(self)
 
     def __repr__(self) -> str:
-        return f"Signal[{self.source_component} -> {self.target_component}]"
+        tag_src = self.source_component.name or self.source_component.id
+        tag_tgt = self.target_component.name or self.target_component.id
+        return f"Signal[{tag_src} -> {tag_tgt}]"
 
     def read(self) -> dict[str, Any]:
         """
@@ -50,7 +52,7 @@ class Signal:
             return self.payload
         else:
             # If reading a node/edge, get its state
-            self.payload = self.source_component.state
+            self.payload = {k: v for (k, v) in self.source_component.state.items()}
             return self.payload
     
     def write(self, payload: dict[str, Any]) -> None:
@@ -77,11 +79,8 @@ class Controller(Component):
         """
         # Call super init
         super().__init__(**data)
-        # Ensure required connections are defined
-        if self.REQUIRED_CONNECTIONS_READ is None:
-            raise ValueError(f"Controller subclass {self.__class__.__name__} must define REQUIRED_CONNECTIONS_READ")
-        if self.REQUIRED_CONNECTIONS_WRITE is None:
-            raise ValueError(f"Controller subclass {self.__class__.__name__} must define REQUIRED_CONNECTIONS_WRITE")
+        # Initialize monitor (read payload dictionary)
+        self.monitor: dict[str, Any] = {}
         # Initialize connection dictionaries
         self.connections_read: dict[str, Signal] = {}
         self.connections_write: dict[str, Signal] = {}
@@ -106,8 +105,9 @@ class Controller(Component):
         Modifies:
             Adds a Signal to self.signals_incoming.
         """
+
         # Validate name
-        if name not in self.REQUIRED_CONNECTIONS_READ:
+        if self.REQUIRED_CONNECTIONS_READ and name not in self.REQUIRED_CONNECTIONS_READ:
             raise KeyError(f"Signal name '{name}' not in controller's REQUIRED_CONNECTIONS_READ list")
 
         # Create signal between component and self
@@ -130,7 +130,7 @@ class Controller(Component):
         """
 
         # Validate name
-        if name not in self.REQUIRED_CONNECTIONS_WRITE:
+        if self.REQUIRED_CONNECTIONS_WRITE and name not in self.REQUIRED_CONNECTIONS_WRITE:
             raise KeyError(f"Signal name '{name}' not in controller's REQUIRED_CONNECTIONS_WRITE list")
         
         # Create signal between self and component
@@ -151,6 +151,12 @@ class Controller(Component):
             Adds Signals to self.signals_incoming and self.signals_outgoing.
         """
 
+        # Ensure required connections are defined
+        if self.REQUIRED_CONNECTIONS_READ is None:
+            raise ValueError(f"Controller subclass {self.__class__.__name__} must define REQUIRED_CONNECTIONS_READ")
+        if self.REQUIRED_CONNECTIONS_WRITE is None:
+            raise ValueError(f"Controller subclass {self.__class__.__name__} must define REQUIRED_CONNECTIONS_WRITE")
+
         # Loop over components
         for name, component in connections.items():
 
@@ -165,13 +171,21 @@ class Controller(Component):
         # Return self for chaining
         return self
 
-    @abstractmethod
-    def update(self, dt: float) -> None:
+    def update(self, dt: float = 0) -> None:
         """
-        Update the controller's payload based on incoming signals.
-        Must be implemented by subclasses.
+        Update the controller logic. Default to just update monitor.
+        Args:
+            dt:     [s] Time step for update
+        Modifies:
+            self.monitor
         """
-        raise NotImplementedError("Controller.update() must be implemented by subclasses")
+        # Clear monitor
+        self.monitor = {}
+        # Update monitor by reading all connected components
+        for name, signal in self.connections_read.items():
+            self.monitor[name] = signal.read()
+        # Done
+        return
     
 
 # Test
