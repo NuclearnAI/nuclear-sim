@@ -1,10 +1,4 @@
 
-
-# Define exports
-__all__ = [
-    "Reservoir"
-]
-
 # Import libraries
 from nuclear_simulator.sandbox.graphs import Node
 from nuclear_simulator.sandbox.materials.base import Material
@@ -23,12 +17,8 @@ class Reservoir(Node):
         material:      [-]     Material contained in the reservoir
         material_type: [-]     Type of material contained
     """
-
-    # Set attributes
     P: float = 1e5
     T: float = 300.0
-
-    # Set material
     material: Material | None = None
     material_type: type[Material] | None = None
 
@@ -75,7 +65,7 @@ class Reservoir(Node):
 # Test
 def test_file():
     # Import libraries
-    from nuclear_simulator.sandbox.materials.nuclear import PWRPrimaryWater
+    from nuclear_simulator.sandbox.plants.materials import PWRPrimaryWater
     # Create liquid environment
     env = Reservoir(material_type=PWRPrimaryWater, T=350.0)
     # Update

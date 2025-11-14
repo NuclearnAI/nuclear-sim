@@ -10,11 +10,10 @@ if TYPE_CHECKING:
 # Import libraries
 from nuclear_simulator.sandbox.graphs.edges import Edge
 from nuclear_simulator.sandbox.materials.base import Energy
-from nuclear_simulator.sandbox.materials.liquids import Liquid
 
 
-# Define thermal coupling edge
-class ThermalCoupling(Edge):
+# Heat exchange edge
+class HeatExchange(Edge):
     """
     Exchanges heat between two node materials.
 
@@ -25,7 +24,7 @@ class ThermalCoupling(Edge):
 
     # Heat transfer conductance
     conductance: float
-    tag: str
+    tag: str = "material"
 
     def get_nonstate_fields(self) -> list[str]:
         """Return list of non-state field names."""
@@ -55,7 +54,9 @@ class ThermalCoupling(Edge):
         dU = self.conductance * (T_src - T_tgt)
 
         # Package flows
-        flows = {self.tag: Energy(U=dU)}
+        flows = {
+            self.tag: Energy(U=dU)
+        }
 
         # Return flows
         return flows
@@ -84,11 +85,11 @@ def test_file():
         fuel=DummyLiquid(m=0.0, U=0.0), 
         coolant=DummyLiquid(m=10.0, U=1.0e6)
     )
-    edge = ThermalCoupling(
+    edge = HeatExchange(
         node_a, 
-        node_b, 
-        tag_source="fuel",
-        tag_target="coolant", 
+        node_b,
+        alias_source={"material": "fuel"},
+        alias_target={"material": "coolant"},
         conductance=5.0e5
     )
     # Update graph

@@ -58,7 +58,7 @@ class Gas(Material):
         return cls(m, U, **kwargs)
     
     @property
-    def P(self) -> float:
+    def P_ideal(self) -> float:
         """Calculate pressure using ideal gas law."""
         n = self.m / self.MW
         P = calc_pressure_ideal_gas(n=n, T=self.T, V=self.V)
@@ -68,6 +68,14 @@ class Gas(Material):
     def cp(self) -> float:
         """Specific heat at constant pressure."""
         return self.cv + (UNIVERSAL_GAS_CONSTANT / self.MW)
+    
+    def v_saturation(self, T):
+        """Specific volume at saturation (ideal gas assumption)."""
+        P_sat = self.P_saturation(T)          # Pa
+        R = UNIVERSAL_GAS_CONSTANT             # J/(mol·K)
+        MW = self.MW                           # kg/mol
+        v_sat = R * T / (P_sat * MW)           # m³/kg  (ideal gas)
+        return v_sat
 
 
 # Test

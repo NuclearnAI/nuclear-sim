@@ -19,7 +19,7 @@ class UraniumDioxide(Solid):
 class PWRPrimaryWater(Liquid):
     """
     Pressurized water reactor (PWR) primary coolant.
-    Water at ~15.5 MPa and ~300–320 °C (≈575 K).
+    Water at ~15.5 MPa and ~300-320 °C (≈575 K).
     Attributes:
         HEAT_CAPACITY: [J/(kg·K)] Specific heat of water
         DENSITY:       [kg/m³]    Pressurized water density (~15.5 MPa, 575 K)

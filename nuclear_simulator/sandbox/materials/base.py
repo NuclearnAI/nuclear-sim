@@ -20,24 +20,24 @@ class Material:
         m:                [kg]       Mass
         U:                [J]        Internal energy, referenced to 0K
         V:                [m³]       Volume
+    Material constants:
+        DENSITY:          [kg/m³]    Density (optional, can be computed from m/V)
         HEAT_CAPACITY:    [J/(kg·K)] Specific heat capacity
+        MOLECULAR_WEIGHT: [kg/mol]   Molecular weight
         P0:               [Pa]       Reference pressure for calculations
         T0:               [K]        Reference temperature for calculations
         u0:               [J/kg]     Reference internal specific energy at T0
         LATENT_HEAT:      [J/kg]     Latent heat of vaporization at reference T0 and P0
-        MOLECULAR_WEIGHT: [kg/mol]   Molecular weight
-
     """
     
-    # Class variables - Material constants (must be set by subclasses)
+    # Material constants
+    DENSITY: float | None = None
     HEAT_CAPACITY: float | None = None
-
-    # Optional attributes for saturation calculations
+    MOLECULAR_WEIGHT: float | None = None
     P0: float | None = None
     T0: float | None = None
     u0: float | None = None
     LATENT_HEAT: float | None = None
-    MOLECULAR_WEIGHT: float | None = None
     
     def __init__(self, m: float, U: float, V: float) -> None:
         """
@@ -185,9 +185,10 @@ class Material:
         Returns:
             float: Specific heat capacity of the material
         """
-        if self.HEAT_CAPACITY is None:
+        cv = self.HEAT_CAPACITY
+        if cv is None:
             raise ValueError(f"{type(self).__name__}: HEAT_CAPACITY must be set.")
-        return self.HEAT_CAPACITY
+        return cv
 
     @property
     def T(self) -> float:
@@ -203,6 +204,8 @@ class Material:
         T0 = self.T0 or 0.0
         u0 = self.u0 or 0.0
         T = calc_temperature_from_energy(U, m, cv, T0=T0, u0=u0)
+        if T <= 0.0:
+            raise ValueError(f"Temperature must be positive: {T:.2f} K")
         return T
 
     @property
@@ -213,7 +216,13 @@ class Material:
         Returns:
             float: Density computed from m and V
         """
-        return self.m / self.V
+        if self.DENSITY is None:
+            rho = self.m / self.V
+        else:
+            rho = self.DENSITY
+        if rho <= 0.0:
+            raise ValueError(f"Density must be positive: {rho:.2f} kg/m³")
+        return rho
     
     @property
     def MW(self) -> float:
@@ -222,9 +231,10 @@ class Material:
         Returns:
             float: Molecular weight
         """
-        if self.MOLECULAR_WEIGHT is None:
+        MW = self.MOLECULAR_WEIGHT
+        if MW is None:
             raise ValueError(f"{type(self).__name__}: MOLECULAR_WEIGHT must be set.")
-        return self.MOLECULAR_WEIGHT
+        return MW
     
     def T_saturation(self, P: float) -> float:
         """
@@ -240,8 +250,10 @@ class Material:
             L=self.LATENT_HEAT,
             P0=self.P0,
             T0=self.T0,
-            M=self.MOLECULAR_WEIGHT,
+            MW=self.MOLECULAR_WEIGHT,
         )
+        if T_sat <= 0.0:
+            raise ValueError(f"Saturation temperature must be positive: {T_sat:.2f} K")
         return T_sat
     
     def P_saturation(self, T: float) -> float:
@@ -258,8 +270,10 @@ class Material:
             L=self.LATENT_HEAT,
             P0=self.P0,
             T0=self.T0,
-            M=self.MOLECULAR_WEIGHT,
+            MW=self.MOLECULAR_WEIGHT,
         )
+        if P_sat <= 0.0:
+            raise ValueError(f"Saturation pressure must be positive: {P_sat:.2f} Pa")
         return P_sat
 
     def u_saturation(self, T: float) -> float:
@@ -277,7 +291,27 @@ class Material:
             T0=self.T0 or 0.0,
             u0=self.u0 or 0.0,
         )
+        if u_sat <= 0.0:
+            raise ValueError(
+                f"Saturation specific internal energy must be positive: {u_sat:.2f} J/kg"
+            )
         return u_sat
+    
+    def v_saturation(self, T: float) -> float:
+        """
+        Specific volume [m³/kg] at given T.
+        Args:
+            T: Temperature [K]
+        Returns:
+            float: Specific volume [m³/kg]
+        """
+        rho = self.rho
+        v_sat = 1.0 / rho
+        if v_sat <= 0.0:
+            raise ValueError(
+                f"Saturation specific volume must be positive: {v_sat:.6f} m³/kg"
+            )
+        return v_sat
 
 
 # Define Energy material class

@@ -21,23 +21,24 @@ All classes inherit from a `Component` base class and use **Pydantic**, making i
 
 ## Pydantic Integration
 
-The entire module leverages Pydantic's `BaseModel`, which means:
+The entire module leverages Pydantic's `BaseModel`, which means we can create Node by simply specifying their attributes, as a dea structure:
 
 ```python
 # Creating a custom node is this simple:
 class TankNode(Node):
-    mass: float          # kg of fluid
-    temperature: float   # K
-    pressure: float      # Pa
+    mass: float                # kg of fluid
+    pressure: float            # Pa
+    temperature: float = 300   # K
 ```
 
 That's it! Pydantic handles:
 - Automatic validation
 - Type checking
-- Serialization/deserialization
 - Field introspection
 
 No need to write `__init__`, getters, setters, or validation logic.
+
+**Important:** Although Pydantic typically handles serialization / deserialization, our `graphs` module overwrites many checks used in serialization, and also allows fields to have nonserializable values. For this reason, it should not be assumed that graphs written in our module can be serialized. 
 
 ---
 
@@ -64,7 +65,7 @@ No need to write `__init__`, getters, setters, or validation logic.
 **Key Property**: Flows are **conservative** - what leaves the source node equals what enters the target node.
 
 **Examples**:
-- A pipe flowing coolant (mass, energy) from reactor → heat exchanger
+- A pipe flowing coolant (mass, energy) from reactor -> heat exchanger
 - A heat conductor transferring thermal energy between components
 - A financial transaction moving money between accounts
 
@@ -88,6 +89,34 @@ No need to write `__init__`, getters, setters, or validation logic.
 - Read states from nodes/edges via `Signal` connections
 - Implement control logic in their `update()` method
 - Write commands to nodes/edges to modify behavior
+
+**The Monitor Attribute**:
+
+Controllers automatically maintain a `monitor` dictionary that provides convenient access to all monitored values:
+
+```python
+class MyController(Controller):
+    REQUIRED_CONNECTIONS_READ = ("sensor1", "sensor2")
+    REQUIRED_CONNECTIONS_WRITE = ("actuator",)
+    
+    def update(self, dt: float) -> None:
+        # The default update() populates self.monitor automatically
+        super().update(dt)  # Call this if you override update()
+        
+        # Access monitored values directly
+        temp = self.monitor["sensor1"]["temperature"]
+        pressure = self.monitor["sensor2"]["pressure"]
+        
+        # Implement control logic...
+        if temp > 500:
+            self.connections_write["actuator"].write({"valve_open": False})
+```
+
+**Key points**:
+- The base `update()` method automatically populates `self.monitor` with all read signal data
+- Access monitored values via `self.monitor["signal_name"]["state_variable"]`
+- Useful for logging, debugging, and cleaner control logic
+- If you override `update()`, call `super().update(dt)` first to populate the monitor
 
 #### Signals: Information Connectors
 
@@ -123,7 +152,7 @@ self.connections_write["actuator"].write({"valve_position": 0.5})
 
 ## The Update Cycle ⚠️ CRITICAL
 
-The update order is **Edges → Nodes → Controllers**. This sequence is essential for:
+The update order is **Edges -> Nodes -> Controllers**. This sequence is essential for:
 1. **Perfect conservation** - flows are calculated before being integrated
 2. **Easy accounting** - all flows for a timestep are computed simultaneously
 3. **Controller latency** - control actions take effect in the next timestep (realistic behavior)
@@ -250,8 +279,8 @@ class HeatExchangerEdge(Edge):
 ```
 
 The aliasing system automatically maps:
-- `thermal_energy` → `Q_hot` for source node
-- `thermal_energy` → `Q_cold` for target node
+- `thermal_energy` -> `Q_hot` for source node
+- `thermal_energy` -> `Q_cold` for target node
 
 Access aliased fields with helper methods:
 ```python
@@ -282,8 +311,8 @@ class ReactionEdge(Edge):
 ```
 
 **When to use**:
-- Chemical reactions (reactants → products)
-- Phase changes (liquid → gas with different properties)
+- Chemical reactions (reactants -> products)
+- Phase changes (liquid -> gas with different properties)
 - Bifurcating flows (one stream splits into two with different compositions)
 
 **Warning**: This bypasses conservation checks - use only when physically justified!
@@ -297,11 +326,11 @@ nuclear_simulator/sandbox/graphs/
 ├── __init__.py          # Public API exports
 ├── base.py              # Component base class
 ├── nodes.py             # Node class
-├── edges.py             # Edge class  
+├── edges.py             # Edge class
 ├── controllers.py       # Controller and Signal classes
 ├── graphs.py            # Graph class and ID management
 ├── utils.py             # Nested attribute helpers
-└── summary.md           # This file
+└── README.md            # This file
 ```
 
 ---
@@ -313,8 +342,9 @@ from nuclear_simulator.sandbox.graphs import Graph, Node, Edge, Controller
 
 # 1. Define custom components
 class Tank(Node):
-    volume: float  # m³
-    mass: float    # kg
+    volume: float     # m³
+    mass: float       # kg
+    elevation: float  # m (height above reference)
 
 class Pipe(Edge):
     diameter: float  # m
@@ -358,7 +388,7 @@ for _ in range(100):
 
 ✅ **Implement `calculate_flows()`** - this is where your physics lives  
 ✅ **Remember**: Flows are rates (per second), not quantities  
-✅ **Trust the update order**: Edges → Nodes → Controllers guarantees conservation  
+✅ **Trust the update order**: Edges -> Nodes -> Controllers guarantees conservation  
 
 ⚠️ **Rarely needed**: Using `_source`/`_target`  
 

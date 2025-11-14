@@ -53,6 +53,10 @@ class Signal:
         else:
             # If reading a node/edge, get its state
             self.payload = {k: v for (k, v) in self.source_component.state.items()}
+            if hasattr(self.source_component, 'flows'):
+                self.payload['flows'] = {
+                    k: v for (k, v) in self.source_component.flows.items()
+                }
             return self.payload
     
     def write(self, payload: dict[str, Any]) -> None:

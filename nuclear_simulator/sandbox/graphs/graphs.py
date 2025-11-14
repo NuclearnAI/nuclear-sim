@@ -72,7 +72,7 @@ class Graph(BaseModel):
         n_nodes = len(self.get_nodes())
         n_edges = len(self.get_edges())
         n_graphs = len(self.graphs)
-        return f"{self.__class__.__name__}[Nodes: {len(self.get_nodes())} | Edges: {len(self.get_edges())} | Graphs: {n_graphs}]"
+        return f"{self.__class__.__name__}[Nodes: {n_nodes} | Edges: {n_edges} | Graphs: {n_graphs}]"
 
     def get_nodes(self) -> dict[int, Node]:
         """Return dict of nodes in the graph, recursively including sub-graphs."""

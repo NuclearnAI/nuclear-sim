@@ -7,6 +7,7 @@ def plot_dict(
         data: dict[str, list[float]], 
         title: str | None = None,
         fig=None,
+        ax=None,
     ):
     """
     Plots each key in the dictionary as a labeled line.
@@ -15,17 +16,21 @@ def plot_dict(
         data:  Dictionary mapping str to list[float].
         title: Optional title for the plot.
         fig:   Optional matplotlib Figure. If None, creates a new one.
+        ax:    Optional matplotlib Axes. If None, creates a new one.
 
     Returns:
         fig, ax: The matplotlib Figure and Axes.
     """
 
     # Create figure and axes if not provided
-    if fig is None:
+    if ax is None and fig is None:
         fig, ax = plt.subplots(1, 1)
-    else:
+    elif ax is None:
         fig.clf()
-        ax = fig.add_subplot(111)
+        ax = fig.add_subplot(1, 1, 1)
+    elif fig is None:
+        fig = ax.figure
+        ax.clear()
     plt.ion()
     plt.show()
 

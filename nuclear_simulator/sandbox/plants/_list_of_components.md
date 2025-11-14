@@ -263,23 +263,23 @@ EnhancedFeedwaterPhysics (system orchestrator)
 ## Critical Physical Interactions
 
 ### Primary-to-Secondary Heat Transfer:
-- **ReactorCoolantPump** → circulates hot primary coolant
-- **SteamGenerator** → transfers heat from primary to secondary
+- **ReactorCoolantPump** -> circulates hot primary coolant
+- **SteamGenerator** -> transfers heat from primary to secondary
 - Tube bundle is the physical interface
 
 ### Secondary Side Flow Path:
-- **FeedwaterPump** → pressurizes feedwater
-- **SteamGenerator** → converts feedwater to steam  
-- **TurbineStage** (×14) → expands steam, extracts work
-- **Condenser** → condenses exhaust steam
-- **VacuumSystem** → maintains vacuum
+- **FeedwaterPump** -> pressurizes feedwater
+- **SteamGenerator** -> converts feedwater to steam  
+- **TurbineStage** (×14) -> expands steam, extracts work
+- **Condenser** -> condenses exhaust steam
+- **VacuumSystem** -> maintains vacuum
 - Back to feedwater pump (cycle complete)
 
 ### Support Systems:
-- **Lubrication Systems** (3 types) → support all rotating equipment
-- **Governor** → controls turbine steam admission
-- **Bearings** → support rotating shafts
-- **Vacuum System** → enables efficient turbine operation
+- **Lubrication Systems** (3 types) -> support all rotating equipment
+- **Governor** -> controls turbine steam admission
+- **Bearings** -> support rotating shafts
+- **Vacuum System** -> enables efficient turbine operation
 
 ---
 

@@ -3,8 +3,8 @@
 from pydantic import Field
 from nuclear_simulator.sandbox.graphs import Graph, Node
 from nuclear_simulator.sandbox.plants.vessels import LiquidVessel
-from nuclear_simulator.sandbox.plants.thermo import ThermalCoupling
-from nuclear_simulator.sandbox.materials.nuclear import PWRPrimaryWater, UraniumDioxide
+from nuclear_simulator.sandbox.plants.thermo.heat import HeatExchange
+from nuclear_simulator.sandbox.plants.materials import PWRPrimaryWater, UraniumDioxide
 
 
 
@@ -27,10 +27,7 @@ class ReactorFuel(Node):
     control_rod_position: float = 0.10
     fuel: UraniumDioxide = Field(
         default_factory=lambda: (
-            UraniumDioxide.from_temperature(
-                m=80_000.0,  # kg, whole-core effective mass (lumped)
-                T=600.0,     # K, simplified average fuel temperature
-            )
+            UraniumDioxide.from_temperature(m=1000.0, T=600.0)
         )
     )
 
@@ -42,7 +39,10 @@ class ReactorFuel(Node):
             dt: Time step size (s).
         """
         super().update(dt)
-        self.fuel.validate()
+        try:
+            self.fuel.validate()
+        except Exception as e:
+            raise ValueError("Fuel validation failed during update.") from e
         return
 
     # Update method
@@ -72,33 +72,21 @@ class ReactorFuel(Node):
 class ReactorCoolant(LiquidVessel):
     """
     Simplified coolant node for reactor core.
-    Attributes:
-        P0:       [Pa]     Baseline pressure for pressure calculation
-        dPdV:     [Pa/m^3] Effective tank stiffness (includes pressurizer compliance)
-        liquid:   [-]      Liquid stored in the vessel
     """
-    P0: float = 15.5e6
-    dPdV: float = 2.0e7   # Starting point, needs calibration
+    P: float = 15.5e6
     liquid: PWRPrimaryWater = Field(
         default_factory=lambda: (
-            PWRPrimaryWater.from_temperature(
-                m=10_000.0,
-                T=550.0,
-            )
+            PWRPrimaryWater.from_temperature(m=10_000.0, T=550.0)
         )
     )
 
 
-# Define Reactor Fuel-Coolant Thermal Coupling
-class FuelCoolantThermalCoupling(ThermalCoupling):
+# Define Reactor Fuel-Coolant Heat Exchange
+class FuelCoolantHeatExchange(HeatExchange):
     """
-    Thermal coupling between reactor fuel and coolant.
-    Attributes:
-        tag:               [str] Tag of the material to exchange heat between
-        conductance:       [W/K] Fuel-coolant conductance (lumped, whole core)
+    Heat exchange between reactor fuel and coolant.
     """
-    tag: str = "material"
-    conductance: float = 5.0e7  # typical order 1e7–1e8 W/K
+    conductance: float = 5.0e7  # typical order 1e7-1e8 W/K
 
 
 # Define Reactor
@@ -113,15 +101,15 @@ class Reactor(Graph):
         # Call super init
         super().__init__(**data)
         # Build graph
-        fuel     = self.add_node(ReactorFuel, name="ReactorFuel")
-        coolant  = self.add_node(ReactorCoolant, name="ReactorCoolant")
+        fuel     = self.add_node(ReactorFuel, name="Reactor:Fuel")
+        coolant  = self.add_node(ReactorCoolant, name="Reactor:Coolant")
         coupling = self.add_edge(
-            edge_type=FuelCoolantThermalCoupling,
+            edge_type=FuelCoolantHeatExchange,
             node_source=fuel, 
             node_target=coolant, 
             alias_source={"material": "fuel"},
             alias_target={"material": "liquid"},
-            name="HeatExchange:Fuel-Coolant"
+            name="Reactor:HeatExchange:Fuel->Coolant"
         )
         # Done
         return
@@ -129,17 +117,17 @@ class Reactor(Graph):
     @property
     def fuel(self) -> ReactorFuel:
         """Get reactor fuel node."""
-        return self.get_component_from_name("ReactorFuel")
+        return self.get_component_from_name("Reactor:Fuel")
     
     @property
     def coolant(self) -> ReactorCoolant:
         """Get reactor coolant node."""
-        return self.get_component_from_name("ReactorCoolant")
+        return self.get_component_from_name("Reactor:Coolant")
     
     @property
-    def coupling(self) -> FuelCoolantThermalCoupling:
+    def coupling(self) -> FuelCoolantHeatExchange:
         """Get reactor fuel-coolant coupling edge."""
-        return self.get_component_from_name("HeatExchange:Fuel-Coolant")
+        return self.get_component_from_name("Reactor:HeatExchange:Fuel->Coolant")
 
 
 # Test
@@ -147,11 +135,24 @@ def test_file():
     """
     Test reactor node functionality.
     """
+
+    # Import libraries
+    import matplotlib.pyplot as plt
+    from nuclear_simulator.sandbox.plants.dashboard import Dashboard
+
     # Create reactor
     reactor = Reactor()
-    # Update reactor
-    dt = 1.0  # [s]
-    reactor.update(dt)
+
+    # Initialize dashboard
+    dashboard = Dashboard(reactor)
+
+    # Simulate for a while
+    dt = .001
+    n_steps = 10000
+    for i in range(n_steps):
+        reactor.update(dt)
+        dashboard.step()
+
     # Done
     return
 if __name__ == "__main__":
