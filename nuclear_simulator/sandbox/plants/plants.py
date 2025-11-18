@@ -69,10 +69,14 @@ def test_file():
 
     # Import libraries
     import matplotlib.pyplot as plt
+    from nuclear_simulator.sandbox.graphs.diagram import draw_graph
     from nuclear_simulator.sandbox.plants.dashboard import Dashboard
 
     # Create plant
     plant = Plant()
+
+    # Draw graph
+    fig, ax = draw_graph(plant)
 
     # Initialize dashboard
     dashboard = Dashboard(plant.steam_generator)

@@ -6,7 +6,7 @@ if TYPE_CHECKING:
     from nuclear_simulator.sandbox.graphs.base import Component
     from nuclear_simulator.sandbox.graphs.nodes import Node
     from nuclear_simulator.sandbox.graphs.edges import Edge
-    from nuclear_simulator.sandbox.graphs.controllers import Controller
+    from nuclear_simulator.sandbox.graphs.controllers import Controller, Signal
 
 # Import libraries
 from threading import Lock
@@ -276,7 +276,7 @@ class Graph(Component):
 
         # Return controller
         return controller
-    
+
     def add_graph(
             self,
             graph_type: type[Graph],

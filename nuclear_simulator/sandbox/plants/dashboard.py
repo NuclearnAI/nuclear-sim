@@ -4,14 +4,11 @@ import colorsys
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 from nuclear_simulator.sandbox.graphs import Graph
-from nuclear_simulator.sandbox.materials import Material, MaterialExchange
+from nuclear_simulator.sandbox.materials import Material, MaterialExchange, Energy, Mass, Volume
 
 
 class Dashboard:
     """Simple live dashboard for monitoring data."""
-
-    # Set material tags
-    MATERIAL_TAGS = ('energy', 'gas', 'liquid', 'solid', 'fuel', 'material')
 
     def __init__(self, graph: Graph, plot_every: int = 100):
         """
@@ -40,7 +37,7 @@ class Dashboard:
 
         # Initialize plot
         with plt.rc_context({'font.size': 6}):
-            fig, ax = plt.subplots(2, 5, layout='constrained')
+            fig, ax = plt.subplots(2, 4, layout='constrained')
             fig.set_size_inches(16, 9)
             fig.canvas.manager.full_screen_toggle()
             plt.ion()
@@ -54,11 +51,11 @@ class Dashboard:
             'm':     self.ax[0, 0],
             'U':     self.ax[0, 1],
             'V':     self.ax[0, 2],
+            'T':     self.ax[0, 3],
+            'P':     self.ax[1, 3],
             'm_dot': self.ax[1, 0],
             'U_dot': self.ax[1, 1],
             'V_dot': self.ax[1, 2],
-            'T':     self.ax[0, 3],
-            'P':     self.ax[1, 3],
         }
         self.plot_colors: dict[str, tuple] = {}
         self._update_legend: bool = True
@@ -86,25 +83,22 @@ class Dashboard:
             # Check for pressure
             P = node.state.get('P', None)
 
-            # Loop over state
-            for key, value in node.state.items():
-
-                # Skip non-material states
-                if not isinstance(value, Material):
-                    continue
+            # Check for material contents
+            if 'contents' in node.state:
+                mat: Material = node.state['contents']
 
                 # Log material properties
-                self.data['T'].setdefault(f'{name}.{key}', []).append(value.T)
-
-                # Ignore mass, energy, volume for environment components
-                if not name.lower().startswith('env:'):
-                    self.data['m'].setdefault(f'{name}.{key}', []).append(value.m)
-                    self.data['U'].setdefault(f'{name}.{key}', []).append(value.U)
-                    self.data['V'].setdefault(f'{name}.{key}', []).append(value.V)
+                self.data['T'].setdefault(f'{name}.contents', []).append(mat.T)
 
                 # Add pressure if available
                 if P is not None:
-                    self.data['P'].setdefault(f'{name}.{key}', []).append(P)
+                    self.data['P'].setdefault(f'{name}.contents', []).append(P)
+
+                # Ignore mass, energy, volume for environment components
+                if not name.lower().startswith('env:'):
+                    self.data['m'].setdefault(f'{name}.contents', []).append(mat.m)
+                    self.data['U'].setdefault(f'{name}.contents', []).append(mat.U)
+                    self.data['V'].setdefault(f'{name}.contents', []).append(mat.V)
 
         # Loop over edges
         for edge in self.graph.get_edges().values():
@@ -114,9 +108,12 @@ class Dashboard:
 
             # Loop over material flows and log
             for key, value in edge.flows.items():
-                if isinstance(value, MaterialExchange):
-                    # Only log energy flow for Energy types
+                if isinstance(value, Energy):
                     self.data['U_dot'].setdefault(f'{name}.{key}', []).append(value.U)
+                elif isinstance(value, Mass):
+                    self.data['m_dot'].setdefault(f'{name}.{key}', []).append(value.m)
+                elif isinstance(value, Volume):
+                    self.data['V_dot'].setdefault(f'{name}.{key}', []).append(value.V)
                 elif isinstance(value, Material):
                     self.data['m_dot'].setdefault(f'{name}.{key}', []).append(value.m)
                     self.data['U_dot'].setdefault(f'{name}.{key}', []).append(value.U)

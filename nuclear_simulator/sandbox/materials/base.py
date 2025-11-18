@@ -55,7 +55,7 @@ class Material:
         return (
             f"{type(self).__name__}(m={self.m:.3e} kg, U={self.U:.3e} J, V={self.V:.3e} m³)"
         )
-    
+
     def __add__(self, other) -> Material:
         if (type(self) == type(other)) or isinstance(other, MaterialExchange):
             m = self.m + other.m
