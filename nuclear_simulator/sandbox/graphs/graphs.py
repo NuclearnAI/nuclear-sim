@@ -9,9 +9,9 @@ if TYPE_CHECKING:
     from nuclear_simulator.sandbox.graphs.controllers import Controller
 
 # Import libraries
-from itertools import count
 from threading import Lock
-from pydantic import BaseModel
+from itertools import count
+from nuclear_simulator.sandbox.graphs.base import Component
 
 
 # ID allocator class for thread-safe unique ID generation
@@ -25,25 +25,14 @@ class IdCounter:
 
 
 # Define abstract base class for graphs
-class Graph(BaseModel):
+class Graph(Component):
     """
     Abstract base class for graphs containing nodes, edges, controllers, and sub-graphs.
     """
 
-    # Model configuration
-    model_config = {
-        "extra": "allow",                 # Allow extra fields (for private attributes)
-        "arbitrary_types_allowed": True,  # Allow non-Pydantic values for fields
-    }
-
-    # Set class attributes
-    id: Optional[int] = None
-    name: Optional[str] = None
-
     def __init__(
             self, 
-            id_counter: IdCounter | None = None, 
-            name: Optional[str] = None,
+            id_counter: IdCounter | None = None,
             **data: Any
         ) -> None:
         """
@@ -56,7 +45,7 @@ class Graph(BaseModel):
         id = id_counter.next()
 
         # Call super init
-        super().__init__(id=id, name=name, **data)
+        super().__init__(id=id, **data)
 
         # Set private attributes
         self.id_counter = id_counter
@@ -104,6 +93,16 @@ class Graph(BaseModel):
             controllers.update(g_controllers)
         return controllers
     
+    def get_graphs(self) -> dict[int, Graph]:
+        """Return dict of sub-graphs in the graph, recursively including sub-graphs."""
+        graphs = {i: g for i, g in self.graphs.items()}
+        for g in self.graphs.values():
+            g_graphs = g.get_graphs()
+            if any(id in graphs for id in g_graphs):
+                raise ValueError("Duplicate graph IDs found in sub-graphs")
+            graphs.update(g_graphs)
+        return graphs
+    
     def get_all_components(self) -> dict[int, Component]:
         """Return dict of all components (nodes, edges, controllers) in the graph."""
         # Initialize component dictionary
@@ -123,6 +122,11 @@ class Graph(BaseModel):
         if any(id in components for id in controllers):
             raise ValueError("Duplicate controller IDs found in graph components")
         components.update(controllers)
+        # Add graphs
+        graphs = self.get_graphs()
+        if any(id in components for id in graphs):
+            raise ValueError("Duplicate graph IDs found in graph components")
+        components.update(graphs)
         # Return output
         return components
     
@@ -184,6 +188,10 @@ class Graph(BaseModel):
         Modifies:
             Updates self.nodes with the new node.
         """
+
+        # If Node Type is a Graph, route to add_graph
+        if issubclass(node_type, Graph):
+            return self.add_graph(graph_type=node_type, name=name, **kwargs)
         
         # Get node id
         id = self.id_counter.next()
@@ -285,9 +293,12 @@ class Graph(BaseModel):
             Updates self.graphs with the new sub-graph.
         """
 
+        # Get id counter
+        id_counter = self.id_counter
+
         # Create graph instance
         graph = graph_type(
-            id_counter=self.id_counter, 
+            id_counter=id_counter, 
             name=name, 
             **kwargs
         )

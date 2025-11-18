@@ -37,7 +37,6 @@ class Solid(Material):
         return
     
 
-
 # Test
 def test_file():
     """Simple test to verify file loads without errors."""

@@ -4,7 +4,7 @@ import colorsys
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 from nuclear_simulator.sandbox.graphs import Graph
-from nuclear_simulator.sandbox.materials import Material, Energy
+from nuclear_simulator.sandbox.materials import Material, MaterialExchange
 
 
 class Dashboard:
@@ -114,7 +114,7 @@ class Dashboard:
 
             # Loop over material flows and log
             for key, value in edge.flows.items():
-                if isinstance(value, Energy):
+                if isinstance(value, MaterialExchange):
                     # Only log energy flow for Energy types
                     self.data['U_dot'].setdefault(f'{name}.{key}', []).append(value.U)
                 elif isinstance(value, Material):

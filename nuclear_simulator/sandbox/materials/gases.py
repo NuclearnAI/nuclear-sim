@@ -58,6 +58,11 @@ class Gas(Material):
         return cls(m, U, **kwargs)
     
     @property
+    def P(self) -> float:
+        """[Pa] Current pressure (defaults to ideal gas law)."""
+        return self.P_ideal
+    
+    @property
     def P_ideal(self) -> float:
         """Calculate pressure using ideal gas law."""
         n = self.m / self.MW

@@ -2,8 +2,8 @@
 # Import libraries
 from nuclear_simulator.sandbox.graphs import Graph, Controller
 from nuclear_simulator.sandbox.plants.reactors import Reactor
-from nuclear_simulator.sandbox.plants.pipes.pipes import LiquidPipe, GasPipe
-from nuclear_simulator.sandbox.plants.pipes.pumps import LiquidPump
+from nuclear_simulator.sandbox.plants.transfer.pipes import LiquidPipe, GasPipe
+from nuclear_simulator.sandbox.plants.transfer.pumps import LiquidPump
 from nuclear_simulator.sandbox.plants.steam_generators import SteamGenerator
 
 
@@ -36,7 +36,7 @@ class Plant(Graph):
             node_source=sg.primary_out,
             node_target=reactor.coolant,
             name="Primary:Pump:SG:ColdLeg->Reactor",
-            m_dot=5000.0,
+            m_dot=sg.primary_m_dot,
         )
         # ReactorCoolant -> SG:Primary:HotLeg
         self.add_edge(
@@ -44,7 +44,7 @@ class Plant(Graph):
             node_source=reactor.coolant,
             node_target=sg.primary_in,
             name="Primary:Pipe:Reactor->SG:HotLeg",
-            m_dot=5000.0
+            m_dot=sg.primary_m_dot,
         )
 
         # Done
@@ -75,11 +75,12 @@ def test_file():
     plant = Plant()
 
     # Initialize dashboard
-    dashboard = Dashboard(plant)
+    dashboard = Dashboard(plant.steam_generator)
 
     # Simulate for a while
     dt = .001
-    n_steps = 10000
+    n_steps = 100000
+    dashboard.plot_every = n_steps // 1000
     for i in range(n_steps):
         plant.update(dt)
         dashboard.step()

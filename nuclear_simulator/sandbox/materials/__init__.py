@@ -1,4 +1,4 @@
-from .base import Material, Energy
-from .gases import Gas
-from .liquids import Liquid
+from .base import Material, MaterialExchange, Energy, Mass, Volume
 from .solids import Solid
+from .liquids import Liquid
+from .gases import Gas

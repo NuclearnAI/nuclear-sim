@@ -27,13 +27,16 @@ Plants is in alpha version. Anything in the module can be changed.
 
 **Immediate**
 
+- Change LiquidVessel to PressurizedVessel
+  - node.liquid -> node.material
+  - properties for gas, liquid, solid
+- Split GasLiquidVessel into Graph with Gas and Liquid nodes.
+- Remove Hot and Cold leg from Steam generator primary.
+  - Rename Drum and Bundle?
 
 
 **High Priority**
 
-- Add monitor to Graph class. Monitor should record all states
-- LiquidVessels should set dP_dV from input pressure and volume.
-- Make it easier to initialize edges with flows.
 
 
 **Low Priority**

@@ -23,9 +23,14 @@ class PWRPrimaryWater(Liquid):
     Attributes:
         HEAT_CAPACITY: [J/(kg·K)] Specific heat of water
         DENSITY:       [kg/m³]    Pressurized water density (~15.5 MPa, 575 K)
+        P0:            [Pa]       Reference state pressure
+        T0:            [K]        Reference state temperature
     """
     HEAT_CAPACITY = 5000.0
     DENSITY = 720.0
+    P0 = 15.5e6
+    T0 = 575.0
+    u0 = 1_500_000.0  # Approximate internal energy at operating point
 
 
 class PWRSecondaryWater(Liquid):

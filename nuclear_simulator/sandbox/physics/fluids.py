@@ -65,7 +65,6 @@ def calc_compressible_mass_flow(
         T1: float,
         T2: float,
         MW: float,
-        gamma: float,
         D: float,
         L: float,
         f: float = 0.0,

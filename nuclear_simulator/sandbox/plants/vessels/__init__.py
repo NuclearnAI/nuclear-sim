@@ -1,3 +1,3 @@
-from .liquids import LiquidVessel
-from .multiphase import GasLiquidVessel
+from .base import Vessel
 from .environment import Reservoir
+from .pressurized import PressurizedLiquidVessel, PressurizedGasVessel

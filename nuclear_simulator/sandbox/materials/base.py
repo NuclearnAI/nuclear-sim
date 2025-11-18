@@ -24,20 +24,20 @@ class Material:
         DENSITY:          [kg/m³]    Density (optional, can be computed from m/V)
         HEAT_CAPACITY:    [J/(kg·K)] Specific heat capacity
         MOLECULAR_WEIGHT: [kg/mol]   Molecular weight
+        LATENT_HEAT:      [J/kg]     Latent heat of vaporization at reference T0 and P0
         P0:               [Pa]       Reference pressure for calculations
         T0:               [K]        Reference temperature for calculations
         u0:               [J/kg]     Reference internal specific energy at T0
-        LATENT_HEAT:      [J/kg]     Latent heat of vaporization at reference T0 and P0
     """
     
     # Material constants
     DENSITY: float | None = None
     HEAT_CAPACITY: float | None = None
     MOLECULAR_WEIGHT: float | None = None
+    LATENT_HEAT: float | None = None
     P0: float | None = None
     T0: float | None = None
     u0: float | None = None
-    LATENT_HEAT: float | None = None
     
     def __init__(self, m: float, U: float, V: float) -> None:
         """
@@ -57,7 +57,7 @@ class Material:
         )
     
     def __add__(self, other) -> Material:
-        if (type(self) == type(other)) or isinstance(other, Energy):
+        if (type(self) == type(other)) or isinstance(other, MaterialExchange):
             m = self.m + other.m
             U = self.U + other.U
             V = self.V + other.V
@@ -81,7 +81,8 @@ class Material:
         
     def __rsub__(self, other):
         if isinstance(other, Material):
-            return other.__add__(-self)
+            # return other.__add__(-self)
+            return (-self).__add__(other)
         else:
             return NotImplemented
 
@@ -189,6 +190,17 @@ class Material:
         if cv is None:
             raise ValueError(f"{type(self).__name__}: HEAT_CAPACITY must be set.")
         return cv
+    
+    @property
+    def cp(self) -> float:
+        """
+        Specific heat capacity [J/(kg·K)].
+        
+        Returns:
+            float: Specific heat capacity of the material
+        """
+        cv = self.cv
+        return cv  # Default: cp ~= cv; override in subclasses if needed
 
     @property
     def T(self) -> float:
@@ -235,6 +247,18 @@ class Material:
         if MW is None:
             raise ValueError(f"{type(self).__name__}: MOLECULAR_WEIGHT must be set.")
         return MW
+    
+    @property
+    def mols(self) -> float:
+        """
+        Number of moles [mol].
+        Returns:
+            float: Number of moles
+        """
+        n = self.m / self.MW
+        if n < 0.0:
+            raise ValueError(f"Number of moles must be non-negative: {n:.2f} mol")
+        return n
     
     def T_saturation(self, P: float) -> float:
         """
@@ -315,76 +339,83 @@ class Material:
 
 
 # Define Energy material class
-class Energy(Material):
+class MaterialExchange(Material):
     """
-    Material that carries only internal energy (no mass or volume).
+    Material used for energy/mass/volume exchanges between materials.
     """
 
-    def __init__(self, U: float, **_) -> None:
+    # Override init to default properties to zero
+    def __init__(self, m: float=0.0, U: float=0.0, V: float=0.0) -> None:
         """
-        Initialize energy-only material.
-
+        Initialize material exchange.
         Args:
-            U: [J] Internal energy
+            m:        [kg]  Mass
+            U:        [J]   Internal energy
+            V:        [m³]  Volume
         """
-        super().__init__(m=0.0, U=U, V=0.0)
+        self.m = m
+        self.U = U
+        self.V = V
 
-    def __repr__(self) -> str:
-        return f"{type(self).__name__}(U={self.U:.3e} J)"
-    
-    def __neg__(self):
-        return Energy(U=-self.U)
-    
-    def __pos__(self):
-        return Energy(U=+self.U)
-    
-    def __abs__(self):
-        return Energy(U=abs(self.U))
-
+    # Override addition to only sum like types
     def __add__(self, other):
-        if isinstance(other, Energy):
-            return Energy(U=self.U + other.U)
-        else:
-            return NotImplemented
-
-    def __radd__(self, other):
-        if isinstance(other, Energy):
-            return Energy(U=self.U + other.U)
-        elif isinstance(other, Number) and (other == 0):
-            return self
-        else:
-            return NotImplemented
-
-    def __sub__(self, other):
-        if isinstance(other, Energy):
-            return Energy(U=self.U - other.U)
-        else:
-            return NotImplemented
-
-    def __rsub__(self, other):
-        if isinstance(other, Energy):
-            return Energy(U=other.U - self.U)
-        elif isinstance(other, Number) and (other == 0):
-            return Energy(U=-self.U)
-        else:
-            return NotImplemented
-
-    def __mul__(self, k): 
-        if isinstance(k, Number):
-            return Energy(U=self.U * k)
+        if type(self) == type(other):
+            return type(self)(
+                m=self.m + other.m,
+                U=self.U + other.U,
+                V=self.V + other.V
+            )
+        elif isinstance(other, MaterialExchange):
+            # Allow addition of different MaterialExchange types
+            return MaterialExchange(
+                m=self.m + other.m,
+                U=self.U + other.U,
+                V=self.V + other.V
+            )
         else:
             return NotImplemented
         
-    def __rmul__(self, k):
-        return self.__mul__(k)
-
-    def __truediv__(self, k):
-        if isinstance(k, Number):
-            return Energy(U=self.U / k)
-        else:
-            return NotImplemented
+class Energy(MaterialExchange):
+    """
+    Material with only internal energy (no mass or volume).
+    """
+    def __init__(self, U: float, **_) -> None:
+        """
+        Initialize energy exchange material.
+        Args:
+            U:        [J]   Internal energy, referenced to 0K
+        """
+        super().__init__(m=0.0, U=U, V=0.0)
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}(U={self.U:.3e} J)"
     
-
+class Mass(MaterialExchange):
+    """
+    Material with only mass (no internal energy or volume).
+    """
+    def __init__(self, m: float, **_) -> None:
+        """
+        Initialize mass exchange material.
+        Args:
+            m:        [kg]  Mass
+        """
+        super().__init__(m=m, U=0.0, V=0.0)
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}(m={self.m:.3e} kg)"
+    
+class Volume(MaterialExchange):
+    """
+    Material with only volume (no internal energy or mass).
+    """
+    def __init__(self, V: float, **_) -> None:
+        """
+        Initialize volume exchange material.
+        Args:
+            V:        [m³]  Volume
+        """
+        super().__init__(m=0.0, U=0.0, V=V)
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}(V={self.V:.3e} m³)"
 
 
 # Test
@@ -396,6 +427,10 @@ def test_file():
     # Instantiate
     mata = DummyMaterial(m=10.0, U=1e6, V=0.01)
     matb = DummyMaterial(m=10.0, U=2e6, V=0.02)
+    exch = MaterialExchange(m=5.0, U=5e5, V=0.005)
+    energy = Energy(U=1e5)
+    mass = Mass(m=2.0)
+    volume = Volume(V=0.002)
     # Test addition
     matc = mata + matb
     assert matc.m == 20.0
@@ -413,6 +448,25 @@ def test_file():
     matf = mate / 2.0
     assert matf.m == 10.0
     assert matf.U == 1e6
+    # Test exchange addition
+    matg = mata + exch
+    assert matg.m == 15.0
+    assert matg.U == 1.5e6
+    # Test exchange subtraction
+    math = mata - exch
+    assert math.m == 5.0
+    assert math.U == 5e5
+    # Test right-side addition
+    mati = exch + mata
+    assert mati.m == 15.0
+    assert mati.U == 1.5e6
+    # Test right-side subtraction
+    matj = exch - mata
+    assert matj.m == -5.0
+    assert matj.U == -5e5
+    # Test material exchange addition
+    matk = mass + energy + volume
+    assert isinstance(matk, MaterialExchange)
     # Done
     return
 if __name__ == "__main__":
