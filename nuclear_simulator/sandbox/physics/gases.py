@@ -15,7 +15,6 @@ def calc_pressure_ideal_gas(
         n:   [mol]        Number of moles
         T:   [K]          Temperature
         V:   [m3]         Volume
-        R:   [J/(mol*K)]  Gas constant (default: 8.3145 J/(mol*K))
         eps: [-]          Small value to prevent division by zero
     Returns:
         P:   [Pa]         Pressure
@@ -36,7 +35,6 @@ def calc_volume_ideal_gas(
         n:   [mol]        Number of moles
         T:   [K]          Temperature
         P:   [Pa]         Pressure
-        R:   [J/(mol*K)]  Gas constant (default: 8.3145 J/(mol*K))
         eps: [-]          Small value to prevent division by zero
     Returns:
         V:   [m3]         Volume

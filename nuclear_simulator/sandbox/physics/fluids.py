@@ -1,7 +1,6 @@
 
 # Import libraries
 import math
-import random
 from nuclear_simulator.sandbox.physics.constants import UNIVERSAL_GAS_CONSTANT
 
 
@@ -81,7 +80,6 @@ def calc_compressible_mass_flow(
         T1:      [K]      Temperature on first side
         T2:      [K]      Temperature on other side
         MW:      [kg/mol] Molar weight of the gas
-        gamma:   [-]      Specific heat ratio (cp/cv) of the gas
         D:       [m]      Pipe inner diameter
         L:       [m]      Pipe length
         f:       [-]      Darcy friction factor (lumped/assumed)

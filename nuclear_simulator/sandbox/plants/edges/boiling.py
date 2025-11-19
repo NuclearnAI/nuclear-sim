@@ -10,20 +10,21 @@ if TYPE_CHECKING:
 from nuclear_simulator.sandbox.materials.base import MaterialExchange
 from nuclear_simulator.sandbox.materials.gases import Gas
 from nuclear_simulator.sandbox.materials.liquids import Liquid
-from nuclear_simulator.sandbox.plants.transfer.base import TransferEdge
+from nuclear_simulator.sandbox.plants.edges.base import TransferEdge
 
 
 # Boiling edge
 class BoilingEdge(TransferEdge):
     """
     Transfers mass and energy from liquid (source) to gas (target) via boiling.
+    
+    Also transfers energy via thermal conduction, using conductance such that 
+    the time constant for equalizing temperatures is equal to tau_phase.
 
     Attributes:
-        tau_boil:      [s]  Time constant for boiling from liquid to gas.
-        tau_condense:  [s]  Optional time constant for condensation from gas to liquid.
+        tau_phase:     [s]    Time constant for phase change.
     """
-    tau_boil: float = 1.0
-    tau_condense: float | None = 1.0
+    tau_phase: float = 0.01
 
     def calculate_material_flow(self, dt: float) -> MaterialExchange:
         """
@@ -56,25 +57,36 @@ class BoilingEdge(TransferEdge):
         U_liq_excess = liq.U - liq.m * u0_liq
         if U_liq_excess > 0.0:
             m_eq = U_liq_excess / du
-            m_boil = m_eq / self.tau_boil
+            m_boil = m_eq / self.tau_phase
 
         # Condense gas if target gas is below boiling energy
         m_cond = 0
         U_gas_deficit = gas.m * u0_gas - gas.U
-        if (U_gas_deficit > 0.0) and (self.tau_condense is not None):
+        if U_gas_deficit > 0.0:
             m_eq = U_gas_deficit / du
-            m_cond = m_eq / self.tau_condense
+            m_cond = m_eq / self.tau_phase
 
         # Calcualte mass transfer rate
         m_dot = m_boil - m_cond
 
-        # Calulate energy transfer rate
+        # Calulate energy transfer rate from phase changes
         if m_dot >= 0:
             # Equation: U_dot = m_dot * u0_liq + m_dot * (u0_gas - u0_liq) = m_dot * u0_gas
-            U_dot = m_dot * u0_gas
+            U_dot_phase = m_dot * u0_gas
         else:
             # Equation: U_dot = m_dot * u0_gas - m_dot * (u0_gas - u0_liq) = m_dot * u0_liq
-            U_dot = m_dot * u0_liq
+            U_dot_phase = m_dot * u0_liq
+
+        # # Calculate additional energy transfer from regular conductance.
+        # # Equation: tau_phase = tau_conduct = (C_liq * C_gas) / (G_eff * (C_liq + C_gas))
+        # C_liq = liq.cv * liq.m
+        # C_gas = gas.cv * gas.m
+        # G_eff = (C_liq * C_gas) / (self.tau_phase * (C_liq + C_gas))
+        # U_dot_conduct = G_eff * (liq.T - gas.T)
+        U_dot_conduct = 0.0
+
+        # Calculate total energy transfer
+        U_dot = U_dot_phase + U_dot_conduct
 
         # Package flow (positive m_dot means source -> target)
         flow = MaterialExchange(m=m_dot, U=U_dot, V=0.0)

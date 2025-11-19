@@ -7,9 +7,10 @@ if TYPE_CHECKING:
 
 # Import libraries
 import math
+from pydantic import Field
 from nuclear_simulator.sandbox.materials.gases import Gas
 from nuclear_simulator.sandbox.materials.liquids import Liquid
-from nuclear_simulator.sandbox.plants.transfer.base import TransferEdge
+from nuclear_simulator.sandbox.plants.edges.base import TransferEdge
 from nuclear_simulator.sandbox.physics import (
     calc_incompressible_mass_flow,
     calc_compressible_mass_flow,
@@ -129,6 +130,42 @@ class Pipe(TransferEdge):
         return fluid_flow
 
 
+# Class for leaky pipes
+class LeakyPipe(Pipe):
+    """
+    A Pipe that leaks a fraction of its flow to the environment.
+    Attributes:
+        leak_fraction:     [kg/s] Rate of flow lost to environment.
+    """
+    leak_rate: float = 1/86400  # 1 kg per day
+
+    def update_from_state(self, dt):
+        """
+        Update the pipe state by leaking mass and energy.
+        Args:
+            dt:  [s] Time step size.
+        Modifies:
+            Reduces material in the pipe flows.
+        """
+
+        # Get current material flow
+        material = self.flows[self.tag_material]
+
+        # Calculate leak amounts
+        m_leak = min(self.leak_rate * dt, material.m)
+        m_flow = max(material.m, 1e-12)  # Prevent div by zero
+        fraction_remaining = 1.0 - (m_leak / m_flow)
+
+        # Update material in pipe
+        material = material * fraction_remaining
+
+        # Store updated material
+        self.flows[self.tag_material] = material
+
+        # Done
+        return
+
+
 # Class for liquid pipes
 class LiquidPipe(Pipe):
     """A Pipe for liquids."""
@@ -145,6 +182,12 @@ class GasPipe(Pipe):
     f: float = 0.015
     K_minor: float = 2.0
 
+class LeakyLiquidPipe(LiquidPipe, LeakyPipe):
+    """A LeakyPipe for liquids."""
+
+class LeakyGasPipe(GasPipe, LeakyPipe):
+    """A LeakyPipe for gases."""
+
     
 
 # Test
@@ -155,7 +198,7 @@ def test_file():
     # Create nodes and pipe
     node1 = PressurizedLiquidVessel(contents=PWRPrimaryWater(m=1000.0, U=1e6), P=2e7)
     node2 = PressurizedLiquidVessel(contents=PWRPrimaryWater(m=1000.0, U=1e6), P=1e7)
-    pipe = LiquidPipe(node_source=node1, node_target=node2)
+    pipe = LeakyLiquidPipe(node_source=node1, node_target=node2)
     # Update graph
     dt = 0.1
     pipe.update(dt)

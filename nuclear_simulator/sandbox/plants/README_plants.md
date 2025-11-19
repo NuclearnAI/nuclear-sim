@@ -12,6 +12,8 @@ This module implements concrete nuclear reactor components and systems using the
 
 The plants module combines these foundations to model complete nuclear power plants as interconnected networks of physical components.
 
+***IMPORTANT:*** This code was designed to be understandable and scalable, not necesarily fast. The philosophy is that speed optimizations can happen after the core logic is in place. For this reason the code in its current form is slow compared to other simulators. 
+
 ---
 
 ## Graph-Based Architecture

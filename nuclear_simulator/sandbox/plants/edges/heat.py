@@ -8,7 +8,7 @@ if TYPE_CHECKING:
 
 # Import libraries
 from nuclear_simulator.sandbox.materials.base import Energy
-from nuclear_simulator.sandbox.plants.transfer.base import TransferEdge
+from nuclear_simulator.sandbox.plants.edges.base import TransferEdge
 
 
 # Heat exchange edge

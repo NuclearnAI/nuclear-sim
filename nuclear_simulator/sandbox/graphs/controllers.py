@@ -91,6 +91,14 @@ class Controller(Component):
         # Done
         return
     
+    @property
+    def connections_all(self) -> dict[str, Signal]:
+        """Return all connections (read and write) as a single dictionary."""
+        all_connections = {}
+        all_connections.update(self.connections_read)
+        all_connections.update(self.connections_write)
+        return all_connections
+    
     def get_nonstate_fields(self) -> list[str]:
         """Return list of non-state field names."""
         return super().get_nonstate_fields() + [

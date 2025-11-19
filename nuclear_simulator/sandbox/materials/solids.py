@@ -12,14 +12,14 @@ class Solid(Material):
     # Define class attributes
     DENSITY: float = None  # [kg/m³] Reference density
     
-    def __init__(self, m: float, U: float, **kwargs) -> None:
+    def __init__(self, m: float, U: float, **_) -> None:
         """
         Initialize solid material with automatic volume calculation.
 
         Args:
-            m:      [kg] Mass
-            U:      [J]  Internal energy, referenced to 0K
-            kwargs: [-]  Additional keyword arguments for base Material class
+            m: [kg] Mass
+            U: [J]  Internal energy, referenced to 0K
+            _: [-]  Unused keyword arguments (required for base class initialization which pass V)
         """
 
         # Check that density is set
@@ -28,10 +28,9 @@ class Solid(Material):
         
         # Calculate volume
         V = m / self.DENSITY
-        kwargs['V'] = V
 
         # Initialize base class
-        super().__init__(m, U, **kwargs)
+        super().__init__(m=m, U=U, V=V)
 
         # Done 
         return

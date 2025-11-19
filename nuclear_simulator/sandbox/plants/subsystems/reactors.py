@@ -3,10 +3,8 @@
 from pydantic import Field
 from nuclear_simulator.sandbox.graphs import Graph, Node
 from nuclear_simulator.sandbox.plants.vessels import Vessel, PressurizedLiquidVessel
-from nuclear_simulator.sandbox.plants.transfer.heat import HeatExchange
+from nuclear_simulator.sandbox.plants.edges.heat import HeatExchange
 from nuclear_simulator.sandbox.plants.materials import PWRPrimaryWater, UraniumDioxide
-
-
 
 
 # Define Fuel node
@@ -22,7 +20,7 @@ class ReactorFuel(Vessel):
     """
     contents: UraniumDioxide = Field(
         default_factory=lambda: (
-            UraniumDioxide.from_temperature(m=100.0, T=600.0)
+            UraniumDioxide.from_temperature(m=100.0, T=UraniumDioxide.T0)
         )
     )
     boron_ppm: float            = 1000.0            # typical BOC-ish value
@@ -58,28 +56,22 @@ class ReactorCoolant(PressurizedLiquidVessel):
     """
     Simplified coolant node for reactor core.
     """
-    P: float = 15.5e6
+    P: float = PWRPrimaryWater.P0
     contents: PWRPrimaryWater = Field(
         default_factory=lambda: (
-            PWRPrimaryWater.from_temperature(m=10_000.0, T=550.0)
+            PWRPrimaryWater.from_temperature(m=10_000.0, T=PWRPrimaryWater.T0)
         )
     )
-
-
-# Define Reactor Fuel-Coolant Heat Exchange
-class FuelCoolantHeatExchange(HeatExchange):
-    """
-    Heat exchange between reactor fuel and coolant.
-    """
-    conductance: float = 5.0e7  # typical order 1e7-1e8 W/K
 
 
 # Define Reactor
 class Reactor(Graph):
     """
     Simplified reactor core node with Fuel and Coolant vessel.
-
     """
+
+    # Set attributes
+    conductance_fuel_coolant: float = 5.0e7  # typical order 1e7-1e8 W/K
 
     def __init__(self, **data) -> None:
         """Initialize reactor graph."""
@@ -88,17 +80,28 @@ class Reactor(Graph):
         super().__init__(**data)
 
         # Build graph
-        self.fuel     = self.add_node(ReactorFuel, name="Reactor:Fuel")
-        self.coolant  = self.add_node(ReactorCoolant, name="Reactor:Coolant")
+        self.fuel     = self.add_node(ReactorFuel, name=f"{self.name}:Fuel")
+        self.coolant  = self.add_node(ReactorCoolant, name=f"{self.name}:Coolant")
         self.coupling = self.add_edge(
-            edge_type=FuelCoolantHeatExchange,
+            edge_type=HeatExchange,
             node_source=self.fuel, 
             node_target=self.coolant,
-            name="Reactor:HeatExchange:Fuel->Coolant"
+            name=f"HeatExchange:{self.name}:Fuel->Coolant",
+            conductance=self.conductance_fuel_coolant,
         )
         
         # Done
         return
+    
+    @property
+    def primary_in(self) -> ReactorCoolant:
+        """Convenience accessor for primary inlet (coolant)."""
+        return self.coolant
+    
+    @property
+    def primary_out(self) -> ReactorCoolant:
+        """Convenience accessor for primary outlet (coolant)."""
+        return self.coolant
 
 
 # Test

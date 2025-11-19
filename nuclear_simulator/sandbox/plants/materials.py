@@ -11,9 +11,15 @@ class UraniumDioxide(Solid):
     Attributes:
         HEAT_CAPACITY: [J/(kg·K)] Effective specific heat capacity
         DENSITY:       [kg/m³]    Effective density
+        P0:            [Pa]       Reference state pressure
+        T0:            [K]        Reference state temperature
+        u0:            [J/kg]     Reference internal specific energy at T0
     """
     HEAT_CAPACITY = 300.0
     DENSITY = 10_970.0
+    P0 = 15.0e6
+    T0 = 600.0
+    u0 = 200_000.0
 
 
 class PWRPrimaryWater(Liquid):

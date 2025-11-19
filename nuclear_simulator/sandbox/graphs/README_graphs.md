@@ -21,7 +21,7 @@ All classes inherit from a `Component` base class and use **Pydantic**, making i
 
 ## Pydantic Integration
 
-The entire module leverages Pydantic's `BaseModel`, which means we can create Node by simply specifying their attributes, as a dea structure:
+The entire module leverages Pydantic's `BaseModel`, which means we can create Node by simply specifying their attributes, as a data structure:
 
 ```python
 # Creating a custom node is this simple:
@@ -328,9 +328,10 @@ nuclear_simulator/sandbox/graphs/
 ├── nodes.py             # Node class
 ├── edges.py             # Edge class
 ├── controllers.py       # Controller and Signal classes
+├── diagrams.py          # Diagram generation utilities
 ├── graphs.py            # Graph class and ID management
 ├── utils.py             # Nested attribute helpers
-└── README.md            # This file
+└── README_graphs.md     # This file
 ```
 
 ---

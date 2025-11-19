@@ -62,7 +62,7 @@ def draw_graph(
         # Add controllers as nodes
         for controller in g.controllers.values():
             label = controller.name or controller.id
-            style = {"shape": "diamond"}
+            style = {"shape": "diamond"}  # Use diamond shape for controllers
             style.update(get_style(controller))
             d.add_node(controller.id, label=label, **style)
         # Recurse into subgraphs
@@ -90,18 +90,12 @@ def draw_graph(
 
     # Add signals from controllers to edges
     for controller in graph.get_controllers().values():
-        all_signals = (
-            list(controller.connections_read.values())
-            + list(controller.connections_write.values())
-        )
-        for signal in all_signals:
-            label = "read"
-            style = {"style": "dashed", "color": "yellow"}
+        for signal in controller.connections_all.values():
+            style = {"color": "yellow"} # Signals are yellow
             style.update(get_style(signal))
             diagram.add_edge(
                 signal.source_component.id,
                 signal.target_component.id,
-                label=label,
                 **style,
             )
 

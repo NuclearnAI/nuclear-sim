@@ -8,7 +8,7 @@ if TYPE_CHECKING:
 # Import libraries
 from nuclear_simulator.sandbox.materials.gases import Gas
 from nuclear_simulator.sandbox.materials.liquids import Liquid
-from nuclear_simulator.sandbox.plants.transfer.base import TransferEdge
+from nuclear_simulator.sandbox.plants.edges.base import TransferEdge
 from nuclear_simulator.sandbox.physics import calc_energy_from_temperature
 
 

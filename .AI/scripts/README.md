@@ -1,0 +1,1 @@
+In order to run python in this project please remember to activate the virtual environment located in `./.venv/` and also run any scripts from the project base level (`./`) so that the module is located.

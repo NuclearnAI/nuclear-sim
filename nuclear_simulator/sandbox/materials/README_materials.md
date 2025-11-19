@@ -173,12 +173,24 @@ gas = Gas.from_temperature_pressure(m=5.0, T=400.0, P=101325.0)
 ## Quick Start Examples
 
 ```python
-from nuclear_simulator.sandbox.materials.nuclear import (
-    PWRPrimaryWater, 
-    PWRSecondarySteam,
-    UraniumDioxide
-)
-from nuclear_simulator.sandbox.materials.base import Energy
+# Import base classes
+from nuclear_simulator.sandbox.materials.base import Material, Energy
+from nuclear_simulator.sandbox.materials.liquids import Liquid
+from nuclear_simulator.sandbox.materials.solids import Solid
+from nuclear_simulator.sandbox.materials.gases import Gas
+
+# Define custom materials
+class UraniumDioxide(Solid):
+    HEAT_CAPACITY = 300.0
+    DENSITY = 10_970.0
+
+class PWRPrimaryWater(Liquid):
+    HEAT_CAPACITY = 5400.0
+    DENSITY = 700.0
+
+class PWRSecondarySteam(Gas):
+    HEAT_CAPACITY = 2100.0
+    MOLECULAR_WEIGHT = 0.018
 
 # Create materials from scratch
 fuel = UraniumDioxide(m=100.0, U=3e7)
@@ -245,18 +257,34 @@ elif water.T < T_sat:
     print("Subcooled (below boiling)")
 ```
 
+### Mass and Volume Exchange Classes
+
+The [`base`](base.py) module provides specialized exchange classes for representing flows:
+
+- **[`Mass`](base.py:334)** - Represents mass exchange without energy (used internally for flow calculations)
+- **[`Volume`](base.py:351)** - Represents volume exchange without mass or energy
+
+These classes follow the same algebraic operations as other materials but are typically used internally by the simulation engine for representing specific types of transfers.
+
+The [`base`](base.py) module also provides specialized exchange classes for representing flows:
+
+- **[`Mass`](base.py)** - Represents mass exchange without energy (used internally for flow calculations)
+- **[`Volume`](base.py)** - Represents volume exchange without mass or energy
+
+These classes follow the same algebraic operations as other materials but are typically used internally by the simulation engine for representing specific types of transfers.
+
 ---
 
 ## File Structure
 
 ```
 nuclear_simulator/sandbox/materials/
-├── __init__.py        # Package initialization
-├── base.py            # Material and Energy base classes
-├── gases.py           # Gas class (ideal gas behavior)
-├── liquids.py         # Liquid class (incompressible)
-├── solids.py          # Solid class (incompressible)
-└── README.md          # This file
+├── __init__.py            # Package initialization
+├── base.py                # Material, Energy, Mass, and Volume base classes
+├── gases.py               # Gas class (ideal gas behavior)
+├── liquids.py             # Liquid class (incompressible)
+├── solids.py              # Solid class (incompressible)
+└── README_materials.md    # This file
 ```
 
 ---

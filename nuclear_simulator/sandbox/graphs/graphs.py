@@ -62,6 +62,38 @@ class Graph(Component):
         n_edges = len(self.get_edges())
         n_graphs = len(self.graphs)
         return f"{self.__class__.__name__}[Nodes: {n_nodes} | Edges: {n_edges} | Graphs: {n_graphs}]"
+    
+    def update(
+            self, 
+            dt: float, 
+            steps: int = 1
+        ) -> None:
+        """
+        Update the entire graph over a timestep dt.
+        Args:
+            dt:    Time step for the update.
+            steps: Number of sub-steps to divide dt into.
+        Modifies:
+            Updates all nodes, edges, and controllers in the graph in that order.
+        """
+
+        # Loop over steps
+        for i in range(steps):
+
+            # Update edges
+            for edge in self.get_edges().values():
+                edge.update(dt)
+
+            # Update nodes
+            for node in self.get_nodes().values():
+                node.update(dt)
+
+            # Update controllers
+            for controller in self.get_controllers().values():
+                controller.update(dt)
+
+        # Done
+        return
 
     def get_nodes(self) -> dict[int, Node]:
         """Return dict of nodes in the graph, recursively including sub-graphs."""
@@ -307,37 +339,219 @@ class Graph(Component):
         # Return sub-graph
         return graph
     
-    def update(
-            self, 
-            dt: float, 
-            steps: int = 1
-        ) -> None:
+    def swap_node(
+            self,
+            node: Node,
+            new_node_type: Type[Node],
+            name: Optional[str] = None,
+            **kwargs
+        ):
         """
-        Update the entire graph over a timestep dt.
+        Replace a node in the graph with a new node of a different type.
         Args:
-            dt:    Time step for the update.
-            steps: Number of sub-steps to divide dt into.
-        Modifies:
-            Updates all nodes, edges, and controllers in the graph.
+            node:           The Node to replace.
+            new_node_type:  The type (class) of the new node to create.
+            name:           Optional name for the new node (default to old name).
+            **kwargs:       Additional keyword args to pass to the new node constructor.
+        Returns:
+            The new Node instance that was created and added to the graph.
         """
 
-        # Loop over steps
-        for i in range(steps):
+        # Check if node is in this graph or a sub-graph
+        if node not in self.nodes:
+            for g in self.graphs.values():
+                if node in g.get_nodes().values():
+                    return g.swap_node(
+                        node=node,
+                        new_node_type=new_node_type,
+                        name=name,
+                        **kwargs
+                    )
+            raise ValueError("Node to swap not found in this graph or sub-graphs")
 
-            # Update edges
-            for edge in self.get_edges().values():
-                edge.update(dt)
+        # Get old node information
+        old_id = node.id
+        old_name = node.name
+        old_flows = node.flows
+        old_edges_incoming = list(node.edges_incoming)
+        old_edges_outgoing = list(node.edges_outgoing)
+        old_signals_incoming = list(node.signals_incoming)
+        old_signals_outgoing = list(node.signals_outgoing)
 
-            # Update nodes
-            for node in self.get_nodes().values():
-                node.update(dt)
+        # Delete old node
+        del self.nodes[old_id]
 
-            # Update controllers
-            for controller in self.get_controllers().values():
-                controller.update(dt)
+        # Get new name
+        if name is None:
+            name = old_name
 
-        # Done
-        return
+        # Add new node
+        new_node = new_node_type(id=old_id, name=name, **kwargs)
+        self.nodes[old_id] = new_node
+
+        # Restore attributes
+        new_node.flows = old_flows
+        new_node.edges_incoming = old_edges_incoming
+        new_node.edges_outgoing = old_edges_outgoing
+        new_node.signals_incoming = old_signals_incoming
+        new_node.signals_outgoing = old_signals_outgoing
+
+        # Reconnect graph references
+        for edge in old_edges_incoming:
+            edge.node_target = new_node
+        for edge in old_edges_outgoing:
+            edge.node_source = new_node
+        for signal in old_signals_incoming:
+            signal.target_component = new_node
+        for signal in old_signals_outgoing:
+            signal.source_component = new_node
+
+        # Return new node
+        return new_node
+    
+    def swap_edge(
+            self,
+            edge: Edge,
+            new_edge_type: Type[Edge],
+            name: Optional[str] = None,
+            **kwargs
+        ):
+        """
+        Replace an edge in the graph with a new edge of a different type.
+        Args:
+            edge:           The Edge to replace.
+            new_edge_type:  The type (class) of the new edge to create.
+            name:           Optional name for the new edge (default to old name).
+            **kwargs:       Additional keyword args to pass to the new edge constructor.
+        Returns:
+            The new Edge instance that was created and added to the graph.
+        """
+
+        # Check if edge is in this graph or a sub-graph
+        if edge not in self.edges:
+            for g in self.graphs.values():
+                if edge in g.get_edges().values():
+                    return g.swap_edge(
+                        edge=edge,
+                        new_edge_type=new_edge_type,
+                        name=name,
+                        **kwargs
+                    )
+            raise ValueError("Edge to swap not found in this graph or sub-graphs")
+
+        # Get old edge information
+        old_id = edge.id
+        old_name = edge.name
+        old_flows = edge.flows
+        old_node_source = edge.node_source
+        old_node_target = edge.node_target
+        old_alias_source = edge.alias_source
+        old_alias_target = edge.alias_target
+        old_signals_incoming = list(edge.signals_incoming)
+        old_signals_outgoing = list(edge.signals_outgoing)
+
+        # Delete old edge
+        del self.edges[old_id]
+
+        # Get new name
+        if name is None:
+            name = old_name
+
+        # Add new edge
+        new_edge = new_edge_type(
+            node_source=old_node_source,
+            node_target=old_node_target,
+            id=old_id,
+            name=name,
+            **kwargs
+        )
+        self.edges[old_id] = new_edge
+
+        # Restore attributes
+        new_edge.flows = old_flows
+        new_edge.alias_source = old_alias_source
+        new_edge.alias_target = old_alias_target
+        new_edge.signals_incoming = old_signals_incoming
+        new_edge.signals_outgoing = old_signals_outgoing
+
+        # Reconnect graph
+        old_node_source.edges_outgoing.remove(edge)
+        old_node_source.edges_outgoing.append(new_edge)
+        old_node_target.edges_incoming.remove(edge)
+        old_node_target.edges_incoming.append(new_edge)
+        for signal in old_signals_incoming:
+            signal.target_component = new_edge
+        for signal in old_signals_outgoing:
+            signal.source_component = new_edge
+
+        # Return new edge
+        return new_edge
+    
+    def swap_controller(
+            self,
+            controller: Controller,
+            new_controller_type: Type[Controller],
+            name: Optional[str] = None,
+            **kwargs
+        ):
+        return NotImplementedError("Controller swapping not yet implemented")
+    
+    def swap_graph(
+            self,
+            graph: Graph,
+            new_graph_type: Type[Graph],
+            name: Optional[str] = None,
+            **kwargs
+        ):
+        return NotImplementedError("Graph swapping not yet implemented")
+
+    def swap_component(
+            self,
+            component: Component,
+            new_component_type: Type[Component],
+            name: Optional[str] = None,
+            **kwargs
+        ):
+        """
+        Replace a component in the graph with a new component of a different type.
+        Args:
+            component:          The Component to replace.
+            new_component_type: The type (class) of the new component to create.
+            name:               Optional name for the new component (default to old name).
+            **kwargs:           Additional keyword args to pass to the new component constructor.
+        Returns:
+            The new Component instance that was created and added to the graph.
+        """
+        if isinstance(component, Node):
+            return self.swap_node(
+                node=component,
+                new_node_type=new_component_type,
+                name=name,
+                **kwargs
+            )
+        elif isinstance(component, Edge):
+            return self.swap_edge(
+                edge=component,
+                new_edge_type=new_component_type,
+                name=name,
+                **kwargs
+            )
+        elif isinstance(component, Controller):
+            return self.swap_controller(
+                controller=component,
+                new_controller_type=new_component_type,
+                name=name,
+                **kwargs
+            )
+        elif isinstance(component, Graph):
+            return self.swap_graph(
+                graph=component,
+                new_graph_type=new_component_type,
+                name=name,
+                **kwargs
+            )
+        else:
+            raise ValueError(f"Unsupported component type: {type(component)}")
 
 
 # Test

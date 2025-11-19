@@ -5,6 +5,41 @@ from nuclear_simulator.sandbox.materials import Gas, Liquid
 from nuclear_simulator.sandbox.physics.gases import calc_volume_ideal_gas
 
 
+# Define pressurizer node
+class PressurizerVessel(Node):
+    """
+    A node with controllable pressure.
+    Attributes:
+        contents:   [-]   Fluid stored in the pressurizer
+        P_setpoint: [Pa]  Desired pressure setpoint
+        P:          [Pa]  Current pressure
+    """
+    contents: Liquid
+    P: float | None = None
+    P_setpoint: float | None = None
+
+    def __init__(self, **data) -> None:
+        """Initialize pressurizer vessel node."""
+
+        # Call super init
+        super().__init__(**data)
+
+        # Set initial pressure if not set
+        if (self.P is None) and (self.P_setpoint is None):
+            raise ValueError("PressurizerVessel requires P or P_setpoint to be set.")
+        elif self.P is None:
+            self.P = self.P_setpoint
+        elif self.P_setpoint is None:
+            self.P_setpoint = self.P
+
+        # Done
+        return
+    
+    def update_from_state(self, dt):
+        self.P = self.P_setpoint
+        return
+
+
 # Define pressurized liquid vessel node
 class PressurizedLiquidVessel(Node):
     """

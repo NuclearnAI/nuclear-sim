@@ -20,13 +20,14 @@ class Liquid(Material):
     DENSITY: float | None = None
     
 
-    def __init__(self, m: float, U: float, **kwargs) -> None:
+    def __init__(self, m: float, U: float, **_) -> None:
         """
         Initialize liquid material with automatic volume calculation.
 
         Args:
             m: [kg] Mass
             U: [J]  Internal energy, referenced to 0K
+            _: [-]  Unused keyword arguments (required for base class initialization which pass V)
         """
 
         # Check that density is set
@@ -35,10 +36,9 @@ class Liquid(Material):
         
         # Calculate volume
         V = m / self.DENSITY
-        kwargs['V'] = V
 
         # Initialize base class
-        super().__init__(m, U, **kwargs)
+        super().__init__(m=m, U=U, V=V)
 
         # Done 
         return
@@ -52,14 +52,14 @@ def test_file():
         HEAT_CAPACITY = 500.0
         DENSITY = 8000.0
     # Create instances
-    solida = DummyLiquid(m=10.0, U=2e6)
-    solidb = DummyLiquid.from_temperature(m=5.0, T=400.0)
-    # Add solids
-    solidc = solida + solidb
+    liquida = DummyLiquid(m=10.0, U=2e6)
+    liquidb = DummyLiquid.from_temperature(m=5.0, T=400.0)
+    # Add liquids
+    liquidc = liquida + liquidb
     # Check properties
-    assert solida.m == 10.0
-    assert solidb.m == 5.0
-    assert solidc.m == 15.0
+    assert liquida.m == 10.0
+    assert liquidb.m == 5.0
+    assert liquidc.m == 15.0
     # Done
     return
 if __name__ == "__main__":

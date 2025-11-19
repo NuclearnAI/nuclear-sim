@@ -1,10 +1,25 @@
 
+# Annotation imports
+from __future__ import annotations
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from typing import Any
+    from nuclear_simulator.sandbox.graphs import Graph, Component
+
 # Import libraries
 import colorsys
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
-from nuclear_simulator.sandbox.graphs import Graph
-from nuclear_simulator.sandbox.materials import Material, MaterialExchange, Energy, Mass, Volume
+from nuclear_simulator.sandbox.materials import Material, Energy, Mass, Volume
+from nuclear_simulator.sandbox.graphs.diagrams import draw_graph
+from nuclear_simulator.sandbox.plants.vessels import Vessel
+from nuclear_simulator.sandbox.plants.edges import (
+    TransferEdge,
+    Pipe, LiquidPipe, GasPipe,
+    Pump, LiquidPump, GasPump,
+    HeatExchange,
+    BoilingEdge,
+)
 
 
 class Dashboard:
@@ -30,14 +45,14 @@ class Dashboard:
             'm': {}, 
             'U': {}, 
             'V': {},
-            'm_dot': {}, 
-            'U_dot': {}, 
-            'V_dot': {},
+            'dm/dt': {}, 
+            'dU/dt': {}, 
+            'dV/dt': {},
         }
 
         # Initialize plot
         with plt.rc_context({'font.size': 6}):
-            fig, ax = plt.subplots(2, 4, layout='constrained')
+            fig, ax = plt.subplots(2, 5, layout='constrained')
             fig.set_size_inches(16, 9)
             fig.canvas.manager.full_screen_toggle()
             plt.ion()
@@ -48,21 +63,26 @@ class Dashboard:
 
         # Set up ax dictionary
         self.ax_dict = {
-            'm':     self.ax[0, 0],
-            'U':     self.ax[0, 1],
-            'V':     self.ax[0, 2],
-            'T':     self.ax[0, 3],
-            'P':     self.ax[1, 3],
-            'm_dot': self.ax[1, 0],
-            'U_dot': self.ax[1, 1],
-            'V_dot': self.ax[1, 2],
+            'm':       self.ax[0, 0],
+            'U':       self.ax[0, 1],
+            'V':       self.ax[0, 2],
+            'T':       self.ax[0, 3],
+            'legend':  self.ax[0, 4],
+            'dm/dt':   self.ax[1, 0],
+            'dU/dt':   self.ax[1, 1],
+            'dV/dt':   self.ax[1, 2],
+            'P':       self.ax[1, 3],
+            'diagram': self.ax[1, 4],
         }
         self.plot_colors: dict[str, tuple] = {}
+
+        # Set flags for updating dashboard elements
+        self._update_diagram: bool = True
         self._update_legend: bool = True
 
         # Done
         return
-    
+
     def step(self):
         """Run one update and plot cycle."""
         self.update_data()
@@ -86,14 +106,11 @@ class Dashboard:
             # Check for material contents
             if 'contents' in node.state:
                 mat: Material = node.state['contents']
-
                 # Log material properties
                 self.data['T'].setdefault(f'{name}.contents', []).append(mat.T)
-
                 # Add pressure if available
                 if P is not None:
                     self.data['P'].setdefault(f'{name}.contents', []).append(P)
-
                 # Ignore mass, energy, volume for environment components
                 if not name.lower().startswith('env:'):
                     self.data['m'].setdefault(f'{name}.contents', []).append(mat.m)
@@ -102,23 +119,20 @@ class Dashboard:
 
         # Loop over edges
         for edge in self.graph.get_edges().values():
-
             # Get name
             name = edge.name or edge.id
-
             # Loop over material flows and log
             for key, value in edge.flows.items():
                 if isinstance(value, Energy):
-                    self.data['U_dot'].setdefault(f'{name}.{key}', []).append(value.U)
+                    self.data['dU/dt'].setdefault(f'{name}.{key}', []).append(value.U)
                 elif isinstance(value, Mass):
-                    self.data['m_dot'].setdefault(f'{name}.{key}', []).append(value.m)
+                    self.data['dm/dt'].setdefault(f'{name}.{key}', []).append(value.m)
                 elif isinstance(value, Volume):
-                    self.data['V_dot'].setdefault(f'{name}.{key}', []).append(value.V)
+                    self.data['dV/dt'].setdefault(f'{name}.{key}', []).append(value.V)
                 elif isinstance(value, Material):
-                    self.data['m_dot'].setdefault(f'{name}.{key}', []).append(value.m)
-                    self.data['U_dot'].setdefault(f'{name}.{key}', []).append(value.U)
-                    self.data['V_dot'].setdefault(f'{name}.{key}', []).append(value.V)
-
+                    self.data['dm/dt'].setdefault(f'{name}.{key}', []).append(value.m)
+                    self.data['dU/dt'].setdefault(f'{name}.{key}', []).append(value.U)
+                    self.data['dV/dt'].setdefault(f'{name}.{key}', []).append(value.V)
         # Done
         return
 
@@ -130,22 +144,23 @@ class Dashboard:
             if key in self.ax_dict:
                 self.plot_dict(self.data[key], key, self.ax_dict[key])
 
+        # Plot diagram
+        if self._update_diagram:
+            ax_diagram = self.ax_dict['diagram']
+            self.plot_diagram(ax_diagram)
+            self._update_diagram = False
+
         # Create global legend
         if self._update_legend:
+            ax_legend = self.ax_dict['legend']
             handles = [
                 Line2D([0], [0], color=color, lw=1.5)
                 for key, color in self.plot_colors.items()
             ]
             labels = list(self.plot_colors.keys())
-            self.fig.subplots_adjust(right=0.8)
-            self.fig.legend(
-                handles, 
-                labels, 
-                loc='upper left', 
-                bbox_to_anchor=(0.82, 1.0),
-                fontsize='x-small', 
-                frameon=False
-            )
+            ax_legend.clear()
+            ax_legend.legend(handles, labels, fontsize='x-small', frameon=False)
+            ax_legend.axis('off')
             self._update_legend = False
 
         # Finalize plot
@@ -206,5 +221,36 @@ class Dashboard:
 
         # Return output
         return color
+    
+    def plot_diagram(self, ax):
+        """Plot current graph diagram."""
+        ax.clear()
+        draw_graph(
+            self.graph,
+            get_style=self.get_diagram_style,
+            ax=ax,
+        )
+        return
+    
+    def get_diagram_style(self, component: Component) -> dict[str, Any]:
+        """Return style dict for given component."""
+        if isinstance(component, Vessel):
+            # Vessels return default node style
+            return {}
+        elif isinstance(component, Pipe):
+            # Pipes return default edge style
+            return {}
+        elif isinstance(component, Pump):
+            # Pumps are bold edges
+            return {'penwidth': 2.0}
+        elif isinstance(component, HeatExchange):
+            # Heat exchangers are dotted red edges
+            return {'style': 'dotted', 'color': 'red'}
+        elif isinstance(component, BoilingEdge):
+            # Boiling edges are dashed red edges
+            return {'style': 'dashed', 'color': 'orange', 'penwidth': 2.0}
+        else:
+            # Other components use default style
+            return {}
 
     
