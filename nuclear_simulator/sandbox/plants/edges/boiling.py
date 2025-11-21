@@ -40,12 +40,18 @@ class BoilingEdge(TransferEdge):
         """
 
         # Get materials
-        liq: Liquid = self.get_contents_source()
-        gas: Gas = self.get_contents_target()
-        if not isinstance(liq, Liquid):
-            raise TypeError("BoilingEdge source material must be Liquid.")
-        if not isinstance(gas, Gas):
-            raise TypeError("BoilingEdge target material must be Gas.")
+        src: Liquid = self.get_contents_source()
+        tgt: Gas = self.get_contents_target()
+        if isinstance(src, Liquid) and isinstance(tgt, Gas):
+            liq = src
+            gas = tgt
+            sign = 1.0
+        elif isinstance(src, Gas) and isinstance(tgt, Liquid):
+            liq = tgt
+            gas = src
+            sign = -1.0
+        else:
+            raise TypeError("BoilingEdge must connect Liquid and Gas materials.")
 
         # Reference specific internal energies at boiling point
         u0_liq = liq.u0
@@ -90,9 +96,21 @@ class BoilingEdge(TransferEdge):
 
         # Package flow (positive m_dot means source -> target)
         flow = MaterialExchange(m=m_dot, U=U_dot, V=0.0)
+        
+        # Apply sign based on source/target ordering
+        flow *= sign
 
         # Return flow
         return flow
+    
+class CondensingEdge(BoilingEdge):
+    """
+    Transfers mass and energy from gas (source) to liquid (target) via condensing.
+    Same as BoilingEdge but reverses source and target.
+
+    Attributes:
+        tau_phase:     [s]    Time constant for phase change.
+    """
     
 
 # Test

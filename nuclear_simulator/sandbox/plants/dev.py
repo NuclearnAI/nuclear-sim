@@ -1,5 +1,8 @@
 
 # Import libraries
+import time
+import pstats
+import cProfile
 from nuclear_simulator.sandbox.plants.plants import Plant
 
 
@@ -14,12 +17,7 @@ def run_simulation():
 
     # Set simulation parameters
     dt = .001
-    n_burnin = 100000
-    n_steps = 100000
-
-    # Burn-in (stababalize from initial conditions)
-    for i in range(n_burnin):
-        plant.update(dt)
+    n_steps = 100_000
 
     # Simulate for a while
     for i in range(n_steps):
@@ -31,6 +29,10 @@ def run_simulation():
 
 # Run simulation
 if __name__ == "__main__":
-    run_simulation()
+    with cProfile.Profile() as profiler:
+        run_simulation()
+    stats = pstats.Stats(profiler)
+    stats.sort_stats("tottime")
+    stats.print_stats(25)   # print top 25 slowest functions
     print("Simulation complete.")
 

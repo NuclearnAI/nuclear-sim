@@ -18,7 +18,8 @@ from nuclear_simulator.sandbox.plants.edges import (
     Pipe, LiquidPipe, GasPipe,
     Pump, LiquidPump, GasPump,
     HeatExchange,
-    BoilingEdge,
+    BoilingEdge, CondensingEdge,
+    TurbineEdge,
 )
 
 
@@ -79,6 +80,9 @@ class Dashboard:
         # Set flags for updating dashboard elements
         self._update_diagram: bool = True
         self._update_legend: bool = True
+
+        # Step once to initialize figures
+        self.step()
 
         # Done
         return
@@ -242,13 +246,27 @@ class Dashboard:
             return {}
         elif isinstance(component, Pump):
             # Pumps are bold edges
-            return {'penwidth': 2.0}
+            return {'style': 'tapered', 'penwidth': 7.0}
         elif isinstance(component, HeatExchange):
             # Heat exchangers are dotted red edges
-            return {'style': 'dotted', 'color': 'red'}
+            return {'style': 'dotted', 'color': 'red', 'penwidth': 2.0, 'xlabel': "🔥"}
+        elif isinstance(component, CondensingEdge):
+            # Condensing edges are dashed blue edges
+            return {'style': 'dashed', 'color': 'blue', 'penwidth': 2.0, 'xlabel': "💧"}
         elif isinstance(component, BoilingEdge):
             # Boiling edges are dashed red edges
-            return {'style': 'dashed', 'color': 'orange', 'penwidth': 2.0}
+            return {'style': 'dashed', 'color': 'orange', 'penwidth': 2.0, 'xlabel': "♨️"}
+        elif isinstance(component, TurbineEdge):
+            # Turbine edges are bold dashed gray edges
+            return {
+                'style': 'tapered', 
+                'color': 'gray', 
+                'penwidth': 3, 
+                'dir': 'both',
+                'arrowhead': 'normal', 
+                'arrowtail': 'none', 
+                'xlabel': "⚙️",
+            }
         else:
             # Other components use default style
             return {}

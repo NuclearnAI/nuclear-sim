@@ -23,9 +23,9 @@ class ReactorFuel(Vessel):
             UraniumDioxide.from_temperature(m=100.0, T=UraniumDioxide.T0)
         )
     )
-    boron_ppm: float            = 1000.0            # typical BOC-ish value
-    boron_alpha: float          = -7e-5             # ~ -7 pcm/ppm
-    fission_power_gain: float   = 3.0e9             # ~3 GWth at rho=0
+    boron_ppm: float            = 1000.0
+    boron_alpha: float          = -7e-5
+    fission_power_gain: float   = 3.0e5
     control_rod_position: float = 0.1
 
     # Update method
@@ -49,29 +49,19 @@ class ReactorFuel(Vessel):
 
         # Done
         return
-    
-
-# Define Coolant node
-class ReactorCoolant(PressurizedLiquidVessel):
-    """
-    Simplified coolant node for reactor core.
-    """
-    P: float = PWRPrimaryWater.P0
-    contents: PWRPrimaryWater = Field(
-        default_factory=lambda: (
-            PWRPrimaryWater.from_temperature(m=10_000.0, T=PWRPrimaryWater.T0)
-        )
-    )
 
 
 # Define Reactor
 class Reactor(Graph):
     """
-    Simplified reactor core node with Fuel and Coolant vessel.
+    Simplified reactor core node with Fuel.
+    Attributes:
+        None
+    Nodes:
+        fuel: ReactorFuel node
+    Edges:
+        None
     """
-
-    # Set attributes
-    conductance_fuel_coolant: float = 5.0e7  # typical order 1e7-1e8 W/K
 
     def __init__(self, **data) -> None:
         """Initialize reactor graph."""
@@ -79,29 +69,25 @@ class Reactor(Graph):
         # Call super init
         super().__init__(**data)
 
+        # Get name prefix
+        prefix = '' if (self.name is None) else f"{self.name}:"
+
         # Build graph
-        self.fuel     = self.add_node(ReactorFuel, name=f"{self.name}:Fuel")
-        self.coolant  = self.add_node(ReactorCoolant, name=f"{self.name}:Coolant")
-        self.coupling = self.add_edge(
-            edge_type=HeatExchange,
-            node_source=self.fuel, 
-            node_target=self.coolant,
-            name=f"HeatExchange:{self.name}:Fuel->Coolant",
-            conductance=self.conductance_fuel_coolant,
-        )
+        self.core = self.add_node(ReactorFuel, name=f"{prefix}Fuel")
         
         # Done
         return
     
-    @property
-    def primary_in(self) -> ReactorCoolant:
-        """Convenience accessor for primary inlet (coolant)."""
-        return self.coolant
-    
-    @property
-    def primary_out(self) -> ReactorCoolant:
-        """Convenience accessor for primary outlet (coolant)."""
-        return self.coolant
+    def update(self, dt: float) -> None:
+        """Update the graph by one time step.
+        Args:
+            dt:  [s] Time step for the update.
+        """
+        try:
+            super().update(dt)
+        except Exception as e:
+            raise RuntimeError(f"Error updating {self.__class__.__name__}: {e}") from e
+        return
 
 
 # Test

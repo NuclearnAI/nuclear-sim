@@ -9,6 +9,7 @@ if TYPE_CHECKING:
 from abc import ABC, abstractmethod
 from pydantic import PrivateAttr
 from nuclear_simulator.sandbox.graphs.base import Component
+from nuclear_simulator.sandbox.graphs.utils import getattr_nested, setattr_nested, hasattr_nested
 
 
 # Signal class
@@ -53,7 +54,7 @@ class Signal:
         else:
             # If reading a node/edge, get its state
             self.payload = {k: v for (k, v) in self.source_component.state.items()}
-            if hasattr(self.source_component, 'flows'):
+            if hasattr_nested(self.source_component, 'flows'):
                 self.payload['flows'] = {
                     k: v for (k, v) in self.source_component.flows.items()
                 }

@@ -6,7 +6,7 @@ if TYPE_CHECKING:
     from nuclear_simulator.sandbox.graphs.controllers import Signal
 
 # Import libraries
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from nuclear_simulator.sandbox.graphs.utils import getattr_nested, setattr_nested, hasattr_nested
 
 
@@ -17,10 +17,12 @@ class Component(BaseModel):
     """
 
     # Model configuration
-    model_config = {
-        "extra": "allow",                 # Allow extra fields (for private attributes)
-        "arbitrary_types_allowed": True,  # Allow non-Pydantic values for fields
-    }
+    model_config = ConfigDict(
+        extra="allow",                 # Allow extra fields (for private attributes)
+        arbitrary_types_allowed=True,  # Allow non-Pydantic values for fields
+        validate_assignment=False,     # Speed up attribute access by skipping validation on setters
+        validate_return=False,         # Speed up method calls by skipping validation on getters
+    )
     
     # Define base fields
     id: Optional[int] = None
@@ -44,7 +46,7 @@ class Component(BaseModel):
     @property
     def state(self) -> dict[str, Any]:
         """Return current state as a dict of Pydantic model fields."""
-        return {k: getattr(self, k) for k in self.get_state_fields()}
+        return {k: getattr_nested(self, k) for k in self.get_state_fields()}
     
     def get_nonstate_fields(self) -> list[str]:
         """Return list of non-state field names."""
@@ -61,6 +63,8 @@ class Component(BaseModel):
         fields = sorted(list(self.model_fields.keys()))
         # Remove non-state fields
         fields = [f for f in fields if f not in self.get_nonstate_fields()]
+        # Remove underscore-prefixed fields
+        fields = [f for f in fields if not f.startswith("_")]
         # Return output
         return fields
     

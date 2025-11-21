@@ -97,7 +97,7 @@ class Edge(Component):
         Args:
             dt: Time step size (s).
         Modifies:
-            Updates self.flows with calculated flow values.
+            Updates flows with calculated flow values.
         """
         self.flows = self.calculate_flows(dt)
         return
