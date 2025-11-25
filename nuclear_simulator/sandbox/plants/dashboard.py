@@ -26,7 +26,13 @@ from nuclear_simulator.sandbox.plants.edges import (
 class Dashboard:
     """Simple live dashboard for monitoring data."""
 
-    def __init__(self, graph: Graph, plot_every: int = 100):
+    def __init__(
+            self, graph: Graph, 
+            show_nodes: bool = True,
+            show_edges: bool = True,
+            plot_every: int = 100,
+            plot_memory: int = 1000,
+        ):
         """
         Initialize dashboard with monitor.
         Args:
@@ -36,8 +42,10 @@ class Dashboard:
 
         # Set attributes
         self.graph = graph
-        self.step_count = 0
+        self.show_nodes = show_nodes
+        self.show_edges = show_edges
         self.plot_every = plot_every
+        self.plot_memory = plot_memory
 
         # Initialize data storage
         self.data = {
@@ -78,6 +86,7 @@ class Dashboard:
         self.plot_colors: dict[str, tuple] = {}
 
         # Set flags for updating dashboard elements
+        self.step_count = 0
         self._update_diagram: bool = True
         self._update_legend: bool = True
 
@@ -99,44 +108,53 @@ class Dashboard:
         """Update data storage with current graph state."""
 
         # Loop over nodes
-        for node in self.graph.get_nodes().values():
+        if self.show_nodes:
+            for node in self.graph.get_nodes().values():
 
-            # Get name
-            name = node.name or node.id
+                # Get name
+                name = node.name or node.id
 
-            # Check for pressure
-            P = node.state.get('P', None)
+                # Check for pressure
+                P = node.state.get('P', None)
 
-            # Check for material contents
-            if 'contents' in node.state:
-                mat: Material = node.state['contents']
-                # Log material properties
-                self.data['T'].setdefault(f'{name}.contents', []).append(mat.T)
-                # Add pressure if available
-                if P is not None:
-                    self.data['P'].setdefault(f'{name}.contents', []).append(P)
-                # Ignore mass, energy, volume for environment components
-                if not name.lower().startswith('env:'):
-                    self.data['m'].setdefault(f'{name}.contents', []).append(mat.m)
-                    self.data['U'].setdefault(f'{name}.contents', []).append(mat.U)
-                    self.data['V'].setdefault(f'{name}.contents', []).append(mat.V)
+                # Check for material contents
+                if 'contents' in node.state:
+                    mat: Material = node.state['contents']
+                    # Log material properties
+                    self.data['T'].setdefault(f'{name}.contents', []).append(mat.T)
+                    # Add pressure if available
+                    if P is not None:
+                        self.data['P'].setdefault(f'{name}.contents', []).append(P)
+                    # Ignore mass, energy, volume for environment components
+                    if not name.lower().startswith('env:'):
+                        self.data['m'].setdefault(f'{name}.contents', []).append(mat.m)
+                        self.data['U'].setdefault(f'{name}.contents', []).append(mat.U)
+                        self.data['V'].setdefault(f'{name}.contents', []).append(mat.V)
 
         # Loop over edges
-        for edge in self.graph.get_edges().values():
-            # Get name
-            name = edge.name or edge.id
-            # Loop over material flows and log
-            for key, value in edge.flows.items():
-                if isinstance(value, Energy):
-                    self.data['dU/dt'].setdefault(f'{name}.{key}', []).append(value.U)
-                elif isinstance(value, Mass):
-                    self.data['dm/dt'].setdefault(f'{name}.{key}', []).append(value.m)
-                elif isinstance(value, Volume):
-                    self.data['dV/dt'].setdefault(f'{name}.{key}', []).append(value.V)
-                elif isinstance(value, Material):
-                    self.data['dm/dt'].setdefault(f'{name}.{key}', []).append(value.m)
-                    self.data['dU/dt'].setdefault(f'{name}.{key}', []).append(value.U)
-                    self.data['dV/dt'].setdefault(f'{name}.{key}', []).append(value.V)
+        if self.show_edges:
+            for edge in self.graph.get_edges().values():
+
+                # Get name
+                name = edge.name or edge.id
+
+                # Check for energy output
+                if isinstance(edge, TurbineEdge):
+                    energy_out = edge.energy_output
+                    self.data['dU/dt'].setdefault(f'{name}.energy_output', []).append(energy_out)
+
+                # Loop over material flows and log
+                for key, value in edge.flows.items():
+                    if isinstance(value, Energy):
+                        self.data['dU/dt'].setdefault(f'{name}.{key}', []).append(value.U)
+                    elif isinstance(value, Mass):
+                        self.data['dm/dt'].setdefault(f'{name}.{key}', []).append(value.m)
+                    elif isinstance(value, Volume):
+                        self.data['dV/dt'].setdefault(f'{name}.{key}', []).append(value.V)
+                    elif isinstance(value, Material):
+                        self.data['dm/dt'].setdefault(f'{name}.{key}', []).append(value.m)
+                        self.data['dU/dt'].setdefault(f'{name}.{key}', []).append(value.U)
+                        self.data['dV/dt'].setdefault(f'{name}.{key}', []).append(value.V)
         # Done
         return
 
@@ -178,7 +196,7 @@ class Dashboard:
         ax.clear()
         for key, values in data.items():
             color = self.get_plot_color(key)
-            ax.plot(values, label=key, color=color)
+            ax.plot(values[-self.plot_memory:], label=key, color=color)
         ax.set_title(title)
         ax.set_xlabel('Index')
         ax.set_ylabel('Value')

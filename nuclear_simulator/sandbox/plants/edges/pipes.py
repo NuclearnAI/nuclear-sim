@@ -29,7 +29,6 @@ class Pipe(TransferEdge):
         f:                  [-]     Darcy friction factor (lumped)
         K_minor:            [-]     Lumped minor-loss coefficient
         monodirectional:    [-]     If True, flow is only allowed from source to target.
-        MAX_FLOW_FRACTION:  [-]     Maximum fraction of node mass that can flow per time step.
     """
     m_dot: float | None = None
     D: float
@@ -37,7 +36,6 @@ class Pipe(TransferEdge):
     f: float
     K_minor: float
     monodirectional: bool = False
-    max_flow_fraction: float = 0.1
 
     def calculate_material_flow(self, dt: float) -> dict[str, Any]:
         """
@@ -70,6 +68,7 @@ class Pipe(TransferEdge):
         K_minor = self.K_minor
 
         # Calculate constants
+        rho = (fluid_src.rho + fluid_tgt.rho) / 2
         A = math.pi * (D**2) / 4.0
         K_t = f * (L / D) + K_minor
         K_t = max(K_t, 1e-6)  # Prevent div by zero
@@ -90,7 +89,6 @@ class Pipe(TransferEdge):
                 K_minor=K_minor,
             )
         elif fluid_type is Liquid:
-            rho = (fluid_src.rho + fluid_tgt.rho) / 2
             m_dot = calc_incompressible_mass_flow(
                 P1=P_src,
                 P2=P_tgt,
@@ -111,10 +109,8 @@ class Pipe(TransferEdge):
 
         # Calculate energy flow rate based on mass flow and energy density
         if m_dot > 0:
-            m_dot = min(m_dot, self.max_flow_fraction * fluid_src.m / dt)
             U_dot = m_dot * (fluid_src.U / fluid_src.m)
         else:
-            m_dot = max(m_dot, -self.max_flow_fraction * fluid_tgt.m / dt)
             U_dot = m_dot * (fluid_tgt.U / fluid_tgt.m)
 
         # Create liquid flow object

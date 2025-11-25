@@ -1,7 +1,8 @@
 
 # Import libraries
-from nuclear_simulator.sandbox.graphs import Node
+from nuclear_simulator.sandbox.graphs import Node, Graph
 from nuclear_simulator.sandbox.materials import Gas, Liquid
+from nuclear_simulator.sandbox.plants.vessels.pressurized import PressurizerVessel
 from nuclear_simulator.sandbox.physics.gases import calc_volume_ideal_gas
 
 

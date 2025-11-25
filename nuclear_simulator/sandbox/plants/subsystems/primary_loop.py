@@ -5,43 +5,48 @@ from nuclear_simulator.sandbox.graphs import Graph, Node
 from nuclear_simulator.sandbox.plants.edges import LiquidPipe, LiquidPump
 from nuclear_simulator.sandbox.plants.vessels import PressurizedLiquidVessel, PressurizerVessel
 from nuclear_simulator.sandbox.plants.materials import PWRPrimaryWater
+
+
+# Get constants
+P_PRIMARY = PWRPrimaryWater.P0
+T_PRIMARY = PWRPrimaryWater.T0
     
 
 class PrimaryCore(PressurizedLiquidVessel):
     """
     Simplified coolant node for reactor core.
     """
-    P: float = PWRPrimaryWater.P0
+    P: float = P_PRIMARY
     contents: PWRPrimaryWater = Field(
         default_factory=lambda: (
-            PWRPrimaryWater.from_temperature(m=5_000.0, T=PWRPrimaryWater.T0)
+            PWRPrimaryWater.from_temperature(m=12_000.0, T=T_PRIMARY)
         )
     )
 
 class PrimaryHotLeg(PressurizedLiquidVessel):
     """Primary-side hot leg header (reactor core outlet -> SG bundle)."""
-    P: float = PWRPrimaryWater.P0
+    P: float = P_PRIMARY
     contents: PWRPrimaryWater = Field(
         default_factory=lambda:
-            PWRPrimaryWater.from_temperature(m=3_000.0, T=PWRPrimaryWater.T0)
+            PWRPrimaryWater.from_temperature(m=3_000.0, T=T_PRIMARY)
     )
 
 
 class PrimarySG(PressurizedLiquidVessel):
     """Primary-side Steam Generator U-tube bundle control volume (heat donor)."""
-    P: float = PWRPrimaryWater.P0
+    P: float = P_PRIMARY
     contents: PWRPrimaryWater = Field(
         default_factory=lambda:
-            PWRPrimaryWater.from_temperature(m=5_000.0, T=PWRPrimaryWater.T0)
+            PWRPrimaryWater.from_temperature(m=8_000.0, T=T_PRIMARY)
     )
 
 
 class PrimaryColdLeg(PressurizedLiquidVessel):
     """Primary-side cold leg header (SG bundle outlet -> reactor core return)."""
-    P: float = PWRPrimaryWater.P0
+    P: float = P_PRIMARY
     contents: PWRPrimaryWater = Field(
         default_factory=lambda:
-            PWRPrimaryWater.from_temperature(m=3_000.0, T=PWRPrimaryWater.T0)
+            PWRPrimaryWater.from_temperature(m=3_000.0, T=T_PRIMARY)
     )
 
 
@@ -49,10 +54,10 @@ class PrimaryPressurizer(PressurizerVessel):
     """
     Pressurizer vessel for primary loop pressure control.
     """
-    P_setpoint: float = PWRPrimaryWater.P0
+    P_setpoint: float = P_PRIMARY
     contents: PWRPrimaryWater = Field(
         default_factory=lambda: 
-        PWRPrimaryWater.from_temperature(m=3_000.0, T=PWRPrimaryWater.T0)
+        PWRPrimaryWater.from_temperature(m=4_000.0, T=T_PRIMARY)
     )
 
 
@@ -85,50 +90,47 @@ class PrimaryLoop(Graph):
         # Call super init
         super().__init__(**data)
 
-        # Get name prefix
-        prefix = '' if (self.name is None) else f"{self.name}:"
-
         # Add nodes
-        self.core        = self.add_node(PrimaryCore, name=f"{prefix}Core")
-        self.hot_leg     = self.add_node(PrimaryHotLeg, name=f"{prefix}HotLeg")
-        self.sg          = self.add_node(PrimarySG, name=f"{prefix}SG")
-        self.cold_leg    = self.add_node(PrimaryColdLeg, name=f"{prefix}ColdLeg")
-        self.pressurizer = self.add_node(PrimaryPressurizer, name=f"{prefix}Pressurizer")
+        self.core        = self.add_node(PrimaryCore, name="Core")
+        self.hot_leg     = self.add_node(PrimaryHotLeg, name="HotLeg")
+        self.sg          = self.add_node(PrimarySG, name="SG")
+        self.cold_leg    = self.add_node(PrimaryColdLeg, name="ColdLeg")
+        self.pressurizer = self.add_node(PrimaryPressurizer, name="Pressurizer")
 
         # Add edges
         self.pipe_core_to_hotleg = self.add_edge(
             edge_type=LiquidPipe,
             node_source=self.core,
             node_target=self.hot_leg,
-            name=f"Pipe:{prefix}[Core->HotLeg]",
+            name="Pipe:[Core->HotLeg]",
             m_dot=self.m_dot,
         )
         self.pipe_hotleg_to_bundle = self.add_edge(
             edge_type=LiquidPipe,
             node_source=self.hot_leg,
             node_target=self.sg,
-            name=f"Pipe:{prefix}[HotLeg->SG]",
+            name="Pipe:[HotLeg->SG]",
             m_dot=self.m_dot,
         )
         self.pipe_bundle_to_coldleg = self.add_edge(
             edge_type=LiquidPipe,
             node_source=self.sg,
             node_target=self.cold_leg,
-            name=f"Pipe:{prefix}[SG->ColdLeg]",
+            name="Pipe:[SG->ColdLeg]",
             m_dot=self.m_dot,
         )
         self.pump_coldleg_to_pressurizer = self.add_edge(
             edge_type=LiquidPump,
             node_source=self.cold_leg,
             node_target=self.pressurizer,
-            name=f"Pump:{prefix}[ColdLeg->Pressurizer]",
+            name="Pump:[ColdLeg->Pressurizer]",
             m_dot=self.m_dot,
         )
         self.pipe_pressurizer_to_core = self.add_edge(
             edge_type=LiquidPipe,
             node_source=self.pressurizer,
             node_target=self.core,
-            name=f"Pipe:{prefix}[Pressurizer->Reactor]",
+            name="Pipe:[Pressurizer->Reactor]",
             m_dot=self.m_dot,
         )
         
@@ -164,8 +166,8 @@ def test_file():
     dashboard = Dashboard(primary_loop)
 
     # Simulate for a while
-    dt = .001
-    n_steps = 10000
+    dt = 1
+    n_steps = 1000
     for i in range(n_steps):
         primary_loop.update(dt)
         dashboard.step()

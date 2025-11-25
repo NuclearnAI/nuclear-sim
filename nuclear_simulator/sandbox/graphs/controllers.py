@@ -78,7 +78,7 @@ class Controller(Component):
     REQUIRED_CONNECTIONS_READ: ClassVar[tuple[str, ...] | None] = None
     REQUIRED_CONNECTIONS_WRITE: ClassVar[tuple[str, ...] | None] = None
 
-    def __init__(self, **data: Any) -> None:
+    def __init__(self, connections=None, **data: Any) -> None:
         """
         Initialize controller and set up connection dictionaries.
         """
@@ -89,6 +89,9 @@ class Controller(Component):
         # Initialize connection dictionaries
         self.connections_read: dict[str, Signal] = {}
         self.connections_write: dict[str, Signal] = {}
+        # Add connections if provided
+        if connections is not None:
+            self.add_connections(**connections)
         # Done
         return
     
@@ -166,17 +169,28 @@ class Controller(Component):
 
         # Ensure required connections are defined
         if self.REQUIRED_CONNECTIONS_READ is None:
-            raise ValueError(f"Controller subclass {self.__class__.__name__} must define REQUIRED_CONNECTIONS_READ")
+            raise ValueError(
+                f"Controller subclass {self.__class__.__name__} must define REQUIRED_CONNECTIONS_READ"
+            )
         if self.REQUIRED_CONNECTIONS_WRITE is None:
-            raise ValueError(f"Controller subclass {self.__class__.__name__} must define REQUIRED_CONNECTIONS_WRITE")
+            raise ValueError(
+                f"Controller subclass {self.__class__.__name__} must define REQUIRED_CONNECTIONS_WRITE"
+            )
+
+        # Get required connections
+        req_read = self.REQUIRED_CONNECTIONS_READ
+        req_write = self.REQUIRED_CONNECTIONS_WRITE
 
         # Loop over components
         for name, component in connections.items():
 
             # Check which type of connection to add
-            if name in self.REQUIRED_CONNECTIONS_READ:
+            if (name in req_read) and (name in req_write):
                 self.add_read_connection(name, component)
-            elif name in self.REQUIRED_CONNECTIONS_WRITE:
+                self.add_write_connection(name, component)
+            elif name in req_read:
+                self.add_read_connection(name, component)
+            elif name in req_write:
                 self.add_write_connection(name, component)
             else:
                 raise KeyError(f"Signal name '{name}' not in controller's connection lists")

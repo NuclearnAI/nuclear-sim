@@ -4,11 +4,10 @@ from __future__ import annotations
 
 # Import libraries
 from numbers import Number
+from nuclear_simulator.sandbox.materials.phases import PhaseChangeProperties, BoilingProperties
 from nuclear_simulator.sandbox.physics import (
     calc_temperature_from_energy,
     calc_energy_from_temperature,
-    calc_saturation_temperature,
-    calc_saturation_pressure,
 )
 
 
@@ -17,24 +16,26 @@ class Material:
     """
     Base class for all materials.
     Attributes:
-        m:                [kg]       Mass
-        U:                [J]        Internal energy, referenced to 0K
-        V:                [m³]       Volume
+        m:                     [kg]       Mass
+        U:                     [J]        Internal energy, referenced to 0K
+        V:                     [m³]       Volume
     Material constants:
-        DENSITY:          [kg/m³]    Density (optional, can be computed from m/V)
-        HEAT_CAPACITY:    [J/(kg·K)] Specific heat capacity
-        MOLECULAR_WEIGHT: [kg/mol]   Molecular weight
-        LATENT_HEAT:      [J/kg]     Latent heat of vaporization at reference T0 and P0
-        P0:               [Pa]       Reference pressure for calculations
-        T0:               [K]        Reference temperature for calculations
-        u0:               [J/kg]     Reference internal specific energy at T0
+        DENSITY:               [kg/m³]    Density
+        HEAT_CAPACITY:         [J/(kg·K)] Specific heat capacity
+        MOLECULAR_WEIGHT:      [kg/mol]   Molecular weight
+        BOILING_PROPERTIES:    [-]        Phase change behavior
+        FREEZING_PROPERTIES:   [-]        Solidification behavior
+        P0:                    [Pa]       Reference pressure for calculations
+        T0:                    [K]        Reference temperature for calculations
+        u0:                    [J/kg]     Reference internal specific energy at T0
     """
     
     # Material constants
     DENSITY: float | None = None
     HEAT_CAPACITY: float | None = None
     MOLECULAR_WEIGHT: float | None = None
-    LATENT_HEAT: float | None = None
+    BOILING_PROPERTIES: PhaseChangeProperties | None = None
+    FREEZING_PROPERTIES: PhaseChangeProperties | None = None
     P0: float | None = None
     T0: float | None = None
     u0: float | None = None
@@ -50,6 +51,27 @@ class Material:
         self.m = m
         self.U = U
         self.V = V
+    
+    @classmethod
+    def from_temperature(cls, m: float, T: float, **kwargs) -> Material:
+        """
+        Initialize from temperature instead of energy.
+        
+        Args:
+            m:      [kg] Mass
+            T:      [K]  Temperature
+            kwargs: [-]  Additional arguments for subclass constructor
+        
+        Returns:
+            Material: New material instance initialized from temperature
+        """
+        if cls.HEAT_CAPACITY is None:
+            raise ValueError(f"{cls.__name__}: HEAT_CAPACITY must be set.")
+        cv = cls.HEAT_CAPACITY
+        T0 = cls.T0 or 0.0
+        u0 = cls.u0 or 0.0
+        U = calc_energy_from_temperature(T=T, m=m, cv=cv, T0=T0, u0=u0)
+        return cls(m, U, **kwargs)
     
     def __repr__(self) -> str:
         return (
@@ -139,45 +161,6 @@ class Material:
             )
         return
     
-    def _validate_saturation(self) -> None:
-        """
-        Ensure saturation calculation parameters are set.
-        """
-        if self.HEAT_CAPACITY is None:
-            raise ValueError(f"{type(self).__name__}: HEAT_CAPACITY must be set by subclass")
-        if self.LATENT_HEAT is None:
-            raise ValueError(f"{type(self).__name__}: LATENT_HEAT must be set.")
-        if self.P0 is None:
-            raise ValueError(f"{type(self).__name__}: P0 must be set.")
-        if self.T0 is None:
-            raise ValueError(f"{type(self).__name__}: T0 must be set.")
-        if self.u0 is None:
-            raise ValueError(f"{type(self).__name__}: u0 must be set.")
-        if self.MOLECULAR_WEIGHT is None:
-            raise ValueError(f"{type(self).__name__}: MOLECULAR_WEIGHT must be set.")
-        return
-
-    @classmethod
-    def from_temperature(cls, m: float, T: float, **kwargs) -> Material:
-        """
-        Initialize from temperature instead of energy.
-        
-        Args:
-            m:      [kg] Mass
-            T:      [K]  Temperature
-            kwargs: [-]  Additional arguments for subclass constructor
-        
-        Returns:
-            Material: New material instance initialized from temperature
-        """
-        if cls.HEAT_CAPACITY is None:
-            raise ValueError(f"{cls.__name__}: HEAT_CAPACITY must be set.")
-        cv = cls.HEAT_CAPACITY
-        T0 = cls.T0 or 0.0
-        u0 = cls.u0 or 0.0
-        U = calc_energy_from_temperature(T=T, m=m, cv=cv, T0=T0, u0=u0)
-        return cls(m, U, **kwargs)
-    
     @property
     def cv(self) -> float:
         """
@@ -260,82 +243,29 @@ class Material:
             raise ValueError(f"Number of moles must be non-negative: {n:.2f} mol")
         return n
     
-    def T_saturation(self, P: float) -> float:
+    @property
+    def boiling(self) -> BoilingProperties:
         """
-        Saturation temperature [K] at current pressure.
-        Args:
-            P: Pressure [Pa]
+        Boiling phase change properties.
         Returns:
-            float: Saturation temperature
+            BoilingProperties: Boiling properties
         """
-        self._validate_saturation()
-        T_sat = calc_saturation_temperature(
-            P=P,
-            L=self.LATENT_HEAT,
-            P0=self.P0,
-            T0=self.T0,
-            MW=self.MOLECULAR_WEIGHT,
-        )
-        if T_sat <= 0.0:
-            raise ValueError(f"Saturation temperature must be positive: {T_sat:.2f} K")
-        return T_sat
+        boiling = self.BOILING_PROPERTIES
+        if boiling is None:
+            raise ValueError(f"{type(self).__name__}: BOILING_PROPERTIES must be set.")
+        return boiling
     
-    def P_saturation(self, T: float) -> float:
+    @property
+    def freezing(self) -> PhaseChangeProperties:
         """
-        Saturation pressure [Pa] at current temperature.
-        Args:
-            T: Temperature [K]
+        Freezing phase change properties.
         Returns:
-            float: Saturation pressure
+            PhaseChangeProperties: Freezing properties
         """
-        self._validate_saturation()
-        P_sat = calc_saturation_pressure(
-            T=T,
-            L=self.LATENT_HEAT,
-            P0=self.P0,
-            T0=self.T0,
-            MW=self.MOLECULAR_WEIGHT,
-        )
-        if P_sat <= 0.0:
-            raise ValueError(f"Saturation pressure must be positive: {P_sat:.2f} Pa")
-        return P_sat
-
-    def u_saturation(self, T: float) -> float:
-        """
-        Specific internal energy [J/kg] at given T.
-        Args:
-            T: Temperature [K]
-        Returns:
-            float: Specific internal energy [J/kg]
-        """
-        u_sat = calc_energy_from_temperature(
-            T=T,
-            m=1.0,  # unit mass for specific energy
-            cv=self.cv,
-            T0=self.T0 or 0.0,
-            u0=self.u0 or 0.0,
-        )
-        if u_sat <= 0.0:
-            raise ValueError(
-                f"Saturation specific internal energy must be positive: {u_sat:.2f} J/kg"
-            )
-        return u_sat
-    
-    def v_saturation(self, T: float) -> float:
-        """
-        Specific volume [m³/kg] at given T.
-        Args:
-            T: Temperature [K]
-        Returns:
-            float: Specific volume [m³/kg]
-        """
-        rho = self.rho
-        v_sat = 1.0 / rho
-        if v_sat <= 0.0:
-            raise ValueError(
-                f"Saturation specific volume must be positive: {v_sat:.6f} m³/kg"
-            )
-        return v_sat
+        freezing = self.FREEZING_PROPERTIES
+        if freezing is None:
+            raise ValueError(f"{type(self).__name__}: FREEZING_PROPERTIES must be set.")
+        return freezing
 
 
 # Define Energy material class

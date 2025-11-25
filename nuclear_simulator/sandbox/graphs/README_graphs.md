@@ -1,402 +1,455 @@
-# Graph-Based Dynamics Simulation Module
+# Graphs Module
 
-## Overview
+The Graphs module provides a flexible framework for building simulation graphs composed of nodes, edges, and controllers. This system enables modeling of complex interconnected systems where nodes represent state containers, edges handle mass/energy transfer between nodes, and controllers implement control logic.
 
-This module provides a framework for simulating dynamic systems by modeling them as directed graphs. It's designed for systems where **conserved quantities** (mass, energy, heat, money, etc.) flow between components following conservation laws.
+## Core Concepts
 
-**Key Principle**: The graph structure enforces perfect conservation - what flows out of one node must flow into another, with no losses or gains in the network itself.
+### Components
+The graph system is built on four main component types:
 
-## Core Architecture
+1. **Nodes** - State containers (e.g., tanks, vessels, reactors)
+2. **Edges** - Transfer mechanisms between nodes (e.g., pipes, heat exchangers)
+3. **Controllers** - Control logic components that read state and send commands
+4. **Graphs** - Container components that organize nodes, edges, controllers, and sub-graphs
 
-The module is built around **4 major classes**:
+### Update Cycle
 
-1. **`Node`** - Holds state variables (e.g., temperature, mass, pressure)
-2. **`Edge`** - Flows conserved quantities between nodes
-3. **`Controller`** - Modifies dynamics via control signals (e.g., opens/closes valves)
-4. **`Graph`** - Manages the network structure and orchestrates updates
+⚠️ **CRITICAL: Update Order is Essential** ⚠️
 
-All classes inherit from a `Component` base class and use **Pydantic**, making it trivial to create custom subclasses by simply declaring desired attributes.
+The update cycle MUST follow this exact order to avoid race conditions and ensure correct simulation behavior:
 
----
+1. **Edges First** - Calculate flows based on current node states
+2. **Nodes Second** - Update states based on calculated flows
+3. **Controllers Last** - Read updated states and prepare control actions for next cycle
 
-## Pydantic Integration
-
-The entire module leverages Pydantic's `BaseModel`, which means we can create Node by simply specifying their attributes, as a data structure:
-
-```python
-# Creating a custom node is this simple:
-class TankNode(Node):
-    mass: float                # kg of fluid
-    pressure: float            # Pa
-    temperature: float = 300   # K
-```
-
-That's it! Pydantic handles:
-- Automatic validation
-- Type checking
-- Field introspection
-
-No need to write `__init__`, getters, setters, or validation logic.
-
-**Important:** Although Pydantic typically handles serialization / deserialization, our `graphs` module overwrites many checks used in serialization, and also allows fields to have nonserializable values. For this reason, it should not be assumed that graphs written in our module can be serialized. 
-
----
-
-## Component Roles
-
-### Nodes: State Holders
-
-**Nodes store state variables** that represent the system's current condition.
-
-**Examples**:
-- A fuel tank with mass, temperature, and chemical composition
-- A reactor core with power level, coolant temperature, and neutron flux
-- A bank account with balance and interest rate
-
-**Responsibilities**:
-- Hold state variables
-- Automatically integrate flows from connected edges
-- Optionally implement internal dynamics (e.g., radioactive decay, chemical reactions)
-
-### Edges: Flow Connectors
-
-**Edges transfer conserved quantities** between nodes following conservation laws.
-
-**Key Property**: Flows are **conservative** - what leaves the source node equals what enters the target node.
-
-**Examples**:
-- A pipe flowing coolant (mass, energy) from reactor -> heat exchanger
-- A heat conductor transferring thermal energy between components
-- A financial transaction moving money between accounts
-
-**Responsibilities**:
-- Calculate flow rates based on node states
-- Return flows as dictionaries: `{"mass": 10.5, "energy": 1000}`
-- Flows are **rates** (per second), not absolute quantities
-
-### Controllers: System Actuators
-
-**Controllers modify system behavior** by reading states and sending control signals.
-
-**Why separate from edges?** Controllers represent **external interventions** (operators, automated systems, safety logic) rather than physical connections.
-
-**Examples**:
-- A valve controller that opens/closes based on pressure readings
-- A reactor protection system that initiates SCRAM on high temperature
-- A PID controller maintaining setpoints
-
-**Responsibilities**:
-- Read states from nodes/edges via `Signal` connections
-- Implement control logic in their `update()` method
-- Write commands to nodes/edges to modify behavior
-
-**The Monitor Attribute**:
-
-Controllers automatically maintain a `monitor` dictionary that provides convenient access to all monitored values:
+**WARNING**: Violating this order will cause:
+- Race conditions where nodes try to use flows that haven't been calculated yet
+- Control lag issues where controllers react to outdated states
+- Incorrect simulation results and potential crashes
 
 ```python
-class MyController(Controller):
-    REQUIRED_CONNECTIONS_READ = ("sensor1", "sensor2")
-    REQUIRED_CONNECTIONS_WRITE = ("actuator",)
-    
-    def update(self, dt: float) -> None:
-        # The default update() populates self.monitor automatically
-        super().update(dt)  # Call this if you override update()
+# ✅ CORRECT UPDATE ORDER
+def update(self, dt: float, steps: int = 1) -> None:
+    for i in range(steps):
+        # 1. Update edges FIRST - calculate flows
+        for edge in self.get_edges().values():
+            edge.update(dt)
         
-        # Access monitored values directly
-        temp = self.monitor["sensor1"]["temperature"]
-        pressure = self.monitor["sensor2"]["pressure"]
+        # 2. Update nodes SECOND - integrate flows
+        for node in self.get_nodes().values():
+            node.update(dt)
         
-        # Implement control logic...
-        if temp > 500:
-            self.connections_write["actuator"].write({"valve_open": False})
+        # 3. Update controllers LAST - control logic
+        for controller in self.get_controllers().values():
+            controller.update(dt)
 ```
-
-**Key points**:
-- The base `update()` method automatically populates `self.monitor` with all read signal data
-- Access monitored values via `self.monitor["signal_name"]["state_variable"]`
-- Useful for logging, debugging, and cleaner control logic
-- If you override `update()`, call `super().update(dt)` first to populate the monitor
-
-#### Signals: Information Connectors
-
-**`Signal` objects are the communication mechanism** between controllers and components.
-
-**Key Properties**:
-- Signals carry information (not mass/energy like Edges)
-- Each Signal connects exactly one Controller to one Node/Edge
-- Signals have a `payload` dictionary for data transfer
-
-**Think of Signals as an extension of Controllers** - they exist solely to separate the control logic (in Controller) from the communication mechanism (Signal). This separation makes the code cleaner and more modular.
-
-**Usage**:
-```python
-# Controller reads state via Signal
-node_state = self.connections_read["sensor"].read()  # Returns dict of node state
-
-# Controller writes commands via Signal
-self.connections_write["actuator"].write({"valve_position": 0.5})
-```
-
-### Graphs: Network Orchestrators
-
-**Graphs manage the network structure** and coordinate updates.
-
-**Features**:
-- Add/retrieve nodes, edges, controllers by ID or name
-- Support hierarchical sub-graphs for modular design
-- Thread-safe ID allocation
-- Orchestrate update cycle across all components
-
----
-
-## The Update Cycle ⚠️ CRITICAL
-
-The update order is **Edges -> Nodes -> Controllers**. This sequence is essential for:
-1. **Perfect conservation** - flows are calculated before being integrated
-2. **Easy accounting** - all flows for a timestep are computed simultaneously
-3. **Controller latency** - control actions take effect in the next timestep (realistic behavior)
-
-```python
-def update(self, dt: float):
-    # 1. Calculate all flows (based on CURRENT node states)
-    for edge in self.get_edges().values():
-        edge.update(dt)
-    
-    # 2. Integrate flows into nodes (updates their states)
-    for node in self.get_nodes().values():
-        node.update(dt)
-    
-    # 3. Controllers react to NEW states (commands take effect next cycle)
-    for controller in self.get_controllers().values():
-        controller.update(dt)
-```
-
-**Why this matters**:
-- Flows see consistent node states (no partial updates)
-- Conservation is mathematically guaranteed
-- Control actions show realistic one-timestep delay
-
----
-
-## The Three Update Methods
-
-Every component has **three update hooks** that are called in sequence:
-
-### 1. `update_from_signals(dt)` 
-- **Purpose**: Apply control signals from controllers
-- **Default behavior**: Sets component attributes to match signal payloads
-- **When to override**: Rarely - default usually works
-- **Example**: A valve receiving an "open_fraction" command from a controller
-
-### 2. `update_from_graph(dt)`
-- **Purpose**: Update based on network connectivity
-- **For Edges**: Calculate flows (MUST implement `calculate_flows`)
-- **For Nodes**: Integrate flows from connected edges (automatic)
-- **When to override**: 
-  - Edges: Always (implement `calculate_flows`)
-  - Nodes: Never (handled automatically)
-
-### 3. `update_from_state(dt)`
-- **Purpose**: Internal dynamics independent of network
-- **Default behavior**: No-op
-- **When to override**: When component has time-dependent behavior
-- **Examples**:
-  - A fuel node that heats up from fission
-  - A pipe that corrodes over time
-  - A battery that self-discharges
-
-**Typical User Workflow**:
-- **For Edges**: Implement `calculate_flows()` (required)
-- **For Nodes/Edges with dynamics**: Optionally override `update_from_state()`
-- **For Controllers**: Implement `update()` with all control logic
-- Everything else is handled automatically!
-
----
-
-## Implementing `calculate_flows()` - The Heart of the System
-
-The `calculate_flows()` method is **where physics happens**. It must return a dictionary of flow **rates** (quantities per second).
-
-### Basic Flow (Most Common Case)
-
-```python
-class PipeEdge(Edge):
-    conductance: float  # Flow coefficient
-    
-    def calculate_flows(self, dt: float) -> dict[str, float]:
-        # Recommended: Use helper methods (handles aliasing automatically)
-        delta_pressure = self.get_field_source("pressure") - self.get_field_target("pressure")
-        source_temp = self.get_field_source("temperature")
-        
-        return {
-            "mass": self.conductance * delta_pressure,
-            "energy": self.conductance * delta_pressure * source_temp
-        }
-```
-
-**Key Points**:
-- Returns `dict[str, float]` where keys match node state variables
-- Values are **rates** (per second), not absolute changes
-- **Recommended**: Use `self.get_field_source(key)` and `self.get_field_target(key)` helper methods
-  - These automatically handle aliasing (see Advanced section below)
-  - Alternative: Direct access via `self.node_source.attribute` works but doesn't support aliasing
-- The node's `update_from_graph()` automatically integrates: `state += flow_rate * dt`
-
-### Flow Sign Convention
-
-**Positive flows leave source, enter target**:
-```
-Source Node --[+10 kg/s]--> Target Node
-```
-- Source loses: `-10 * dt` kg
-- Target gains: `+10 * dt` kg
-
-Conservation is automatic - no need to worry about signs!
-
----
-
-## Advanced Flow Features
-
-### Aliasing: Different Variable Names
-
-When source and target have different names for the same quantity:
-
-```python
-class HeatExchangerEdge(Edge):
-    def __init__(self, node_source, node_target, **data):
-        super().__init__(
-            node_source=node_source,
-            node_target=node_target,
-            alias_source={"thermal_energy": "Q_hot"},    # Source calls it Q_hot
-            alias_target={"thermal_energy": "Q_cold"},   # Target calls it Q_cold
-            **data
-        )
-    
-    def calculate_flows(self, dt: float) -> dict[str, float]:
-        # Use the canonical name in flows
-        return {"thermal_energy": self.calculate_heat_transfer()}
-```
-
-The aliasing system automatically maps:
-- `thermal_energy` -> `Q_hot` for source node
-- `thermal_energy` -> `Q_cold` for target node
-
-Access aliased fields with helper methods:
-```python
-source_temp = self.get_field_source("thermal_energy")  # Reads node_source.Q_hot
-target_temp = self.get_field_target("thermal_energy")  # Reads node_target.Q_cold
-```
-
-### Node-Specific Flows: `_source` and `_target`
-
-⚠️ **Advanced Use Only** - For non-conservative transformations (rare!)
-
-When quantities transform between source and target (e.g., chemical reactions, phase changes):
-
-```python
-class ReactionEdge(Edge):
-    def calculate_flows(self, dt: float) -> dict[str, float]:
-        reaction_rate = self.calculate_reaction_rate()
-        return {
-            "_source": {
-                "fuel": -reaction_rate,      # Fuel consumed at source
-                "oxidizer": -reaction_rate
-            },
-            "_target": {
-                "products": reaction_rate,    # Products created at target
-                "heat": reaction_rate * self.heat_of_reaction
-            }
-        }
-```
-
-**When to use**:
-- Chemical reactions (reactants -> products)
-- Phase changes (liquid -> gas with different properties)
-- Bifurcating flows (one stream splits into two with different compositions)
-
-**Warning**: This bypasses conservation checks - use only when physically justified!
-
----
-
-## File Structure
-
-```
-nuclear_simulator/sandbox/graphs/
-├── __init__.py          # Public API exports
-├── base.py              # Component base class
-├── nodes.py             # Node class
-├── edges.py             # Edge class
-├── controllers.py       # Controller and Signal classes
-├── diagrams.py          # Diagram generation utilities
-├── graphs.py            # Graph class and ID management
-├── utils.py             # Nested attribute helpers
-└── README_graphs.md     # This file
-```
-
----
 
 ## Quick Start Example
+
+Here's a minimal example demonstrating proper usage:
 
 ```python
 from nuclear_simulator.sandbox.graphs import Graph, Node, Edge, Controller
 
-# 1. Define custom components
-class Tank(Node):
-    volume: float     # m³
-    mass: float       # kg
-    elevation: float  # m (height above reference)
+# Define a simple node with one state variable
+class TankNode(Node):
+    level: float  # Water level in meters
 
-class Pipe(Edge):
-    diameter: float  # m
+# Define an edge that transfers water between tanks
+class PipeEdge(Edge):
+    flow_rate: float = 1.0  # m³/s
     
     def calculate_flows(self, dt: float) -> dict[str, float]:
-        # Simple gravity-driven flow
-        height_diff = self.node_source.elevation - self.node_target.elevation
-        flow_rate = self.diameter**2 * height_diff * 9.81
-        return {"mass": flow_rate}
+        # Flow from source to target based on level difference
+        level_diff = self.node_source.level - self.node_target.level
+        return {"level": self.flow_rate * level_diff}
 
-class ValveController(Controller):
-    REQUIRED_CONNECTIONS_READ = ("tank_level",)
+# Define a controller that adjusts flow rate
+class FlowController(Controller):
+    REQUIRED_CONNECTIONS_READ = ("tank1", "tank2")
+    REQUIRED_CONNECTIONS_WRITE = ("pipe",)
+    
+    def update(self, dt: float) -> None:
+        # Read tank levels
+        level1 = self.connections_read["tank1"].read()["level"]
+        level2 = self.connections_read["tank2"].read()["level"]
+        
+        # Adjust flow rate based on level difference
+        if abs(level1 - level2) > 5.0:
+            self.connections_write["pipe"].write({"flow_rate": 2.0})
+        else:
+            self.connections_write["pipe"].write({"flow_rate": 0.5})
+
+# Build the graph
+graph = Graph()
+tank1 = graph.add_node(TankNode, name="Tank1", level=10.0)
+tank2 = graph.add_node(TankNode, name="Tank2", level=2.0)
+pipe = graph.add_edge(PipeEdge, node_source=tank1, node_target=tank2, name="Pipe")
+controller = graph.add_controller(
+    FlowController,
+    connections={"tank1": tank1, "tank2": tank2, "pipe": pipe}
+)
+
+# ⚠️ CRITICAL: Follow correct update order!
+dt = 0.1
+graph.update(dt)  # Edges → Nodes → Controllers
+```
+
+## Node System
+
+### Creating Nodes
+
+Nodes are state containers that hold simulation variables:
+
+```python
+class ReactorNode(Node):
+    temperature: float      # Kelvin
+    pressure: float        # Pascals
+    power: float          # Watts
+    coolant_level: float  # meters
+```
+
+### Node Update Process
+
+Nodes update their state by integrating flows from connected edges:
+
+```python
+# Node.update_from_graph() automatically:
+# 1. Collects incoming flows (positive)
+# 2. Collects outgoing flows (negative)
+# 3. Integrates: state += net_flow * dt
+```
+
+## Edge System
+
+### Creating Edges
+
+Edges calculate and transport flows between nodes:
+
+```python
+class HeatExchangerEdge(Edge):
+    heat_transfer_coeff: float  # W/K
+    
+    def calculate_flows(self, dt: float) -> dict[str, float]:
+        temp_diff = self.get_field_source("temperature") - self.get_field_target("temperature")
+        heat_flow = self.heat_transfer_coeff * temp_diff
+        
+        # Return flow rates (per second)
+        return {
+            "energy": heat_flow,  # Source loses energy
+            "_target": {"energy": heat_flow}  # Target gains energy
+        }
+```
+
+### Edge Aliasing
+
+⚠️ **WARNING: Aliasing Edge Cases** ⚠️
+
+When using aliasing to map edge flow keys to different node state variables, be aware of these limitations:
+
+```python
+# ⚠️ BROKEN: None parameters cause aliasing to fail
+edge = graph.add_edge(
+    MyEdge, 
+    node_source=node1,
+    node_target=node2,
+    alias_source=None,  # This will cause aliasing to break!
+    alias_target={"mass": "water_mass"}
+)
+
+# ✅ CORRECT: Omit None parameters or use empty dict
+edge = graph.add_edge(
+    MyEdge,
+    node_source=node1,
+    node_target=node2,
+    alias_target={"mass": "water_mass"}  # Only specify what you need
+)
+
+# ✅ ALSO CORRECT: Use empty dict instead of None
+edge = graph.add_edge(
+    MyEdge,
+    node_source=node1, 
+    node_target=node2,
+    alias_source={},  # Empty dict works fine
+    alias_target={"mass": "water_mass"}
+)
+```
+
+## Controller System
+
+### Creating Controllers
+
+Controllers implement control logic by reading state and sending commands:
+
+```python
+class PIDController(Controller):
+    # Define required connections
+    REQUIRED_CONNECTIONS_READ = ("sensor",)
+    REQUIRED_CONNECTIONS_WRITE = ("actuator",)
+    
+    # PID parameters
+    kp: float = 1.0
+    ki: float = 0.1
+    kd: float = 0.01
+    setpoint: float = 100.0
+    
+    def update(self, dt: float) -> None:
+        # Read sensor value
+        current_value = self.connections_read["sensor"].read()["temperature"]
+        
+        # Calculate error and PID output
+        error = self.setpoint - current_value
+        output = self.kp * error  # Simplified P-only control
+        
+        # Send command to actuator
+        self.connections_write["actuator"].write({"valve_position": output})
+```
+
+### Signal Validation
+
+⚠️ **Signal Validation Restrictions** ⚠️
+
+Controllers have strict validation for signal connections:
+
+1. **Required connections must be defined** - Both `REQUIRED_CONNECTIONS_READ` and `REQUIRED_CONNECTIONS_WRITE` must be defined as class variables
+2. **Connection names must match** - Signal names must exactly match those in the required lists
+3. **No dynamic connections** - You cannot add connections with names not in the required lists
+
+```python
+# ⚠️ This will raise an error:
+class BadController(Controller):
+    # Missing REQUIRED_CONNECTIONS_* definitions!
+    
+    def update(self, dt: float) -> None:
+        pass
+
+# ✅ Correct:
+class GoodController(Controller):
+    REQUIRED_CONNECTIONS_READ = ("sensor1", "sensor2")
     REQUIRED_CONNECTIONS_WRITE = ("valve",)
     
     def update(self, dt: float) -> None:
-        level = self.connections_read["tank_level"].read()["mass"]
-        # Close valve if level too low
-        if level < 10.0:
-            self.connections_write["valve"].write({"diameter": 0.0})
-
-# 2. Build graph
-g = Graph()
-tank1 = g.add_node(Tank, name="Tank1", volume=100, mass=50, elevation=10)
-tank2 = g.add_node(Tank, name="Tank2", volume=100, mass=20, elevation=0)
-pipe = g.add_edge(Pipe, node_source=tank1, node_target=tank2, diameter=0.1)
-
-# 3. Simulate
-for _ in range(100):
-    g.update(dt=0.1)
-    print(f"Tank1: {tank1.mass:.1f} kg, Tank2: {tank2.mass:.1f} kg")
+        pass
 ```
 
----
+## Known Issues and Limitations
 
-## Key Takeaways
+### 1. Controller and Graph Swapping Not Implemented
 
-✅ **Use Nodes** for state storage  
-✅ **Use Edges** for conservative flows between nodes  
-✅ **Use Controllers** for external interventions and control logic  
-✅ **Use Graphs** to manage the network and orchestrate updates  
+⚠️ **BUG**: The `swap_controller()` and `swap_graph()` methods return `NotImplementedError` instead of raising it:
 
-✅ **Implement `calculate_flows()`** - this is where your physics lives  
-✅ **Remember**: Flows are rates (per second), not quantities  
-✅ **Trust the update order**: Edges -> Nodes -> Controllers guarantees conservation  
+```python
+# Current behavior (INCORRECT):
+def swap_controller(self, ...):
+    return NotImplementedError("...")  # Should be 'raise'
 
-⚠️ **Rarely needed**: Using `_source`/`_target`  
+# This means the error is silent and returns the error object!
+result = graph.swap_controller(...)  # result is NotImplementedError object
+```
 
----
+**Workaround**: Do not use controller or graph swapping until this is fixed.
 
-## Further Reading
+### 2. Race Condition in Node Updates
 
-- See test functions in each file for working examples
-- Check `nuclear_simulator/sandbox/plants/` for real-world implementations
-- Pydantic documentation: https://docs.pydantic.dev/
+⚠️ **BUG**: `node.update_from_graph()` will crash if edges haven't calculated flows yet:
+
+```python
+# ⚠️ WRONG: This will crash with "flows have not been calculated"
+for node in nodes:
+    node.update(dt)  # Tries to read edge.flows before edges update!
+    
+# ✅ CORRECT: Always update edges first
+for edge in edges:
+    edge.update(dt)  # Calculate flows
+for node in nodes:
+    node.update(dt)  # Now safe to read flows
+```
+
+### 3. Aliasing Issues with None Parameters
+
+As mentioned above, passing `None` for aliasing parameters breaks the aliasing system. Always omit the parameter or use an empty dict instead.
+
+### 4. Signal Validation Limitations
+
+- Controllers must define all connections at class level
+- No dynamic addition of connections after initialization
+- Connection names are strictly validated against required lists
+
+## Best Practices
+
+### 1. Always Follow Update Order
+
+```python
+# Create a simple wrapper to ensure correct order
+def simulate_step(graph: Graph, dt: float):
+    # 1. Edges calculate flows
+    for edge in graph.get_edges().values():
+        edge.update(dt)
+    
+    # 2. Nodes integrate flows  
+    for node in graph.get_nodes().values():
+        node.update(dt)
+    
+    # 3. Controllers read and command
+    for controller in graph.get_controllers().values():
+        controller.update(dt)
+```
+
+### 2. Use Type Hints
+
+```python
+class MyNode(Node):
+    temperature: float  # Always specify types
+    pressure: float
+    
+class MyEdge(Edge):
+    conductance: float = 1.0  # Include defaults where appropriate
+```
+
+### 3. Document Flow Conventions
+
+Always document what your flows represent and their units:
+
+```python
+def calculate_flows(self, dt: float) -> dict[str, float]:
+    """
+    Calculate mass and energy flows.
+    
+    Returns:
+        dict with keys:
+        - "mass": Mass flow rate [kg/s]
+        - "energy": Energy flow rate [W]
+    """
+    return {
+        "mass": mass_flow_rate,    # kg/s
+        "energy": energy_flow_rate  # W (J/s)
+    }
+```
+
+### 4. Handle Edge Cases in Controllers
+
+```python
+def update(self, dt: float) -> None:
+    # Read safely with defaults
+    sensor_data = self.connections_read["sensor"].read()
+    temperature = sensor_data.get("temperature", 293.15)  # Default to room temp
+    
+    # Validate before writing
+    if not 0 <= valve_position <= 1:
+        valve_position = max(0, min(1, valve_position))  # Clamp to valid range
+    
+    self.connections_write["valve"].write({"position": valve_position})
+```
+
+## Complete Example: Temperature Control System
+
+Here's a complete example showing proper usage of all components:
+
+```python
+from nuclear_simulator.sandbox.graphs import Graph, Node, Edge, Controller
+
+# Define components
+class ThermalMass(Node):
+    """A node representing a thermal mass."""
+    temperature: float  # Kelvin
+    heat_capacity: float = 1000.0  # J/K
+
+class HeatFlow(Edge):
+    """Edge representing heat conduction."""
+    conductance: float = 10.0  # W/K
+    
+    def calculate_flows(self, dt: float) -> dict[str, float]:
+        # Q = k * (T_hot - T_cold)
+        t_source = self.node_source.temperature
+        t_target = self.node_target.temperature
+        heat_flow = self.conductance * (t_source - t_target)
+        
+        # Energy flow from source to target
+        return {"energy": heat_flow}  # W
+    
+    def update_from_signals(self, dt: float) -> None:
+        # Allow controller to adjust conductance
+        for signal in self.signals_incoming:
+            if "conductance" in signal.payload:
+                self.conductance = signal.payload["conductance"]
+
+class TemperatureController(Controller):
+    """PID controller for temperature regulation."""
+    REQUIRED_CONNECTIONS_READ = ("sensor",)
+    REQUIRED_CONNECTIONS_WRITE = ("heater",)
+    
+    setpoint: float = 350.0  # Target temperature (K)
+    kp: float = 5.0
+    
+    def update(self, dt: float) -> None:
+        # Read current temperature
+        current_temp = self.connections_read["sensor"].read()["temperature"]
+        
+        # Calculate control action
+        error = self.setpoint - current_temp
+        control_output = self.kp * error
+        
+        # Limit conductance to reasonable range
+        conductance = max(0.0, min(100.0, control_output))
+        
+        # Send to heater
+        self.connections_write["heater"].write({"conductance": conductance})
+
+# Build system
+graph = Graph()
+
+# Add nodes
+heater = graph.add_node(ThermalMass, name="Heater", temperature=400.0)
+room = graph.add_node(ThermalMass, name="Room", temperature=300.0)
+outside = graph.add_node(ThermalMass, name="Outside", temperature=273.0)
+
+# Add edges  
+heat_to_room = graph.add_edge(HeatFlow, heater, room, name="HeaterToRoom")
+heat_loss = graph.add_edge(HeatFlow, room, outside, name="RoomToOutside")
+
+# Add controller
+controller = graph.add_controller(
+    TemperatureController,
+    connections={"sensor": room, "heater": heat_to_room}
+)
+
+# Simulate with correct update order!
+for step in range(100):
+    graph.update(dt=0.1)  # Edges → Nodes → Controllers
+    
+    if step % 10 == 0:
+        print(f"Step {step}: Room temp = {room.temperature:.1f}K")
+```
+
+## Testing
+
+When writing tests, always verify the update order:
+
+```python
+def test_update_order():
+    """Verify that update order prevents race conditions."""
+    graph = create_test_graph()
+    
+    # This should work fine
+    graph.update(dt=0.1)
+    
+    # But this should fail
+    with pytest.raises(ValueError, match="flows have not been calculated"):
+        # Try to update nodes before edges
+        for node in graph.get_nodes().values():
+            node.update(dt=0.1)
+```
+
+## Migration Guide
+
+If you're updating from an older version:
+
+1. **Check update order** - Ensure all update loops follow Edges→Nodes→Controllers
+2. **Fix aliasing** - Replace `alias_source=None` with omission or empty dict
+3. **Define controller connections** - Add `REQUIRED_CONNECTIONS_*` to all controllers
+4. **Avoid swap methods** - Don't use `swap_controller()` or `swap_graph()` until fixed
+
+## See Also
+
+- `/nuclear_simulator/sandbox/plants/` - Example usage in plant simulations
+- `/nuclear_simulator/sandbox/materials/` - Material property system that integrates with nodes

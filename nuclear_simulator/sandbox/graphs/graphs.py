@@ -228,6 +228,10 @@ class Graph(Component):
         # Get node id
         id = self.id_counter.next()
 
+        # Add prefix to name
+        if (name is not None) and (self.name is not None):
+            name = f"{self.name}:{name}"
+
         # Create node instance
         node = node_type(id=id, name=name, **kwargs)
         self.nodes[id] = node
@@ -264,6 +268,10 @@ class Graph(Component):
         # Get edge id
         id = self.id_counter.next()
 
+        # Add prefix to name
+        if (name is not None) and (self.name is not None):
+            name = f"{self.name}:{name}"
+
         # Create edge instance
         edge = edge_type(
             node_source=node_source,
@@ -298,6 +306,10 @@ class Graph(Component):
         # Get controller id
         id = self.id_counter.next()
 
+        # Add prefix to name
+        if (name is not None) and (self.name is not None):
+            name = f"{self.name}:{name}"
+
         # Create controller instance
         controller = controller_type(id=id, name=name, **kwargs)
         self.controllers[id] = controller
@@ -327,6 +339,10 @@ class Graph(Component):
 
         # Get id counter
         id_counter = self.id_counter
+
+        # Add prefix to name
+        if (name is not None) and (self.name is not None):
+            name = f"{self.name}:{name}"
 
         # Create graph instance
         graph = graph_type(
@@ -457,6 +473,10 @@ class Graph(Component):
         if name is None:
             name = old_name
 
+        # Add prefix to name
+        if (name is not None) and (self.name is not None):
+            name = f"{self.name}:{name}"
+
         # Add new edge
         new_edge = new_edge_type(
             node_source=old_node_source,
@@ -553,9 +573,216 @@ class Graph(Component):
         else:
             raise ValueError(f"Unsupported component type: {type(component)}")
 
+    def to_dict(self) -> dict[str, Any]:
+        """
+        Serialize the graph to a dictionary.
+        Handles all nodes, edges, controllers, and subgraphs.
+        """
+        # Import required modules for class lookup
+        from nuclear_simulator.sandbox.graphs.nodes import Node
+        from nuclear_simulator.sandbox.graphs.edges import Edge
+        from nuclear_simulator.sandbox.graphs.controllers import Controller
+        
+        # Initialize the output dictionary
+        graph_dict = {
+            "class": self.__class__.__module__ + "." + self.__class__.__name__,
+            "id": self.id,
+            "name": self.name,
+            "id_counter": self.id_counter.next() - 1,  # Get current counter state
+            "data": {},  # Additional data passed to __init__
+            "subgraphs": {},
+            "nodes": {},
+            "edges": {},
+            "controllers": {}
+        }
+        
+        # Store any additional state fields
+        for field in self.get_state_fields():
+            if field not in ["id", "name"]:
+                graph_dict["data"][field] = getattr(self, field)
+        
+        # Serialize subgraphs recursively
+        for graph_id, subgraph in self.graphs.items():
+            graph_dict["subgraphs"][str(graph_id)] = subgraph.to_dict()
+        
+        # Serialize nodes
+        for node_id, node in self.nodes.items():
+            node_dict = {
+                "class": node.__class__.__module__ + "." + node.__class__.__name__,
+                "id": node.id,
+                "name": node.name,
+                "state": {}
+            }
+            # Store all state fields
+            for field in node.get_state_fields():
+                if field not in ["id", "name"]:
+                    node_dict["state"][field] = getattr(node, field)
+            graph_dict["nodes"][str(node_id)] = node_dict
+        
+        # Serialize edges
+        for edge_id, edge in self.edges.items():
+            edge_dict = {
+                "class": edge.__class__.__module__ + "." + edge.__class__.__name__,
+                "id": edge.id,
+                "name": edge.name,
+                "node_source_id": edge.node_source.id,
+                "node_target_id": edge.node_target.id,
+                "alias_source": edge.alias_source,
+                "alias_target": edge.alias_target,
+                "state": {}
+            }
+            # Store all state fields
+            for field in edge.get_state_fields():
+                if field not in ["id", "name"]:
+                    edge_dict["state"][field] = getattr(edge, field)
+            graph_dict["edges"][str(edge_id)] = edge_dict
+        
+        # Serialize controllers
+        for controller_id, controller in self.controllers.items():
+            controller_dict = {
+                "class": controller.__class__.__module__ + "." + controller.__class__.__name__,
+                "id": controller.id,
+                "name": controller.name,
+                "connections": {},
+                "state": {}
+            }
+            
+            # Store connections (signal targets)
+            for conn_name, signal in controller.connections_read.items():
+                # Signal source is the component being read
+                source_component = signal.source_component
+                controller_dict["connections"][conn_name] = {
+                    "type": "read",
+                    "component_id": source_component.id
+                }
+            
+            for conn_name, signal in controller.connections_write.items():
+                # Signal target is the component being written to
+                target_component = signal.target_component
+                controller_dict["connections"][conn_name] = {
+                    "type": "write",
+                    "component_id": target_component.id
+                }
+            
+            # Store all state fields
+            for field in controller.get_state_fields():
+                if field not in ["id", "name"]:
+                    controller_dict["state"][field] = getattr(controller, field)
+            
+            graph_dict["controllers"][str(controller_id)] = controller_dict
+        
+        return graph_dict
+    
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Graph:
+        """
+        Reconstruct a graph from a dictionary.
+        Rebuilds in order: subgraphs → nodes → edges → controllers
+        """
+        import importlib
+        from nuclear_simulator.sandbox.graphs.controllers import Signal
+        
+        # Helper function to get class from string
+        def get_class_from_string(class_string: str):
+            module_name, class_name = class_string.rsplit(".", 1)
+            if module_name == "__main__":
+                # Handle test classes defined in __main__
+                import __main__
+                return getattr(__main__, class_name)
+            else:
+                module = importlib.import_module(module_name)
+                return getattr(module, class_name)
+        
+        # Create the graph instance with the saved ID counter state
+        id_counter = IdCounter(start=data.get("id_counter", 0) + 1)
+        graph_class = get_class_from_string(data["class"]) if "class" in data else cls
+        
+        # Prepare init data
+        init_data = data.get("data", {}).copy()
+        init_data["name"] = data.get("name")
+        
+        # Create graph with manual ID assignment
+        graph = graph_class(id_counter=id_counter, **init_data)
+        # Override the auto-assigned ID with the saved one
+        graph.id = data["id"]
+        
+        # Keep track of all components by ID for connection rebuilding
+        all_components = {graph.id: graph}
+        
+        # 1. Rebuild subgraphs recursively
+        for graph_id_str, subgraph_data in data.get("subgraphs", {}).items():
+            subgraph = Graph.from_dict(subgraph_data)
+            subgraph.id_counter = graph.id_counter  # Share the ID counter
+            graph.graphs[subgraph.id] = subgraph
+            # Collect all components from subgraph
+            all_components.update(subgraph.get_all_components())
+            all_components[subgraph.id] = subgraph
+        
+        # 2. Rebuild nodes
+        for node_id_str, node_data in data.get("nodes", {}).items():
+            node_class = get_class_from_string(node_data["class"])
+            node_state = node_data.get("state", {})
+            node = node_class(
+                id=node_data["id"],
+                name=node_data.get("name"),
+                **node_state
+            )
+            graph.nodes[node.id] = node
+            all_components[node.id] = node
+        
+        # 3. Rebuild edges (with connections to nodes)
+        for edge_id_str, edge_data in data.get("edges", {}).items():
+            edge_class = get_class_from_string(edge_data["class"])
+            
+            # Find source and target nodes
+            source_id = edge_data["node_source_id"]
+            target_id = edge_data["node_target_id"]
+            node_source = all_components[source_id]
+            node_target = all_components[target_id]
+            
+            edge_state = edge_data.get("state", {})
+            edge = edge_class(
+                id=edge_data["id"],
+                name=edge_data.get("name"),
+                node_source=node_source,
+                node_target=node_target,
+                alias_source=edge_data.get("alias_source"),
+                alias_target=edge_data.get("alias_target"),
+                **edge_state
+            )
+            graph.edges[edge.id] = edge
+            all_components[edge.id] = edge
+        
+        # 4. Rebuild controllers (with connections)
+        for controller_id_str, controller_data in data.get("controllers", {}).items():
+            controller_class = get_class_from_string(controller_data["class"])
+            controller_state = controller_data.get("state", {})
+            
+            controller = controller_class(
+                id=controller_data["id"],
+                name=controller_data.get("name"),
+                **controller_state
+            )
+            graph.controllers[controller.id] = controller
+            all_components[controller.id] = controller
+            
+            # Rebuild connections
+            connections = {}
+            for conn_name, conn_data in controller_data.get("connections", {}).items():
+                component_id = conn_data["component_id"]
+                component = all_components[component_id]
+                connections[conn_name] = component
+            
+            # Add all connections at once
+            if connections:
+                controller.add_connections(**connections)
+        
+        return graph
+
+
 
 # Test
-def test_file():
+if __name__ == "__main__":
     # Import libraries
     from nuclear_simulator.sandbox.graphs.nodes import Node
     from nuclear_simulator.sandbox.graphs.edges import Edge
@@ -586,6 +813,7 @@ def test_file():
             # Simple control: open fully if gradient exists, else close
             new_g = 1.0 if abs(a1 - a2) > 0 else 0.0
             self.connections_write["set_g"].write({"g": new_g})
+def test_file():
     # Build graph
     dt = 0.1
     g = Graph()
@@ -620,6 +848,29 @@ def test_file():
     assert g.get_component("N1") == n1, "Should retrieve node by name"
     assert g.get_component(e.id) == e, "Should retrieve edge by id"
     assert g.get_component(cntrl.id) == cntrl, "Should retrieve controller by id"
+    # Run simulation
+    dt = 1.0
+    n_steps = 10
+    for t in range(n_steps):
+        g.update(dt)
+    # Convert to dict and back
+    g_dict = g.to_dict()
+    g_restored = Graph.from_dict(g_dict)
+    # Check that restored graph matches original
+    print(f"Original graph: {g}")
+    print(f"Restored graph: {g_restored}")
+    # Verify structure is preserved
+    assert len(g.nodes) == len(g_restored.nodes), "Node count mismatch"
+    assert len(g.edges) == len(g_restored.edges), "Edge count mismatch"
+    assert len(g.controllers) == len(g_restored.controllers), "Controller count mismatch"
+    # Verify node states
+    for node_id in g.nodes:
+        orig_node = g.nodes[node_id]
+        restored_node = g_restored.nodes.get(node_id)
+        assert restored_node is not None, f"Node {node_id} not found in restored graph"
+        assert orig_node.name == restored_node.name, f"Node {node_id} name mismatch"
+        assert orig_node.a == restored_node.a, f"Node {node_id} state mismatch"
+    print("Serialization test passed!")
     # Done
     return
 if __name__ == "__main__":

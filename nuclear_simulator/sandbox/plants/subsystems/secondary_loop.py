@@ -2,15 +2,24 @@
 # Import libraries
 from pydantic import Field
 from nuclear_simulator.sandbox.graphs import Graph, Controller
-from nuclear_simulator.sandbox.plants.vessels import PressurizedLiquidVessel, PressurizedGasVessel
+from nuclear_simulator.sandbox.plants.vessels import PressurizedLiquidVessel, PressurizedGasVessel, PressurizerVessel
 from nuclear_simulator.sandbox.plants.edges.pipes import LiquidPipe, GasPipe
 from nuclear_simulator.sandbox.plants.edges.pumps import LiquidPump
 from nuclear_simulator.sandbox.plants.edges.boiling import BoilingEdge, CondensingEdge
 from nuclear_simulator.sandbox.plants.edges.turbines import TurbineEdge
+from nuclear_simulator.sandbox.plants.controllers.shared_volume import SharedVolume
 from nuclear_simulator.sandbox.plants.materials import (
     PWRSecondarySteam,
     PWRSecondaryWater,
 )
+
+# Set constants
+P_SECONDARY = PWRSecondarySteam.P0
+T_SECONDARY = PWRSecondarySteam.T0
+# m_drum = 25000
+# m_turbine = 10000
+# m_condenser = 50000
+# m_feedwater = 15000
 
 
 class SecondarySGWater(PressurizedLiquidVessel):
@@ -57,7 +66,7 @@ class SecondaryCondenserSteam(PressurizedGasVessel):
     contents: PWRSecondarySteam = Field(
         default_factory=lambda:
             PWRSecondarySteam.from_temperature_pressure(
-                m=3000.0, T=PWRSecondarySteam.T0, P=PWRSecondarySteam.P0
+                m=300.0, T=PWRSecondarySteam.T0, P=PWRSecondarySteam.P0
             )
     )
 
@@ -69,7 +78,7 @@ class SecondaryCondenserWater(PressurizedLiquidVessel):
             PWRSecondaryWater.from_temperature(m=5_000.0, T=PWRSecondarySteam.T0)
     )
 
-class SecondaryFeedwater(PressurizedLiquidVessel):
+class SecondaryFeedwater(PressurizerVessel):
     """Secondary feedwater volume."""
     P: float = PWRSecondarySteam.P0
     contents: PWRSecondaryWater = Field(
@@ -105,7 +114,7 @@ class SecondaryLoop(Graph):
     """
 
     # Set attributes
-    m_dot: float = 100.0  # kg/s
+    m_dot: float = 10.0  # kg/s
 
     def __init__(self, **data) -> None:
         """Initialize secondary loop graph."""
@@ -175,6 +184,16 @@ class SecondaryLoop(Graph):
             name=f"Pipe:{prefix}[Feedwater->SG]",
             m_dot=self.m_dot,
         )
+
+        # # Add controllers
+        # self.condenser_volume_constraint = self.add_controller(
+        #     controller_type=SharedVolume,
+        #     name=f"Controller:{prefix}Condenser:VolumeConstraint",
+        #     connections={
+        #         'liquid_vessel': self.condenser_water,
+        #         'gas_vessel': self.condenser_steam,
+        #     }
+        # )
 
         # Done
         return

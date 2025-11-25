@@ -12,16 +12,20 @@ from nuclear_simulator.sandbox.physics import (
 class Gas(Material):
     """
     Gas material that follows ideal gas law behavior.
-    
     Attributes:
         m:                [kg]       Mass
         U:                [J]        Internal energy
         V:                [m^3]      Volume
+    Class attributes:
         HEAT_CAPACITY:    [J/(kg·K)] Specific heat capacity
-        P0:               [Pa]       Reference pressure for calculations
-        T0:               [K]        Reference temperature for calculations
-        LATENT_HEAT:      [J/kg]     Latent heat of vaporization at reference T0 and P0
+        LATENT_HEAT:      [J/kg]     Latent heat of vaporization at reference T_BOIL and P_BOIL
         MOLECULAR_WEIGHT: [kg/mol]   Molecular weight (required for ideal gas calculations)
+        P0:               [Pa]       Reference state pressure
+        T0:               [K]        Reference state temperature
+        u0:               [J/kg]     Reference internal specific energy at T0
+        P_BOIL:           [Pa]       Critical point reference pressure for calculations
+        T_BOIL:           [K]        Critical point reference temperature for calculations
+        u_BOIL:           [J/kg]     Critical point reference internal specific energy at T_BOIL
     """
 
     @classmethod
@@ -67,20 +71,14 @@ class Gas(Material):
         """Calculate pressure using ideal gas law."""
         n = self.m / self.MW
         P = calc_pressure_ideal_gas(n=n, T=self.T, V=self.V)
+        if P <= 0.0:
+            raise ValueError("Computed ideal gas pressure is non-physical (<= 0).")
         return P
     
     @property
     def cp(self) -> float:
         """Specific heat at constant pressure."""
         return self.cv + (UNIVERSAL_GAS_CONSTANT / self.MW)
-    
-    def v_saturation(self, T):
-        """Specific volume at saturation (ideal gas assumption)."""
-        P_sat = self.P_saturation(T)          # Pa
-        R = UNIVERSAL_GAS_CONSTANT             # J/(mol·K)
-        MW = self.MW                           # kg/mol
-        v_sat = R * T / (P_sat * MW)           # m³/kg  (ideal gas)
-        return v_sat
 
 
 # Test

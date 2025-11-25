@@ -17,9 +17,11 @@ class TransferEdge(Edge):
     Exchanges material between two node materials.
 
     Attributes:
-        tag_material:  [-]    Tag of the material on each node to exchange between
+        tag_material:       [-]    Tag of the material on each node to exchange between
+        max_flow_fraction:  [-]    Maximum fraction of the material mass that can flow per time step
     """
     tag_material: str = "contents"
+    MAX_FLOW_FRACTION: float = 0.05
 
     def get_nonstate_fields(self) -> list[str]:
         """Return list of non-state field names."""
@@ -45,10 +47,50 @@ class TransferEdge(Edge):
         Returns:
             flows: Dict with flows keyed by tag_material
         """
-        transfer = self.calculate_material_flow(dt)
+
+        # Calculate material flow
+        mat_flow = self.calculate_material_flow(dt)
+        m_dot = mat_flow.m
+        U_dot = mat_flow.U
+        V_dot = mat_flow.V
+
+        # Get materials
+        mat_src: Material = self.get_contents_source()
+        mat_tgt: Material = self.get_contents_target()
+
+        # Get max allowable flows for m, U, V
+        if m_dot >= 0:
+            m_dot_max = mat_src.m / dt * self.MAX_FLOW_FRACTION
+        else:
+            m_dot_max = -mat_tgt.m / dt * self.MAX_FLOW_FRACTION
+        if U_dot >= 0:
+            U_dot_max = mat_src.U / dt * self.MAX_FLOW_FRACTION
+        else:
+            U_dot_max = -mat_tgt.U / dt * self.MAX_FLOW_FRACTION
+        if V_dot >= 0:
+            V_dot_max = mat_src.V / dt * self.MAX_FLOW_FRACTION
+        else:
+            V_dot_max = -mat_tgt.V / dt * self.MAX_FLOW_FRACTION
+
+        # Get scaling factor for max allowable flows
+        scale = 1.0
+        if abs(m_dot) > abs(m_dot_max):
+            scale = min(scale, abs(m_dot_max / m_dot))
+        if abs(U_dot) > abs(U_dot_max):
+            scale = min(scale, abs(U_dot_max / U_dot))
+        if abs(V_dot) > abs(V_dot_max):
+            scale = min(scale, abs(V_dot_max / V_dot))
+
+        # Scale flows if needed
+        if scale < 1.0:
+            mat_flow = mat_flow * scale
+
+        # Package flows
         flows = {
-            self.tag_material: transfer
+            self.tag_material: mat_flow
         }
+
+        # Return flows
         return flows
 
     @abstractmethod

@@ -19,7 +19,7 @@ class Plant(Graph):
     Nuclear power plant graph.
     """
     conductance_reactor_primary: float = 1e5  # W/K
-    conductance_primary_secondary: float = 5e4  # W/K
+    conductance_primary_secondary: float = 1e5  # W/K
 
     def __init__(self, **data) -> None:
 
@@ -30,9 +30,18 @@ class Plant(Graph):
         prefix = '' if (self.name is None) else f"{self.name}:"
 
         # Add nodes and subgraphs
-        self.reactor: Reactor = self.add_graph(Reactor, name=f"{prefix}Reactor")
-        self.primary_loop: PrimaryLoop = self.add_graph(PrimaryLoop, name=f"{prefix}PrimaryLoop")
-        self.secondary_loop: SecondaryLoop = self.add_graph(SecondaryLoop, name=f"{prefix}SecondaryLoop")
+        self.reactor: Reactor = self.add_graph(
+            Reactor, 
+            name=f"{prefix}Reactor"
+        )
+        self.primary_loop: PrimaryLoop = self.add_graph(
+            PrimaryLoop, 
+            name=f"{prefix}PrimaryLoop"
+        )
+        self.secondary_loop: SecondaryLoop = self.add_graph(
+            SecondaryLoop, 
+            name=f"{prefix}SecondaryLoop"
+        )
 
         # Add edges
         self.add_edge(
@@ -82,7 +91,7 @@ def test_file():
     dashboard = Dashboard(plant.secondary_loop)
 
     # Simulate for a while
-    dt = .001
+    dt = 1
     n_steps = 100_000
     for i in range(n_steps):
         plant.update(dt)

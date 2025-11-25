@@ -9,11 +9,19 @@ class Liquid(Material):
     """
     Incompressible liquid material with fixed volume based on reference density.
     Attributes:
-        DENSITY:          [kg/m³]  Reference density for volume calculation
-        P0:               [Pa]     Reference pressure for calculations
-        T0:               [K]      Reference temperature for calculations
-        LATENT_HEAT:      [J/kg]   Latent heat of vaporization at reference T0 and P0
-        MOLECULAR_WEIGHT: [kg/mol] Molecular weight
+        m:                [kg]       Mass
+        U:                [J]        Internal energy
+        V:                [m^3]      Volume
+    Class attributes:
+        HEAT_CAPACITY:    [J/(kg·K)] Specific heat capacity
+        LATENT_HEAT:      [J/kg]     Latent heat of vaporization at reference T_BOIL and P_BOIL
+        MOLECULAR_WEIGHT: [kg/mol]   Molecular weight (required for ideal gas calculations)
+        P0:               [Pa]       Reference state pressure
+        T0:               [K]        Reference state temperature
+        u0:               [J/kg]     Reference internal specific energy at T0
+        P_BOIL:           [Pa]       Critical point reference pressure for calculations
+        T_BOIL:           [K]        Critical point reference temperature for calculations
+        u_BOIL:           [J/kg]     Critical point reference internal specific energy at T_BOIL
     """
 
     # Define class attributes

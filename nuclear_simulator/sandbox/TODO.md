@@ -47,6 +47,8 @@ Plants is in alpha version. Anything in the module can be changed.
 - Refactor all derivative variables, like dXdY to dX_dY to make it easier to read lowercase derivatives.
 - Change all physics equations to take in MW not Rv
 
+- Convert pipe diameter fields to pipe area fields. No sense in recalculating area every time.
+
 
 **Long Term**
 
