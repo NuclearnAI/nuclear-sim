@@ -1,155 +1,115 @@
 
+# Annotation imports
+from __future__ import annotations
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from typing import Any
+
 # Import libraries
-from nuclear_simulator.sandbox.graphs import Node, Graph
-from nuclear_simulator.sandbox.materials import Gas, Liquid
-from nuclear_simulator.sandbox.plants.vessels.pressurized import PressurizerVessel
+from pydantic import computed_field, ConfigDict
+from nuclear_simulator.sandbox.materials import Material, Gas, Liquid
 from nuclear_simulator.sandbox.physics.gases import calc_volume_ideal_gas
+from nuclear_simulator.sandbox.plants.vessels.base import Vessel
 
 
-# Define pressurizer node
-class PressurizerVessel(Node):
+
+# Define boiling vessel node
+class BoilingVessel(Vessel):
     """
-    A node with controllable pressure.
-    Attributes:
-        contents:   [-]   Fluid stored in the pressurizer
-        P_setpoint: [Pa]  Desired pressure setpoint
-        P:          [Pa]  Current pressure
+    A node representing a vessel containing both gas and liquid phases.
     """
-    contents: Liquid
+    contents: None = None # Override contents to disable base class
+    gas: Gas
+    liquid: Liquid
     P: float | None = None
-    P_setpoint: float | None = None
+    V: float | None = None
 
     def __init__(self, **data) -> None:
-        """Initialize pressurizer vessel node."""
+        """Initialize vessel node."""
 
         # Call super init
         super().__init__(**data)
 
-        # Set initial pressure if not set
-        if (self.P is None) and (self.P_setpoint is None):
-            raise ValueError("PressurizerVessel requires P or P_setpoint to be set.")
-        elif self.P is None:
-            self.P = self.P_setpoint
-        elif self.P_setpoint is None:
-            self.P_setpoint = self.P
+        # Set derived properties
+        self.V = self.liquid.V + self.gas.V
+        self.P = self.gas.P
+        
+        # Done
+        return
+    
+    def get_contents(self):
+        """Get contents as a list."""
+        contents = []
+        if self.gas is not None:
+            contents.append(self.gas)
+        if self.liquid is not None:
+            contents.append(self.liquid)
+        return contents
+    
+    def update_from_state(self, dt):
+        """Update vessel from state."""
+        
+        # Get totals
+        V_tot = self.V
+        m_tot = self.gas.m + self.liquid.m
+        U_tot = self.gas.U + self.liquid.U
+
+        # Get liquid fraction
+        liq_frac = self.liquid.boiling.calculate_liquid_fraction(
+            m=m_tot,
+            U=U_tot,
+            V=V_tot,
+        )
+
+        # Update liquid contents
+        m_liq = m_tot * liq_frac
+        U_liq = U_tot * liq_frac
+        liq_new = self.liquid.__class__(m=m_liq, U=U_liq)
+
+        # Update gas contents
+        m_gas = m_tot * (1 - liq_frac)
+        U_gas = U_tot * (1 - liq_frac)
+        V_gas = V_tot - liq_new.V
+        gas_new = self.gas.__class__(m=m_gas, U=U_gas, V=V_gas)
+
+        # Update pressure
+        P_new = gas_new.P
+
+        # Update attributes
+        self.P = P_new
+        self.gas = gas_new
+        self.liquid = liq_new
 
         # Done
         return
     
-    def update_from_state(self, dt):
-        self.P = self.P_setpoint
-        return
-
-
-# Define pressurized liquid vessel node
-class PressurizedLiquidVessel(Node):
+class CondensingVessel(BoilingVessel):
     """
-    A node representing a pressurized vessel containing a liquid.
-    Attributes:
-        contents: [-]      Liquid stored in the vessel
-        P:        [Pa]     Current pressure
-        V0:       [m^3]    Optional reference volume for pressure calculation
-        P0:       [Pa]     Optional reference pressure for pressure calculation
-        dP_dV:    [Pa/m^3] Optional reference stiffness for pressure calculation
+    A node representing a vessel containing both gas and liquid phases.
+    Condensing vessel assumes heat loss to environment causes condensation.
     """
-    contents: Liquid
-    P: float
-    V0: float | None = None
-    P0: float | None = None
-    dP_dV: float | None = None
-
-    def __init__(self, **data) -> None:
-        """Initialize pressurized vessel node."""
-
-        # Call super init
-        super().__init__(**data)
-
-        # Set derived attributes
-        if self.P0 is None:
-            # Default reference pressure to initial pressure
-            self.P0 = self.P
-        if self.V0 is None:
-            # Default reference volume to initial volume
-            self.V0 = self.contents.V
-        if self.dP_dV is None:
-            # Default stiffness is P=0 at V=0
-            self.dP_dV = self.P0 / self.V0
-
-        # Done
-        return
-
-    def update_from_state(self, dt: float) -> None:
-        """
-        Advance the vessel by dt seconds:
-        Args:
-            dt: Time step size (s).
-        Modifies:
-            Updates the vessel pressure `P`.
-        """
-        self.P = self.P0 + self.dP_dV * (self.contents.V - self.V0)
-        if self.P <= 0.0:
-            raise ValueError("Computed pressure in PressurizedLiquidVessel is non-physical (<= 0).")
-        return
-
-
-# Define pressurized gas vessel node
-class PressurizedGasVessel(Node):
-    """
-    A node representing a pressurized vessel containing a gas.
-    Attributes:
-        contents: [-]      Gas stored in the vessel
-        P:        [Pa]     Current pressure
-        V0:       [m^3]    Optional reference volume for pressure calculation
-    """
-    contents: Gas
-    P: float
-    V0: float | None = None
-
-    def __init__(self, **data) -> None:
-        """Initialize pressurized vessel node."""
-
-        # Call super init
-        super().__init__(**data)
-
-        # Set derived attributes
-        if self.V0 is None:
-            # Calculate reference volume from initial pressure
-            self.V0 = calc_volume_ideal_gas(
-                n=self.contents.mols,
-                T=self.contents.T,
-                P=self.P
-            )
-
-        # Done
-        return
-
-    def update_from_state(self, dt: float) -> None:
-        """
-        Advance the vessel by dt seconds:
-        Args:
-            dt: Time step size (s).
-        Modifies:
-            Updates the vessel pressure `P`.
-        """
-        try:
-            self.contents.V = self.V0
-            self.P = self.contents.P
-        except Exception as e:
-            raise ValueError("Failed to compute gas pressure during vessel update.") from e
-        return
+    pass
 
 
 # Test
 def test_file():
-    # Create liquid
-    class DummyLiquid(Liquid):
-        HEAT_CAPACITY = 500.0
-        DENSITY = 8000.0
-    liquid = DummyLiquid(m=1000.0, U=1e6)
+    # Import dummy materials
+    from nuclear_simulator.sandbox.plants.materials import PWRSecondaryWater, PWRSecondarySteam
+    # Create materials
+    liquid = PWRSecondaryWater.from_temperature(m=1000, T=550.0)
+    gas = PWRSecondarySteam.from_temperature_pressure(m=1000, T=600.0, P=2e7)
     # Create vessel
-    vessel = PressurizedLiquidVessel(contents=liquid, P=2e7)
+    vessel = BoilingVessel(
+        gas=gas, 
+        liquid=liquid, 
+    )
     # Update
     vessel.update(.1)
+
+    # Test contents
+    print('contents' in vessel.state)
+    print(vessel.contents)
+
     # Done
     return
 if __name__ == "__main__":

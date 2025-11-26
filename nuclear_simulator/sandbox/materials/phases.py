@@ -12,6 +12,12 @@ if TYPE_CHECKING:
 # Import libraries
 import math
 from nuclear_simulator.sandbox.physics.constants import UNIVERSAL_GAS_CONSTANT
+from nuclear_simulator.sandbox.physics.boiling import (
+    calc_boiling_specific_energy_gas,
+    calc_boiling_specific_energy_liquid,
+    calc_boiling_temperature_from_pressure,
+    calc_boiling_mass_fraction_liquid,
+)
 
 
 # Define phase behavior base class
@@ -92,15 +98,29 @@ class BoilingProperties(PhaseChangeProperties):
     """
     Defines boiling phase change behavior.
     Attributes:
-        T0:                     [K]    Reference temperature
-        P0:                     [Pa]   Reference pressure
-        u0_BOUND:               [J/kg] Reference internal specific energy of bound phase at T0
-        u0_UNBOUND:             [J/kg] Reference internal specific energy of unbound phase at T0
+        T0:                     [K]         Reference temperature
+        P0:                     [Pa]        Reference pressure
+        u0_BOUND:               [J/kg]      Reference internal specific energy of bound phase at T0
+        u0_UNBOUND:             [J/kg]      Reference internal specific energy of unbound phase at T0
+        DENSITY_BOUND:          [kg/m^3]    Density of the bound state
         MOLECULAR_WEIGHT:       [kg/mol]    Molecular weight (for ideal gas calculations)
         HEAT_CAPACITY_BOUND:    [J/(kg·K)]  Specific heat capacity of bound phase
         HEAT_CAPACITY_UNBOUND:  [J/(kg·K)]  Specific heat capacity of unbound phase
     """
+    DENSITY_BOUND: float
     MOLECULAR_WEIGHT: float
+
+    @property
+    def DENSITY_LIQUID(self):
+        return self.DENSITY_BOUND
+
+    @property
+    def u0_LIQUID(self):
+        return self.u0_BOUND
+
+    @property
+    def u0_GAS(self):
+        return self.u0_UNBOUND
     
     @property
     def HEAT_CAPACITY_GAS(self):
@@ -147,7 +167,12 @@ class BoilingProperties(PhaseChangeProperties):
             T:  [K]  Temperature
         Returns:
             u_liquid:  [J/kg]  Internal specific energy of saturated liquid"""
-        return self.u_saturation_bound(T)
+        return calc_boiling_specific_energy_liquid(
+            T=T,
+            T0=self.T0,
+            u0_liquid=self.u0_LIQUID,
+            cv_liquid=self.HEAT_CAPACITY_LIQUID,
+        )
     
     def u_saturation_gas(self, T):
         """
@@ -157,6 +182,40 @@ class BoilingProperties(PhaseChangeProperties):
         Returns:
             u_gas:  [J/kg]  Internal specific energy of saturated gas
         """
-        return self.u_saturation_unbound(T)
+        return calc_boiling_specific_energy_gas(
+            T=T,
+            T0=self.T0,
+            u0_gas=self.u0_GAS,
+            cv_gas=self.HEAT_CAPACITY_GAS,
+            molecular_weight=self.MOLECULAR_WEIGHT,
+        )
+    
+    def calculate_liquid_fraction(
+            self, 
+            m: float, 
+            U: float, 
+            V: float,
+        ) -> float:
+        """
+        Calculate liquid fraction given mass, internal energy, and volume.
+        Args:
+            m:  [kg]      Total mass
+            U:  [J]       Total internal energy
+            V:  [m^3]     Total volume
+        Returns:
+            liq_frac:  [-] Liquid mass fraction
+        """
+        return calc_boiling_mass_fraction_liquid(
+            m=m,
+            U=U,
+            V=V,
+            T0=self.T0,
+            P0=self.P0,
+            u0_gas=self.u0_GAS,
+            u0_liquid=self.u0_LIQUID,
+            cv_liquid=self.HEAT_CAPACITY_LIQUID,
+            rho_liquid=self.DENSITY_LIQUID,
+            molecular_weight=self.MOLECULAR_WEIGHT,
+        )
     
     

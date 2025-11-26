@@ -1,12 +1,12 @@
 
 # Import libraries
-from nuclear_simulator.sandbox.graphs import Node
 from nuclear_simulator.sandbox.materials import Gas, Liquid
 from nuclear_simulator.sandbox.physics.gases import calc_volume_ideal_gas
+from nuclear_simulator.sandbox.plants.vessels.base import Vessel
 
 
 # Define pressurizer node
-class PressurizerVessel(Node):
+class PressurizerVessel(Vessel):
     """
     A node with controllable pressure.
     Attributes:
@@ -41,7 +41,7 @@ class PressurizerVessel(Node):
 
 
 # Define pressurized liquid vessel node
-class PressurizedLiquidVessel(Node):
+class PressurizedLiquidVessel(Vessel):
     """
     A node representing a pressurized vessel containing a liquid.
     Attributes:
@@ -92,7 +92,7 @@ class PressurizedLiquidVessel(Node):
 
 
 # Define pressurized gas vessel node
-class PressurizedGasVessel(Node):
+class PressurizedGasVessel(Vessel):
     """
     A node representing a pressurized vessel containing a gas.
     Attributes:
@@ -101,7 +101,7 @@ class PressurizedGasVessel(Node):
         V0:       [m^3]    Optional reference volume for pressure calculation
     """
     contents: Gas
-    P: float
+    P: float | None = None
     V0: float | None = None
 
     def __init__(self, **data) -> None:
@@ -111,13 +111,12 @@ class PressurizedGasVessel(Node):
         super().__init__(**data)
 
         # Set derived attributes
-        if self.V0 is None:
-            # Calculate reference volume from initial pressure
-            self.V0 = calc_volume_ideal_gas(
-                n=self.contents.mols,
-                T=self.contents.T,
-                P=self.P
-            )
+        self.P = self.contents.P
+        self.V0 = calc_volume_ideal_gas(
+            n=self.contents.mols,
+            T=self.contents.T,
+            P=self.P
+        )
 
         # Done
         return

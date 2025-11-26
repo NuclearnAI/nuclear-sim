@@ -24,7 +24,6 @@ class Pump(TransferEdge):
         L:                  [m]     Effective length of the pump
         f:                  [-]     Effective friction factor
         K_minor:            [-]     Effective minor loss coefficient
-        monodirectional:    [-]     Whether the pump only allows flow in one direction
     """
     deltaP: float | None = None
     m_dot: float | None = None
@@ -32,7 +31,6 @@ class Pump(TransferEdge):
     L: float
     f: float
     K_minor: float = 0.0
-    monodirectional: bool = True
 
     def __init__(self, **data) -> None:
         """Initialize pump edge."""
@@ -111,10 +109,6 @@ class Pump(TransferEdge):
         m_dot_prev = self.m_dot or m_dot
         alpha = min(dt / tau, 1.0)
         m_dot = alpha * m_dot + (1.0 - alpha) * m_dot_prev
-
-        # Enforce mono-directional flow if specified
-        if self.monodirectional:
-            m_dot = max(m_dot, 0.0)
 
         # Calculate energy flow rate based on mass flow and energy density
         if m_dot > 0:

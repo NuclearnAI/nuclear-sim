@@ -44,6 +44,71 @@ def update(self, dt: float, steps: int = 1) -> None:
             controller.update(dt)
 ```
 
+## Graph Serialization
+
+The Graph class supports saving and loading complete graph states through serialization. This enables persisting simulations, creating checkpoints, and sharing complex graph configurations.
+
+### Serialization Features
+
+- **Complete State Preservation**: All node states, edge parameters, and controller settings are preserved
+- **Connection Integrity**: Graph topology and all interconnections are maintained
+- **Subgraph Support**: Nested graphs and complex hierarchies are fully supported
+- **Type Safety**: Component types and parameters are preserved for accurate reconstruction
+
+### Basic Usage
+
+```python
+# Save a graph to dictionary
+graph_data = graph.to_dict()
+
+# Restore from dictionary
+restored_graph = Graph.from_dict(graph_data)
+
+# Save to file (example using JSON)
+import json
+with open("simulation_state.json", "w") as f:
+    json.dump(graph.to_dict(), f)
+
+# Load from file
+with open("simulation_state.json", "r") as f:
+    graph_data = json.load(f)
+    loaded_graph = Graph.from_dict(graph_data)
+```
+
+### Example: Checkpoint System
+
+```python
+# Create a simulation with checkpointing
+def run_simulation_with_checkpoints(graph: Graph, total_time: float, checkpoint_interval: float):
+    checkpoints = []
+    time = 0.0
+    dt = 0.1
+    
+    while time < total_time:
+        # Run simulation step
+        graph.update(dt)
+        time += dt
+        
+        # Create checkpoint at intervals
+        if time % checkpoint_interval < dt:
+            checkpoint = {
+                "time": time,
+                "state": graph.to_dict()
+            }
+            checkpoints.append(checkpoint)
+            print(f"Checkpoint saved at t={time:.1f}")
+    
+    return checkpoints
+
+# Restore from checkpoint
+def restore_checkpoint(checkpoint: dict) -> tuple[float, Graph]:
+    time = checkpoint["time"]
+    graph = Graph.from_dict(checkpoint["state"])
+    return time, graph
+```
+
+The serialization system automatically handles all component types, preserving their exact state and configuration for seamless save/restore operations.
+
 ## Quick Start Example
 
 Here's a minimal example demonstrating proper usage:

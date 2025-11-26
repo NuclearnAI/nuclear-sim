@@ -20,9 +20,22 @@ class Vessel(Node):
         super().__init__(**data)
 
         # Validate contents
-        if isinstance(self.contents, Material):
+        self.validate()
+        
+        # Done
+        return
+    
+    def get_contents(self) -> list[Material]:
+        """Get contents as a list."""
+        return [self.contents] if self.contents is not None else []
+    
+    def validate(self) -> None:
+        """Validate the vessel node."""
+
+        # Validate contents
+        for contents in self.get_contents():
             try:
-                self.contents.validate()
+                contents.validate()
             except Exception as e:
                 raise ValueError("Material validation failed during initialization.") from e
         
@@ -41,10 +54,7 @@ class Vessel(Node):
         super().update(dt)
 
         # Validate contents
-        try:
-            self.contents.validate()
-        except Exception as e:
-            raise ValueError("Material validation failed during update.") from e
+        self.validate()
         
         # Done
         return

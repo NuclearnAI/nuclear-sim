@@ -22,6 +22,7 @@ class Component(BaseModel):
         arbitrary_types_allowed=True,  # Allow non-Pydantic values for fields
         validate_assignment=False,     # Speed up attribute access by skipping validation on setters
         validate_return=False,         # Speed up method calls by skipping validation on getters
+        ignored_types=(property,)      # Allow properties of child classes to override model fields
     )
     
     # Define base fields

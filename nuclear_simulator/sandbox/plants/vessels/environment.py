@@ -31,7 +31,7 @@ class Reservoir(Vessel):
         
         # Set contents if not provided
         if self.contents is None and self.material_type is not None:
-            if isinstance(self.contents, Gas):
+            if issubclass(self.material_type, Gas):
                 self.contents = self.material_type.from_temperature_pressure(
                     m=1e12, T=self.T, P=self.P
                 )
@@ -39,6 +39,8 @@ class Reservoir(Vessel):
                 self.contents = self.material_type.from_temperature(
                     m=1e12, T=self.T, V=1e12
                 )
+            self.validate()
+
         # Done
         return
     

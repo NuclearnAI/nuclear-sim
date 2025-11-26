@@ -4,46 +4,48 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from typing import Any, Optional
+    from nuclear_simulator.sandbox.materials.base import Material
 
 # Import libraries
-import math
-from pydantic import Field
 from nuclear_simulator.sandbox.materials.gases import Gas
 from nuclear_simulator.sandbox.materials.liquids import Liquid
 from nuclear_simulator.sandbox.plants.edges.base import TransferEdge
-from nuclear_simulator.sandbox.physics import (
-    calc_incompressible_mass_flow,
-    calc_compressible_mass_flow,
-    calc_energy_from_temperature,
-)
 
 
-# Class for pipes
+# Class for pipes using flow conductance model
 class Pipe(TransferEdge):
     """
-    Flows fluid between two nodes based on pressure difference using Darcy-Weisbach.
+    Flows fluid between two nodes based on pressure difference and inertia.
+    
     Attributes:
-        m_dot:              [kg/s]  Last-calculated mass flow rate
-        D:                  [m]     Inner diameter
-        L:                  [m]     Length
-        f:                  [-]     Darcy friction factor (lumped)
-        K_minor:            [-]     Lumped minor-loss coefficient
-        monodirectional:    [-]     If True, flow is only allowed from source to target.
+        m_dot:              [kg/s]       Previous mass flow rate for first-order response
+        K:                  [kg/(s·Pa)]  Flow conductance coefficient
+        tau:                [s]          Response time constant
     """
     m_dot: float | None = None
-    D: float
-    L: float
-    f: float
-    K_minor: float
-    monodirectional: bool = False
+    K: float
+    tau: float
 
-    def calculate_material_flow(self, dt: float) -> dict[str, Any]:
+    def get_nonstate_fields(self) -> list[str]:
+        """Return list of non-state field names."""
+        return super().get_nonstate_fields() + [
+            "K",
+            "tau",
+            "monodirectional",
+        ]
+
+    def calculate_material_flow(self, dt: float) -> Any:
         """
         Calculates instantaneous mass and energy flow rates (per second).
+        
+        Uses the simplified flow model:
+        - Steady-state: m_dot_ss = K * dP
+        - First-order response: m_dot = alpha * m_dot_ss + (1-alpha) * m_dot_prev
+        
         Args:
             dt:     [s] Time step for the update.
         Returns:
-            flows:  Dict of flow rates (kg/s, J/s) keyed by field name
+            Material flow object with mass and energy flow rates
         """
 
         # Get node variables
@@ -61,45 +63,12 @@ class Pipe(TransferEdge):
             raise TypeError("Pipe material must be Gas or Liquid.")
         fluid_class = type(fluid_src)
 
-        # Get edge parameters
-        D = self.D
-        L = self.L
-        f = self.f
-        K_minor = self.K_minor
+        # Calculate steady-state mass flow rate using conductance model
+        dP = P_src - P_tgt
+        m_dot = self.K * dP
 
-        # Calculate constants
-        rho = (fluid_src.rho + fluid_tgt.rho) / 2
-        A = math.pi * (D**2) / 4.0
-        K_t = f * (L / D) + K_minor
-        K_t = max(K_t, 1e-6)  # Prevent div by zero
-        tau = 2 * A * L / K_t
-        alpha = min(dt / tau, 1.0)
-
-        # Calculate mass flow rate from pressure drop
-        if fluid_type is Gas:
-            m_dot = calc_compressible_mass_flow(
-                P1=P_src,
-                P2=P_tgt,
-                T1=fluid_src.T,
-                T2=fluid_tgt.T,
-                MW=fluid_src.MW, 
-                D=D, 
-                L=L, 
-                f=f, 
-                K_minor=K_minor,
-            )
-        elif fluid_type is Liquid:
-            m_dot = calc_incompressible_mass_flow(
-                P1=P_src,
-                P2=P_tgt,
-                rho=rho,
-                D=D, 
-                L=L, 
-                f=f, 
-                K_minor=K_minor,
-            )
-
-        # Add inertia
+        # Apply first-order response
+        alpha = min(dt / self.tau, 1.0)  # Clamp to prevent instability
         m_dot_prev = self.m_dot or m_dot  # Use current if None
         m_dot = alpha * m_dot + (1.0 - alpha) * m_dot_prev
 
@@ -113,14 +82,14 @@ class Pipe(TransferEdge):
         else:
             U_dot = m_dot * (fluid_tgt.U / fluid_tgt.m)
 
-        # Create liquid flow object
+        # Create fluid flow object
         if fluid_type is Gas:
             fluid_flow: Gas = fluid_class(m=m_dot, U=U_dot, V=0.0)
         elif fluid_type is Liquid:
             fluid_flow: Liquid = fluid_class(m=m_dot, U=U_dot)
 
-        # Store state
-        self.m_dot = m_dot
+        # Store current flow rate for next timestep
+        self.m_dot_prev = m_dot
 
         # Return output
         return fluid_flow
@@ -131,7 +100,7 @@ class LeakyPipe(Pipe):
     """
     A Pipe that leaks a fraction of its flow to the environment.
     Attributes:
-        leak_fraction:     [kg/s] Rate of flow lost to environment.
+        leak_rate:     [kg/s] Rate of flow lost to environment.
     """
     leak_rate: float = 1/86400  # 1 kg per day
 
@@ -145,11 +114,11 @@ class LeakyPipe(Pipe):
         """
 
         # Get current material flow
-        material = self.flows[self.tag_material]
+        material: Material = self.flows[self.tag_material]
 
         # Calculate leak amounts
-        m_leak = min(self.leak_rate * dt, material.m)
-        m_flow = max(material.m, 1e-12)  # Prevent div by zero
+        m_leak = min(self.leak_rate * dt, abs(material.m))
+        m_flow = max(abs(material.m), 1e-12)  # Prevent div by zero
         fraction_remaining = 1.0 - (m_leak / m_flow)
 
         # Update material in pipe
@@ -162,44 +131,64 @@ class LeakyPipe(Pipe):
         return
 
 
-# Class for liquid pipes
+# Class for liquid pipes with typical conductance values
 class LiquidPipe(Pipe):
-    """A Pipe for liquids."""
-    D: float = 0.90
-    L: float = 15.0
-    f: float = 0.015
-    K_minor: float = 2.0
+    """A Pipe for liquids with typical conductance parameters."""
+    K: float = 50.0      # kg/(s·Pa) - typical for 0.9m diameter, 15m pipe
+    tau: float = 3.0     # s - typical response time for large liquid pipe
 
-# Class for gas pipes
+
+# Class for gas pipes with typical conductance values
 class GasPipe(Pipe):
-    """A Pipe for gases."""
-    D: float = 0.45
-    L: float = 15.0
-    f: float = 0.015
-    K_minor: float = 2.0
+    """A Pipe for gases with typical conductance parameters."""
+    K: float = 0.001     # kg/(s·Pa) - typical for 0.45m diameter, 15m gas pipe
+    tau: float = 1.0     # s - typical response time for gas pipe
 
+
+# Combined classes for leaky variants
 class LeakyLiquidPipe(LiquidPipe, LeakyPipe):
     """A LeakyPipe for liquids."""
+    pass
+
 
 class LeakyGasPipe(GasPipe, LeakyPipe):
     """A LeakyPipe for gases."""
+    pass
 
-    
+
 
 # Test
 def test_file():
+    """Simple test to verify file loads without errors."""
     # Import libraries
+    from nuclear_simulator.sandbox.graphs import Graph
     from nuclear_simulator.sandbox.plants.vessels import PressurizedLiquidVessel
-    from nuclear_simulator.sandbox.plants.materials import PWRPrimaryWater
-    # Create nodes and pipe
-    node1 = PressurizedLiquidVessel(contents=PWRPrimaryWater(m=1000.0, U=1e6), P=2e7)
-    node2 = PressurizedLiquidVessel(contents=PWRPrimaryWater(m=1000.0, U=1e6), P=1e7)
-    pipe = LeakyLiquidPipe(node_source=node1, node_target=node2)
-    # Update graph
-    dt = 0.1
-    pipe.update(dt)
-    node1.update(dt)
-    node2.update(dt)
+    from nuclear_simulator.sandbox.plants.materials import PWRSecondaryWater
+    # Define graph
+    graph = Graph()
+    # Create nodes and edge
+    node1 = graph.add_node(
+        PressurizedLiquidVessel,
+        name="Node1",
+        P=7e6,
+        contents=PWRSecondaryWater.from_temperature(m=1000.0, T=550.0),
+    )
+    node2 = graph.add_node(
+        PressurizedLiquidVessel,
+        name="Node2",
+        P=7e6,
+        contents=PWRSecondaryWater.from_temperature(m=100.0, T=550.0),
+    )
+    graph.add_edge(
+        LeakyLiquidPipe,
+        node_source=node1,
+        node_target=node2,
+        name="LeakyPipe",
+    )
+    # Simulate
+    dt = 1.0
+    for t in range(10000):
+        graph.update(dt)
     # Done
     return
 if __name__ == "__main__":

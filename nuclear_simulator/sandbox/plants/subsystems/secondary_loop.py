@@ -2,15 +2,14 @@
 # Import libraries
 from pydantic import Field
 from nuclear_simulator.sandbox.graphs import Graph, Controller
-from nuclear_simulator.sandbox.plants.vessels import PressurizedLiquidVessel, PressurizedGasVessel, PressurizerVessel
+from nuclear_simulator.sandbox.plants.materials import PWRSecondarySteam, PWRSecondaryWater
 from nuclear_simulator.sandbox.plants.edges.pipes import LiquidPipe, GasPipe
 from nuclear_simulator.sandbox.plants.edges.pumps import LiquidPump
 from nuclear_simulator.sandbox.plants.edges.boiling import BoilingEdge, CondensingEdge
 from nuclear_simulator.sandbox.plants.edges.turbines import TurbineEdge
-from nuclear_simulator.sandbox.plants.controllers.shared_volume import SharedVolume
-from nuclear_simulator.sandbox.plants.materials import (
-    PWRSecondarySteam,
-    PWRSecondaryWater,
+# from nuclear_simulator.sandbox.plants.controllers.shared_volume import SharedVolume
+from nuclear_simulator.sandbox.plants.vessels import (
+    PressurizedLiquidVessel, PressurizedGasVessel, PressurizerVessel, BoilingVessel
 )
 
 # Set constants
@@ -22,21 +21,35 @@ T_SECONDARY = PWRSecondarySteam.T0
 # m_feedwater = 15000
 
 
-class SecondarySGWater(PressurizedLiquidVessel):
-    """Secondary steam generator drum liquid volume."""
-    P: float = PWRSecondarySteam.P0
-    contents: PWRSecondaryWater = Field(
-        default_factory=lambda:
-            PWRSecondaryWater.from_temperature(m=5_000.0, T=PWRSecondarySteam.T0)
-    )
+# class SecondarySGWater(PressurizedLiquidVessel):
+#     """Secondary steam generator drum liquid volume."""
+#     P: float = PWRSecondarySteam.P0
+#     contents: PWRSecondaryWater = Field(
+#         default_factory=lambda:
+#             PWRSecondaryWater.from_temperature(m=5_000.0, T=PWRSecondarySteam.T0)
+#     )
 
-class SecondarySGSteam(PressurizedGasVessel):
-    """Secondary steam generator drum steam volume."""
+# class SecondarySGSteam(PressurizedGasVessel):
+#     """Secondary steam generator drum steam volume."""
+#     P: float = PWRSecondarySteam.P0
+#     contents: PWRSecondarySteam = Field(
+#         default_factory=lambda:
+#             PWRSecondarySteam.from_temperature_pressure(
+#                 m=3000.0, T=PWRSecondarySteam.T0, P=PWRSecondarySteam.P0
+#             )
+#     )
+
+class SecondarySG(BoilingVessel):
+    """Secondary steam generator drum volume."""
     P: float = PWRSecondarySteam.P0
-    contents: PWRSecondarySteam = Field(
+    liquid: PWRSecondaryWater = Field(
+        default_factory=lambda:
+            PWRSecondaryWater.from_temperature(m=15_000.0, T=PWRSecondarySteam.T0)
+    )
+    gas: PWRSecondarySteam = Field(
         default_factory=lambda:
             PWRSecondarySteam.from_temperature_pressure(
-                m=3000.0, T=PWRSecondarySteam.T0, P=PWRSecondarySteam.P0
+                m=10_000.0, T=PWRSecondarySteam.T0, P=PWRSecondarySteam.P0
             )
     )
 
@@ -60,23 +73,25 @@ class TurbineOutlet(PressurizedGasVessel):
             )
     )
 
-class SecondaryCondenserSteam(PressurizedGasVessel):
-    """Secondary condenser steam volume."""
-    P: float = PWRSecondarySteam.P0
-    contents: PWRSecondarySteam = Field(
-        default_factory=lambda:
-            PWRSecondarySteam.from_temperature_pressure(
-                m=300.0, T=PWRSecondarySteam.T0, P=PWRSecondarySteam.P0
-            )
-    )
+# class SecondaryCondenserSteam(PressurizedGasVessel):
+#     """Secondary condenser steam volume."""
+#     P: float = PWRSecondarySteam.P0
+#     contents: PWRSecondarySteam = Field(
+#         default_factory=lambda:
+#             PWRSecondarySteam.from_temperature_pressure(
+#                 m=300.0, T=PWRSecondarySteam.T0, P=PWRSecondarySteam.P0
+#             )
+#     )
 
-class SecondaryCondenserWater(PressurizedLiquidVessel):
-    """Secondary condenser water volume."""
-    P: float = PWRSecondarySteam.P0
-    contents: PWRSecondaryWater = Field(
-        default_factory=lambda:
-            PWRSecondaryWater.from_temperature(m=5_000.0, T=PWRSecondarySteam.T0)
-    )
+# class SecondaryCondenserWater(PressurizedLiquidVessel):
+#     """Secondary condenser water volume."""
+#     P: float = PWRSecondarySteam.P0
+#     contents: PWRSecondaryWater = Field(
+#         default_factory=lambda:
+#             PWRSecondaryWater.from_temperature(m=5_000.0, T=PWRSecondarySteam.T0)
+#     )
+
+class SecondaryCondenser(BoilingVessel):
 
 class SecondaryFeedwater(PressurizerVessel):
     """Secondary feedwater volume."""

@@ -18,10 +18,12 @@ class TransferEdge(Edge):
 
     Attributes:
         tag_material:       [-]    Tag of the material on each node to exchange between
+        monodirectional:    [-]    If True, flow is only allowed from source to target.
         max_flow_fraction:  [-]    Maximum fraction of the material mass that can flow per time step
     """
     tag_material: str = "contents"
-    MAX_FLOW_FRACTION: float = 0.05
+    monodirectional: bool = False
+    max_flow_fraction: float = 0.05
 
     def get_nonstate_fields(self) -> list[str]:
         """Return list of non-state field names."""
@@ -60,17 +62,23 @@ class TransferEdge(Edge):
 
         # Get max allowable flows for m, U, V
         if m_dot >= 0:
-            m_dot_max = mat_src.m / dt * self.MAX_FLOW_FRACTION
+            m_dot_max = mat_src.m / dt * self.max_flow_fraction
         else:
-            m_dot_max = -mat_tgt.m / dt * self.MAX_FLOW_FRACTION
+            m_dot_max = -mat_tgt.m / dt * self.max_flow_fraction
         if U_dot >= 0:
-            U_dot_max = mat_src.U / dt * self.MAX_FLOW_FRACTION
+            U_dot_max = mat_src.U / dt * self.max_flow_fraction
         else:
-            U_dot_max = -mat_tgt.U / dt * self.MAX_FLOW_FRACTION
+            U_dot_max = -mat_tgt.U / dt * self.max_flow_fraction
         if V_dot >= 0:
-            V_dot_max = mat_src.V / dt * self.MAX_FLOW_FRACTION
+            V_dot_max = mat_src.V / dt * self.max_flow_fraction
         else:
-            V_dot_max = -mat_tgt.V / dt * self.MAX_FLOW_FRACTION
+            V_dot_max = -mat_tgt.V / dt * self.max_flow_fraction
+
+        # Enforce mono-directional flow if specified
+        if self.monodirectional:
+            m_dot_max = max(m_dot_max, 0.0)
+            U_dot_max = max(U_dot_max, 0.0)
+            V_dot_max = max(V_dot_max, 0.0)
 
         # Get scaling factor for max allowable flows
         scale = 1.0

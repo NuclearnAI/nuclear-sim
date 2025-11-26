@@ -56,6 +56,7 @@ class PWRSecondaryBoilingProperties(BoilingProperties):
     HEAT_CAPACITY_BOUND = 5000.0
     HEAT_CAPACITY_UNBOUND = 2100.0
     MOLECULAR_WEIGHT = 0.01801528  # (H₂O)
+    DENSITY_BOUND = 740.0
     T0 = 500.0
     P0 = 7e6
     u0_BOUND = 1_380_000.0
@@ -75,10 +76,10 @@ class PWRSecondaryWater(Liquid):
         T0:                 [K]        Reference state temperature
         u0:                 [J/kg]     Reference internal specific energy at T0
     """
-    DENSITY = 740.0
     BOILING_PROPERTIES = PWRSecondaryBoilingProperties()
     MOLECULAR_WEIGHT = PWRSecondaryBoilingProperties.MOLECULAR_WEIGHT
     HEAT_CAPACITY = PWRSecondaryBoilingProperties.HEAT_CAPACITY_BOUND
+    DENSITY = PWRSecondaryBoilingProperties.DENSITY_BOUND
     P0 = PWRSecondaryBoilingProperties.P0
     T0 = PWRSecondaryBoilingProperties.T0
     u0 = PWRSecondaryBoilingProperties.u0_BOUND
