@@ -154,11 +154,6 @@ class Material:
             raise ValueError(f"Internal energy must be non-negative: {self.U:.2f} J")
         if self.V < 0:
             raise ValueError(f"Volume must be positive: {self.V:.2f} m³")
-        if any(x==0 for x in [self.m, self.U, self.V]) and any(x!=0 for x in [self.m, self.U, self.V]):
-            raise ValueError(
-                f"Mass, internal energy, and volume must all be zero or all be positive: "
-                f"m={self.m:.2f} kg, U={self.U:.2f} J, V={self.V:.6f} m³"
-            )
         return
     
     @property
