@@ -16,7 +16,7 @@ from nuclear_simulator.sandbox.graphs.base import Component
 
 # ID allocator class for thread-safe unique ID generation
 class IdCounter:
-    def __init__(self, start=1):
+    def __init__(self, start=0):
         self._ctr = count(start)
         self._lock = Lock()
     def next(self) -> int:

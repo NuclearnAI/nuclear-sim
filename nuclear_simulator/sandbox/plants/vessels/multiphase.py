@@ -16,7 +16,12 @@ from nuclear_simulator.sandbox.plants.vessels.base import Vessel
 # Define boiling vessel node
 class BoilingVessel(Vessel):
     """
-    A node representing a vessel containing both gas and liquid phases.
+    A node representing a vessel containing both gas and liquid phases in boiling equilibrium.
+    Attributes:
+        gas:        [-]     Gas phase material
+        liquid:     [-]     Liquid phase material
+        P:          [Pa]    Pressure of the vessel (assumed equal in both phases)
+        V:          [m3]    Total volume of the vessel
     """
     contents: None = None # Override contents to disable base class
     gas: Gas
@@ -55,11 +60,18 @@ class BoilingVessel(Vessel):
         U_tot = self.gas.U + self.liquid.U
 
         # Get liquid fraction
-        liq_frac = self.liquid.boiling.calculate_liquid_fraction(
+        liq_frac = self.liquid.boiling.calculate_mass_fraction_liquid(
             m=m_tot,
             U=U_tot,
             V=V_tot,
         )
+
+        # Get masses
+        m_liq = m_tot * liq_frac
+        m_gas = m_tot * (1 - liq_frac)
+
+        # Get internal energies
+        
 
         # Update liquid contents
         m_liq = m_tot * liq_frac
@@ -83,12 +95,16 @@ class BoilingVessel(Vessel):
         # Done
         return
     
-class CondensingVessel(BoilingVessel):
+class CondenserVessel(BoilingVessel):
     """
-    A node representing a vessel containing both gas and liquid phases.
-    Condensing vessel assumes heat loss to environment causes condensation.
+    A node representing a vessel containing both gas and liquid phases in boiling equilibrium.
+    Attributes:
+        gas:        [-]     Gas phase material
+        liquid:     [-]     Liquid phase material
+        P:          [Pa]    Pressure of the vessel (assumed equal in both phases)
+        V:          [m3]    Total volume of the vessel
     """
-    pass
+    pass # Exactly the same as BoilingVessel
 
 
 # Test
@@ -105,11 +121,9 @@ def test_file():
     )
     # Update
     vessel.update(.1)
-
     # Test contents
     print('contents' in vessel.state)
     print(vessel.contents)
-
     # Done
     return
 if __name__ == "__main__":

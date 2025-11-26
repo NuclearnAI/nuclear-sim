@@ -111,7 +111,7 @@ class PressurizedGasVessel(Vessel):
         super().__init__(**data)
 
         # Set derived attributes
-        self.P = self.contents.P
+        self.P = self.contents.P  # Allow P as input, but override to match contents
         self.V0 = calc_volume_ideal_gas(
             n=self.contents.mols,
             T=self.contents.T,

@@ -18,7 +18,6 @@ from nuclear_simulator.sandbox.plants.edges import (
     Pipe, LiquidPipe, GasPipe,
     Pump, LiquidPump, GasPump,
     HeatExchange,
-    BoilingEdge, CondensingEdge,
     TurbineEdge,
 )
 
@@ -111,18 +110,17 @@ class Dashboard:
         if self.show_nodes:
             for node in self.graph.get_nodes().values():
 
-                # Get name
+                # Get name and state
                 name = node.name or node.id
+                state = node.state
 
                 # Check for pressure
-                P = node.state.get('P', None)
-
+                P = state.get('P', None)
                 # Check for material contents
-                if 'contents' in node.state:
-                    mat: Material = node.state['contents']
+                if 'contents' in state and (state['contents'] is not None):
+                    mat: Material = state['contents']
                     # Log material properties
                     self.data['T'].setdefault(f'{name}.contents', []).append(mat.T)
-                    # Add pressure if available
                     if P is not None:
                         self.data['P'].setdefault(f'{name}.contents', []).append(P)
                     # Ignore mass, energy, volume for environment components
@@ -135,13 +133,14 @@ class Dashboard:
         if self.show_edges:
             for edge in self.graph.get_edges().values():
 
-                # Get name
+                # Get name and state
                 name = edge.name or edge.id
+                state = edge.state
 
-                # Check for energy output
-                if isinstance(edge, TurbineEdge):
-                    energy_out = edge.energy_output
-                    self.data['dU/dt'].setdefault(f'{name}.energy_output', []).append(energy_out)
+                # Check for power output
+                if 'power_output' in state:
+                    power = state['power_output']
+                    self.data['dU/dt'].setdefault(f'{name}.power_output', []).append(power)
 
                 # Loop over material flows and log
                 for key, value in edge.flows.items():
@@ -268,12 +267,6 @@ class Dashboard:
         elif isinstance(component, HeatExchange):
             # Heat exchangers are dotted red edges
             return {'style': 'dotted', 'color': 'red', 'penwidth': 2.0, 'xlabel': "🔥"}
-        elif isinstance(component, CondensingEdge):
-            # Condensing edges are dashed blue edges
-            return {'style': 'dashed', 'color': 'blue', 'penwidth': 2.0, 'xlabel': "💧"}
-        elif isinstance(component, BoilingEdge):
-            # Boiling edges are dashed red edges
-            return {'style': 'dashed', 'color': 'orange', 'penwidth': 2.0, 'xlabel': "♨️"}
         elif isinstance(component, TurbineEdge):
             # Turbine edges are bold dashed gray edges
             return {

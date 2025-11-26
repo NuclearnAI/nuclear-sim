@@ -190,7 +190,7 @@ class BoilingProperties(PhaseChangeProperties):
             molecular_weight=self.MOLECULAR_WEIGHT,
         )
     
-    def calculate_liquid_fraction(
+    def calculate_mass_fraction_liquid(
             self, 
             m: float, 
             U: float, 

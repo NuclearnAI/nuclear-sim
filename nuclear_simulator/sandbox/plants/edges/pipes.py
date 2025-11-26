@@ -7,6 +7,7 @@ if TYPE_CHECKING:
     from nuclear_simulator.sandbox.materials.base import Material
 
 # Import libraries
+import math
 from nuclear_simulator.sandbox.materials.gases import Gas
 from nuclear_simulator.sandbox.materials.liquids import Liquid
 from nuclear_simulator.sandbox.plants.edges.base import TransferEdge
@@ -19,29 +20,16 @@ class Pipe(TransferEdge):
     
     Attributes:
         m_dot:              [kg/s]       Previous mass flow rate for first-order response
-        K:                  [kg/(s·Pa)]  Flow conductance coefficient
+        K:                  [kg/(s·√Pa)] Flow conductance coefficient
         tau:                [s]          Response time constant
     """
     m_dot: float | None = None
     K: float
     tau: float
 
-    def get_nonstate_fields(self) -> list[str]:
-        """Return list of non-state field names."""
-        return super().get_nonstate_fields() + [
-            "K",
-            "tau",
-            "monodirectional",
-        ]
-
     def calculate_material_flow(self, dt: float) -> Any:
         """
         Calculates instantaneous mass and energy flow rates (per second).
-        
-        Uses the simplified flow model:
-        - Steady-state: m_dot_ss = K * dP
-        - First-order response: m_dot = alpha * m_dot_ss + (1-alpha) * m_dot_prev
-        
         Args:
             dt:     [s] Time step for the update.
         Returns:
@@ -60,21 +48,18 @@ class Pipe(TransferEdge):
         elif isinstance(fluid_src, Liquid):
             fluid_type = Liquid
         else:
-            raise TypeError("Pipe material must be Gas or Liquid.")
+            raise TypeError(f"{self.__class__.__name__} material must be Gas or Liquid.")
         fluid_class = type(fluid_src)
 
         # Calculate steady-state mass flow rate using conductance model
         dP = P_src - P_tgt
-        m_dot = self.K * dP
+        sign = 1 if dP >= 0 else -1
+        m_dot = sign * self.K * math.sqrt(abs(dP))
 
         # Apply first-order response
         alpha = min(dt / self.tau, 1.0)  # Clamp to prevent instability
-        m_dot_prev = self.m_dot or m_dot  # Use current if None
+        m_dot_prev = self.m_dot if (self.m_dot is not None) else m_dot
         m_dot = alpha * m_dot + (1.0 - alpha) * m_dot_prev
-
-        # Enforce mono-directional flow if specified
-        if self.monodirectional:
-            m_dot = max(m_dot, 0.0)
 
         # Calculate energy flow rate based on mass flow and energy density
         if m_dot > 0:
@@ -89,7 +74,7 @@ class Pipe(TransferEdge):
             fluid_flow: Liquid = fluid_class(m=m_dot, U=U_dot)
 
         # Store current flow rate for next timestep
-        self.m_dot_prev = m_dot
+        self.m_dot = m_dot
 
         # Return output
         return fluid_flow
@@ -116,12 +101,12 @@ class LeakyPipe(Pipe):
         # Get current material flow
         material: Material = self.flows[self.tag_material]
 
-        # Calculate leak amounts
-        m_leak = min(self.leak_rate * dt, abs(material.m))
-        m_flow = max(abs(material.m), 1e-12)  # Prevent div by zero
-        fraction_remaining = 1.0 - (m_leak / m_flow)
+        # Calculate leak amount
+        m_flow = abs(material.m)
+        m_leak = min(self.leak_rate * dt, m_flow)
+        fraction_remaining = 1.0 - (m_leak / max(m_flow, 1e-6))
 
-        # Update material in pipe
+        # Update material in pipe (multipy instead of subtract to avoid issuses with Material)
         material = material * fraction_remaining
 
         # Store updated material
@@ -176,7 +161,7 @@ def test_file():
     node2 = graph.add_node(
         PressurizedLiquidVessel,
         name="Node2",
-        P=7e6,
+        P=8e6,
         contents=PWRSecondaryWater.from_temperature(m=100.0, T=550.0),
     )
     graph.add_edge(
@@ -194,3 +179,4 @@ def test_file():
 if __name__ == "__main__":
     test_file()
     print("All tests passed!")
+
