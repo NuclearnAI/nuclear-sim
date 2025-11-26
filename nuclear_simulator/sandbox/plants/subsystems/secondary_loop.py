@@ -1,5 +1,6 @@
 
 # Import libraries
+import math
 from pydantic import Field
 from nuclear_simulator.sandbox.graphs import Graph, Controller
 from nuclear_simulator.sandbox.plants.materials import PWRSecondarySteam, PWRSecondaryWater
@@ -16,33 +17,25 @@ class SecondaryLoop(Graph):
     """
     Simplified steam generator secondary loop.
     Nodes:
-        sg_water:           SecondarySGWater
-        sg_steam:           SecondarySGSteam
-        turbine_in:         TurbineInlet
-        turbine_out:        TurbineOutlet
-        condenser_steam:    SecondaryCondenserSteam
-        condenser_water:    SecondaryCondenserWater
-        feedwater:          SecondaryFeedwater
+        sg:            BoilingVessel
+        condenser:     CondenserVessel
+        feedwater:     PressurizedLiquidVessel
+        turbine:       Turbine
     Edges:
-        boil_water_to_steam:         BoilingEdge
-        pipe_steam_to_turbine:       GasPipe
-        turbine_edge:                TurbineEdge
-        pipe_turbine_to_condenser:   GasPipe
-        condense_steam_to_water:     CondensingEdge
-        pump_condenser_to_feedwater: LiquidPump
-        pipe_feedwater_to_sg:        LiquidPipe
+        sg_to_turbine:          GasPipe
+        turbine_to_condenser:   GasPipe
+        condenser_to_feedwater: LiquidPump
+        feedwater_to_sg:        LiquidPipe
     """
-
-    # Set attributes
-    m_dot_setpoint:  float = 100.0
-    P_hot:           float = PWRSecondaryWater.P0
-    T_hot:           float = PWRSecondaryWater.T0
-    P_cold:          float = PWRSecondarySteam.P0 * 0.5
-    T_cold:          float = PWRSecondarySteam.T0 * 0.9
-    m_drum:          float = 25000.0
-    m_turbine:       float = 10000.0
-    m_condenser:     float = 50000.0
-    m_feedwater:     float = 15000.0
+    power_output_setpoint: float = 20e6
+    P_hot:                 float = PWRSecondaryWater.P0
+    T_hot:                 float = PWRSecondaryWater.T0
+    P_cold:                float = PWRSecondarySteam.P0 * 0.5
+    T_cold:                float = PWRSecondarySteam.T0 * 0.9
+    m_drum:                float = 25000.0
+    m_turbine:             float = 10000.0
+    m_condenser:           float = 50000.0
+    m_feedwater:           float = 15000.0
 
 
     def __init__(self, **data) -> None:
@@ -52,7 +45,7 @@ class SecondaryLoop(Graph):
         super().__init__(**data)
         
         # Add nodes
-        self.sg = self.add_node(
+        self.sg: BoilingVessel = self.add_node(
             BoilingVessel,
             name="SG",
             P=self.P_hot,
@@ -63,7 +56,7 @@ class SecondaryLoop(Graph):
                 m=self.m_drum * 0.6, T=self.T_hot
             ),
         )
-        self.condenser = self.add_node(
+        self.condenser: CondenserVessel = self.add_node(
             CondenserVessel,
             name="Condenser",
             P=self.P_cold,
@@ -74,7 +67,7 @@ class SecondaryLoop(Graph):
                 m=self.m_condenser * 0.9, T=self.T_cold
             ),
         )
-        self.feedwater = self.add_node(
+        self.feedwater: PressurizedLiquidVessel = self.add_node(
             PressurizedLiquidVessel,
             name="Feedwater",
             P=self.P_hot,
@@ -83,12 +76,28 @@ class SecondaryLoop(Graph):
             ),
         )
 
+        # Calibrate mass flow rate and turbine conductance
+        steam_in  = PWRSecondarySteam.from_temperature_pressure(
+            m=1.0, T=self.T_hot,  P=self.P_hot
+        )
+        steam_out = PWRSecondarySteam.from_temperature_pressure(
+            m=1.0, T=self.T_cold, P=self.P_cold
+        )
+        h_in  = (steam_in.U  + self.P_hot  * steam_in.V)  / steam_in.m
+        h_out = (steam_out.U + self.P_cold * steam_out.V) / steam_out.m
+        delta_h = h_in - h_out
+        eta_turb = 0.9
+        m_dot_setpoint = self.power_output_setpoint / (eta_turb * delta_h)
+        dP_design = self.P_hot - self.P_cold
+        K_turbine = m_dot_setpoint / math.sqrt(abs(dP_design))
+
         # Add graphs
         self.turbine: Turbine = self.add_graph(
             Turbine,
             name="Turbine",
             material_type=PWRSecondarySteam,
-            m_dot_setpoint=self.m_dot_setpoint,
+            m_dot_setpoint=m_dot_setpoint,
+            K_turbine=K_turbine,
             P_inlet=self.P_hot,
             T_inlet=self.T_hot,
             m_inlet=self.m_turbine * 0.5,
@@ -97,39 +106,38 @@ class SecondaryLoop(Graph):
             m_outlet=self.m_turbine * 0.5,
         )
 
-
         # Add edges
-        self.sg_to_turbine = self.add_edge(
+        self.sg_to_turbine: GasPipe = self.add_edge(
             edge_type=GasPipe,
             node_source=self.sg,
             node_target=self.turbine.inlet,
             name=f"Pipe:[{self.sg.name}->{self.turbine.inlet.name}]",
             alias_source={'contents': 'gas'},
-            m_dot=self.m_dot_setpoint,
+            m_dot=m_dot_setpoint,
         )
-        self.turbine_to_condenser = self.add_edge(
+        self.turbine_to_condenser: GasPipe = self.add_edge(
             edge_type=GasPipe,
             node_source=self.turbine.outlet,
             node_target=self.condenser,
             name=f"Pipe:[{self.turbine.outlet.name}->{self.condenser.name}]",
             alias_target={'contents': 'gas'},
-            m_dot=self.m_dot_setpoint,
+            m_dot=m_dot_setpoint,
         )
-        self.condenser_to_feedwater = self.add_edge(
+        self.condenser_to_feedwater: LiquidPump = self.add_edge(
             edge_type=LiquidPump,
             node_source=self.condenser,
             node_target=self.feedwater,
             name=f"Pump:[{self.condenser.name}->{self.feedwater.name}]",
             alias_source={'contents': 'liquid'},
-            m_dot=self.m_dot_setpoint,
+            m_dot=m_dot_setpoint,
         )
-        self.feedwater_to_sg = self.add_edge(
+        self.feedwater_to_sg: LiquidPipe = self.add_edge(
             edge_type=LiquidPipe,
             node_source=self.feedwater,
             node_target=self.sg,
             name=f"Pipe:[{self.feedwater.name}->{self.sg.name}]",
             alias_target={'contents': 'liquid'},
-            m_dot=self.m_dot_setpoint,
+            m_dot=m_dot_setpoint,
         )
 
         # Done
@@ -140,11 +148,10 @@ class SecondaryLoop(Graph):
         Args:
             dt:  [s] Time step for the update.
         """
-        super().update(dt)
-        # try:
-        #     super().update(dt)
-        # except Exception as e:
-        #     raise RuntimeError(f"Error updating {self.__class__.__name__}: {e}") from e
+        try:
+            super().update(dt)
+        except Exception as e:
+            raise RuntimeError(f"Error updating {self.__class__.__name__}: {e}") from e
         return
 
 

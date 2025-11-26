@@ -4,6 +4,7 @@ from nuclear_simulator.sandbox.materials.gases import Gas
 from nuclear_simulator.sandbox.materials.solids import Solid
 from nuclear_simulator.sandbox.materials.liquids import Liquid
 from nuclear_simulator.sandbox.materials.phases import BoilingProperties
+from nuclear_simulator.sandbox.physics.thermodynamics import calc_temperature_from_energy
 
 
 class UraniumDioxide(Solid):
@@ -103,3 +104,22 @@ class PWRSecondarySteam(Gas):
     P0 = PWRSecondaryBoilingProperties.P0
     T0 = PWRSecondaryBoilingProperties.T0
     u0 = PWRSecondaryBoilingProperties.u0_UNBOUND
+
+    # Override temperature calculation for equilibrium boiling
+    @property
+    def T(self) -> float:
+        """Calculate temperature [K]."""
+        # Use gas energy and mass
+        U = self.U
+        m = self.m
+        # Temperature scales with liquid properties in boiling equilibrium
+        cv = self.BOILING_PROPERTIES.HEAT_CAPACITY_BOUND
+        T0 = self.BOILING_PROPERTIES.T0
+        u0 = self.BOILING_PROPERTIES.u0_BOUND
+        # Calculate temperature
+        T = calc_temperature_from_energy(U, m, cv, T0=T0, u0=u0)
+        # Ensure temperature is physical
+        if T <= 0.0:
+            raise ValueError(f"Temperature must be positive: {T:.2f} K")
+        # Return output
+        return T

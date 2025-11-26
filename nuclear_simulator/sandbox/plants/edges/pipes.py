@@ -63,9 +63,9 @@ class Pipe(TransferEdge):
 
         # Calculate energy flow rate based on mass flow and energy density
         if m_dot > 0:
-            U_dot = m_dot * (fluid_src.U / fluid_src.m)
+            U_dot = m_dot * (fluid_src.U / (fluid_src.m + 1e-6))
         else:
-            U_dot = m_dot * (fluid_tgt.U / fluid_tgt.m)
+            U_dot = m_dot * (fluid_tgt.U / (fluid_tgt.m + 1e-6))
 
         # Create fluid flow object
         if fluid_type is Gas:
@@ -119,15 +119,15 @@ class LeakyPipe(Pipe):
 # Class for liquid pipes with typical conductance values
 class LiquidPipe(Pipe):
     """A Pipe for liquids with typical conductance parameters."""
-    K: float = 50.0      # kg/(s·Pa) - typical for 0.9m diameter, 15m pipe
-    tau: float = 3.0     # s - typical response time for large liquid pipe
+    K: float = 1.0
+    tau: float = 10.0
 
 
 # Class for gas pipes with typical conductance values
 class GasPipe(Pipe):
     """A Pipe for gases with typical conductance parameters."""
-    K: float = 0.001     # kg/(s·Pa) - typical for 0.45m diameter, 15m gas pipe
-    tau: float = 1.0     # s - typical response time for gas pipe
+    K: float = 1.0
+    tau: float = 10.0
 
 
 # Combined classes for leaky variants

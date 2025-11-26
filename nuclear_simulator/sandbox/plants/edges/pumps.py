@@ -85,9 +85,9 @@ class Pump(TransferEdge):
 
         # Calculate energy flow rate based on mass flow and energy density
         if m_dot > 0:
-            U_dot = m_dot * (fluid_src.U / fluid_src.m)
+            U_dot = m_dot * (fluid_src.U / (fluid_src.m + 1e-6))
         else:
-            U_dot = m_dot * (fluid_tgt.U / fluid_tgt.m)
+            U_dot = m_dot * (fluid_tgt.U / (fluid_tgt.m + 1e-6))
 
         # Create fluid flow object
         if fluid_type is Gas:
@@ -105,15 +105,15 @@ class Pump(TransferEdge):
 # Class for liquid pumps
 class LiquidPump(Pump):
     """A Pump for liquids with typical conductance parameters."""
-    K: float = 50.0
-    tau: float = 3.0
+    K: float = 1.0
+    tau: float = 10.0
 
 
 # Class for gas pumps
 class GasPump(Pump):
     """A Pump for gases with typical conductance parameters."""
-    K: float = 0.001
-    tau: float = 1.0
+    K: float = 1.0
+    tau: float = 10.0
 
 
 

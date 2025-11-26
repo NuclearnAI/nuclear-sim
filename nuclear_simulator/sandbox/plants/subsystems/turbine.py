@@ -28,6 +28,7 @@ class Turbine(Graph):
     # Set attributes
     material_type: type[Gas | Liquid]
     m_dot_setpoint: float
+    K_turbine: float = None
     P_inlet: float
     T_inlet: float
     m_inlet: float
@@ -76,16 +77,27 @@ class Turbine(Graph):
             P=self.P_outlet,
             contents=contents_outlet,
         )
+
+        # Create turbine edge
+        kwargs = {}
+        if self.K_turbine is not None:
+            kwargs['K'] = self.K_turbine
         self.turbine = self.add_edge(
             edge_type=turbine_edge_class,
             node_source=self.inlet,
             node_target=self.outlet,
             name="Edge",
             m_dot=self.m_dot_setpoint,
+            **kwargs
         )
         
         # Done
         return
+    
+    @property
+    def power_output(self) -> float:
+        """[W] Power output of the turbine."""
+        return self.turbine.power_output
     
     def update(self, dt: float) -> None:
         """Update the graph by one time step.

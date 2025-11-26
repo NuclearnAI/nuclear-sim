@@ -59,28 +59,39 @@ class BoilingVessel(Vessel):
         m_tot = self.gas.m + self.liquid.m
         U_tot = self.gas.U + self.liquid.U
 
-        # Get liquid fraction
-        liq_frac = self.liquid.boiling.calculate_mass_fraction_liquid(
+        # Get equilibrium temperature
+        T_eq = self.liquid.boiling.calc_saturation_temperature(
             m=m_tot,
             U=U_tot,
             V=V_tot,
         )
 
-        # Get masses
-        m_liq = m_tot * liq_frac
-        m_gas = m_tot * (1 - liq_frac)
+        # Get liquid fraction for mass and energy
+        xm_liq = self.liquid.boiling.calculate_mass_fraction_liquid(
+            m=m_tot,
+            U=U_tot,
+            V=V_tot,
+            T_eq=T_eq,
+        )
+        xu_liq = self.liquid.boiling.calculate_energy_fraction_liquid(
+            m=m_tot,
+            U=U_tot,
+            V=V_tot,
+            T_eq=T_eq,
+        )
 
-        # Get internal energies
-        
+        # Get masses and internal energies
+        m_liq = m_tot * xm_liq
+        m_gas = m_tot * (1 - xm_liq)
+        U_liq = U_tot * xu_liq
+        U_gas = U_tot * (1 - xu_liq)
 
         # Update liquid contents
-        m_liq = m_tot * liq_frac
-        U_liq = U_tot * liq_frac
         liq_new = self.liquid.__class__(m=m_liq, U=U_liq)
 
         # Update gas contents
-        m_gas = m_tot * (1 - liq_frac)
-        U_gas = U_tot * (1 - liq_frac)
+        m_gas = m_tot * (1 - xm_liq)
+        U_gas = U_tot * (1 - xu_liq)
         V_gas = V_tot - liq_new.V
         gas_new = self.gas.__class__(m=m_gas, U=U_gas, V=V_gas)
 

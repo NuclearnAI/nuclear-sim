@@ -32,6 +32,7 @@ class TurbineEdge(TransferEdge):
     eta: float = 0.9
     power_output: float | None = None  # [W] Store last power output
 
+
     def calculate_material_flow(self, dt: float) -> Any:
         """
         Calculates instantaneous mass and energy flow rates (per second).
@@ -75,8 +76,8 @@ class TurbineEdge(TransferEdge):
             U_dot = 0.0
 
         # Calculate extracted energy based on enthalpy difference
-        h_src = (fluid_src.U + P_src * fluid_src.V) / fluid_src.m
-        h_tgt = (fluid_tgt.U + P_tgt * fluid_tgt.V) / fluid_tgt.m
+        h_src = (fluid_src.U + P_src * fluid_src.V) / (fluid_src.m + 1e-6)
+        h_tgt = (fluid_tgt.U + P_tgt * fluid_tgt.V) / (fluid_tgt.m + 1e-6)
         power_output = self.eta * m_dot * (h_src - h_tgt)
         power_output = max(power_output, 0.0)  # Prevent negative extraction
 
@@ -124,15 +125,14 @@ class TurbineEdge(TransferEdge):
 # Class for liquid turbines
 class LiquidTurbine(TurbineEdge):
     """A Turbine for liquids with typical conductance parameters."""
-    K: float = 50.0
-    tau: float = 3.0
-
+    K: float = 1.0
+    tau: float = 10.0
 
 # Class for gas turbines
 class GasTurbine(TurbineEdge):
     """A Turbine for gases with typical conductance parameters."""
-    K: float = 0.001
-    tau: float = 1.0
+    K: float = 1.0
+    tau: float = 10.0
 
 
 # Test

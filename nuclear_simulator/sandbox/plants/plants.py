@@ -18,29 +18,43 @@ class Plant(Graph):
     """
     Nuclear power plant graph.
     """
-    conductance_reactor_primary: float = 1e5  # W/K
-    conductance_primary_secondary: float = 1e5  # W/K
+    power_output_setpoint: float = 20e6
+
 
     def __init__(self, **data) -> None:
 
         # Call super init
         super().__init__(**data)
 
-        # Get name prefix
-        prefix = '' if (self.name is None) else f"{self.name}:"
-
-        # Add nodes and subgraphs
+        # Add subgraphs
         self.reactor: Reactor = self.add_graph(
             Reactor, 
-            name=f"{prefix}Reactor"
+            name="Reactor",
+            power_output_setpoint=self.power_output_setpoint,
         )
         self.primary_loop: PrimaryLoop = self.add_graph(
             PrimaryLoop, 
-            name=f"{prefix}PrimaryLoop"
+            name="PrimaryLoop",
+            power_output_setpoint=self.power_output_setpoint,
         )
         self.secondary_loop: SecondaryLoop = self.add_graph(
             SecondaryLoop, 
-            name=f"{prefix}SecondaryLoop"
+            name="SecondaryLoop",
+            power_output_setpoint=self.power_output_setpoint,
+        )
+
+        # Calibrate conductance from power output
+        dT_reactor_primary = (
+            self.reactor.core.contents.T - self.primary_loop.core.contents.T
+        )
+        conductance_reactor_primary = (
+            self.power_output_setpoint / dT_reactor_primary
+        )
+        dT_primary_secondary = (
+            self.primary_loop.sg.contents.T - self.secondary_loop.sg.liquid.T
+        )
+        conductance_primary_secondary = (
+            self.power_output_setpoint / dT_primary_secondary
         )
 
         # Add edges
@@ -48,15 +62,16 @@ class Plant(Graph):
             edge_type=HeatExchange,
             node_source=self.reactor.core,
             node_target=self.primary_loop.core,
-            name=f"HeatExchange:{prefix}[ReactorCore->PrimaryLoop]",
-            conductance=self.conductance_reactor_primary,
+            name="HeatExchange:[Reactor->Primary]",
+            conductance=conductance_reactor_primary,
         )
         self.add_edge(
             edge_type=HeatExchange,
             node_source=self.primary_loop.sg,
-            node_target=self.secondary_loop.sg_water,
-            name=f"HeatExchange:{prefix}[PrimarySG->SecondarySG]",
-            conductance=self.conductance_primary_secondary,
+            node_target=self.secondary_loop.sg,
+            name="HeatExchange:[Primary->Secondary]",
+            alias_target={"contents": "liquid"},
+            conductance=conductance_primary_secondary,
         )
 
         # Done
@@ -88,7 +103,7 @@ def test_file():
     plant = Plant()
 
     # Initialize dashboard
-    dashboard = Dashboard(plant.secondary_loop)
+    dashboard = Dashboard(plant)
 
     # Simulate for a while
     dt = 1
@@ -96,6 +111,7 @@ def test_file():
     for i in range(n_steps):
         plant.update(dt)
         dashboard.step()
+        print(plant.secondary_loop.turbine.power_output)
 
     # Done
     return

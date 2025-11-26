@@ -27,7 +27,7 @@ class Reactor(Graph):
         super().__init__(**data)
 
         # Build graph
-        self.core = self.add_node(
+        self.core: ReactorFuel = self.add_node(
             ReactorFuel,
             name="Fuel",
             specific_power_gain=ReactorFuel.calibrate_specific_power_gain(

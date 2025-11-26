@@ -25,6 +25,8 @@ from nuclear_simulator.sandbox.plants.edges import (
 class Dashboard:
     """Simple live dashboard for monitoring data."""
 
+    material_tags = ['contents', 'gas', 'liquid', 'solid', 'material']
+
     def __init__(
             self, graph: Graph, 
             show_nodes: bool = True,
@@ -116,18 +118,20 @@ class Dashboard:
 
                 # Check for pressure
                 P = state.get('P', None)
-                # Check for material contents
-                if 'contents' in state and (state['contents'] is not None):
-                    mat: Material = state['contents']
-                    # Log material properties
-                    self.data['T'].setdefault(f'{name}.contents', []).append(mat.T)
-                    if P is not None:
-                        self.data['P'].setdefault(f'{name}.contents', []).append(P)
-                    # Ignore mass, energy, volume for environment components
-                    if not name.lower().startswith('env:'):
-                        self.data['m'].setdefault(f'{name}.contents', []).append(mat.m)
-                        self.data['U'].setdefault(f'{name}.contents', []).append(mat.U)
-                        self.data['V'].setdefault(f'{name}.contents', []).append(mat.V)
+
+                # Check for materials
+                for tag in self.material_tags:
+                    if tag in state and (state[tag] is not None):
+                        mat: Material = state[tag]
+                        # Log material properties
+                        self.data['T'].setdefault(f'{name}.{tag}', []).append(mat.T)
+                        if P is not None:
+                            self.data['P'].setdefault(f'{name}.{tag}', []).append(P)
+                        # Ignore mass, energy, volume for environment components
+                        if not name.lower().startswith('env:'):
+                            self.data['m'].setdefault(f'{name}.{tag}', []).append(mat.m)
+                            self.data['U'].setdefault(f'{name}.{tag}', []).append(mat.U)
+                            self.data['V'].setdefault(f'{name}.{tag}', []).append(mat.V)
 
         # Loop over edges
         if self.show_edges:
