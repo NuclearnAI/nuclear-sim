@@ -22,6 +22,7 @@ __version__ = "1.0.0"
 __author__ = "Nuclear Sim Team"
 
 from gse.gda_client import GDAClient
+from gse.simulator_manager import SimulatorManager
 from gse.types import (
     GDES,
     MALFS,
@@ -46,6 +47,7 @@ from gse.exceptions import (
 __all__ = [
     'GDAClient',
     'GPWREnvironment',
+    'SimulatorManager',
     'GDES',
     'MALFS',
     'OVERS',
