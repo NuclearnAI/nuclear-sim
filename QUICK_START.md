@@ -6,7 +6,7 @@ No installation needed - the library is ready to use:
 
 ```bash
 cd /home/brad/Projects/nuclear-sim
-python3 -c "import gse; print('GSE library loaded successfully!')"
+python3 -c "import gse; print('GSE library loaded successfully')"
 ```
 
 ## Quick Test
@@ -186,9 +186,9 @@ sock = socket.socket()
 sock.settimeout(2.0)
 try:
     sock.connect(('10.1.0.123', 9800))
-    print("Simulator is reachable!")
+    print("Simulator is reachable")
 except:
-    print("Cannot reach simulator - check if it's running")
+    print("Cannot reach simulator - check if it is running")
 finally:
     sock.close()
 ```
