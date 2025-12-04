@@ -15,4 +15,4 @@ dependencies = {file = ["requirements.txt"]}
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["nuclear_simulator*"]
+include = ["nuclear_simulator*", "gse*"]
